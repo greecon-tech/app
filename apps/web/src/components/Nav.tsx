@@ -5,16 +5,18 @@ import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
 import { hasPermission, Permission, UserRole } from "@greecon/shared";
 
+// Icon paths below are the brand icon set (Greecon Icon Library), reproduced inline with
+// stroke="currentColor" so nav hover/active states still recolor them correctly.
 const navItems: ReadonlyArray<{ href: string; label: string; icon: ReactNode; requires?: Permission; platformOnly?: boolean }> = [
   {
     href: "/",
     label: "Overview",
     icon: (
       <>
-        <rect x="2" y="2" width="5" height="5" rx="1" />
-        <rect x="9" y="2" width="5" height="5" rx="1" />
-        <rect x="2" y="9" width="5" height="5" rx="1" />
-        <rect x="9" y="9" width="5" height="5" rx="1" />
+        <rect x="3" y="3" width="8" height="8" rx="2" />
+        <rect x="13" y="3" width="8" height="5" rx="2" />
+        <rect x="13" y="10" width="8" height="11" rx="2" />
+        <rect x="3" y="13" width="8" height="8" rx="2" />
       </>
     )
   },
@@ -23,20 +25,39 @@ const navItems: ReadonlyArray<{ href: string; label: string; icon: ReactNode; re
     label: "Sites",
     icon: (
       <>
-        <path d="M8 14s5-4.5 5-8a5 5 0 0 0-10 0c0 3.5 5 8 5 8Z" />
-        <circle cx="8" cy="6" r="1.6" />
+        <path d="M12 21s6.5-5.8 6.5-11a6.5 6.5 0 0 0-13 0c0 5.2 6.5 11 6.5 11z" />
+        <circle cx="12" cy="10" r="2.3" />
       </>
     )
   },
-  { href: "/monitoring", label: "Monitoring", icon: <path d="M1.5 8h3l2-4.5 3 9 2-4.5h3" /> },
-  { href: "/automation", label: "Automation", icon: <path d="M8.5 1.5 3 9h4l-1 5.5L13 7H9l-.5-5.5Z" /> },
+  {
+    href: "/monitoring",
+    label: "Monitoring",
+    icon: (
+      <>
+        <circle cx="12" cy="12" r="2" />
+        <path d="M8 8a5.7 5.7 0 0 0 0 8M16 8a5.7 5.7 0 0 1 0 8M5.2 5.2a9.7 9.7 0 0 0 0 13.6M18.8 5.2a9.7 9.7 0 0 1 0 13.6" />
+      </>
+    )
+  },
+  {
+    href: "/automation",
+    label: "Automation",
+    icon: (
+      <>
+        <rect x="3" y="4" width="7" height="6" rx="1.5" />
+        <rect x="14" y="14" width="7" height="6" rx="1.5" />
+        <path d="M10 7h1.5a3.5 3.5 0 0 1 3.5 3.5V14" />
+      </>
+    )
+  },
   {
     href: "/alerts",
     label: "Alerts",
     icon: (
       <>
-        <path d="M8 1.8a3.6 3.6 0 0 0-3.6 3.6v2.3c0 .6-.24 1.18-.66 1.6L3 10.1h10l-.74-.8a2.3 2.3 0 0 1-.66-1.6V5.4A3.6 3.6 0 0 0 8 1.8Z" />
-        <path d="M6.3 12.3a1.7 1.7 0 0 0 3.4 0" />
+        <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2.5H4z" />
+        <path d="M10 21h4" />
       </>
     )
   },
@@ -46,20 +67,29 @@ const navItems: ReadonlyArray<{ href: string; label: string; icon: ReactNode; re
     requires: "maintenance:manage",
     icon: (
       <>
-        <path d="M9.5 1.7 12 4.2l-2 2-2.5-2.5 2-2Z" />
-        <path d="M7.4 3.8 2.2 9c-.5.5-.5 1.3 0 1.8l3 3c.5.5 1.3.5 1.8 0l5.2-5.2" />
-        <path d="M3.5 13.5 2 15" />
+        <path d="M12 3l8 3v6c0 4.8-3.3 8.2-8 9.5-4.7-1.3-8-4.7-8-9.5V6z" />
+        <path d="M8.5 12l2.5 2.5 4.5-5" />
       </>
     )
   },
-  { href: "/analytics", label: "Analytics", icon: <path d="M2.5 13.5v-4M7 13.5v-7M11.5 13.5v-9" /> },
+  {
+    href: "/analytics",
+    label: "Analytics",
+    icon: (
+      <>
+        <path d="M3 3v18h18" />
+        <path d="M7 15l4-5 3 3 6-7" />
+      </>
+    )
+  },
   {
     href: "/devices",
     label: "Devices",
     icon: (
       <>
-        <rect x="4" y="4" width="8" height="8" rx="1.2" />
-        <path d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M1.5 6h2M1.5 10h2M12.5 6h2M12.5 10h2" />
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+        <rect x="10" y="10" width="4" height="4" rx="1" />
+        <path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3" />
       </>
     )
   },
@@ -69,8 +99,7 @@ const navItems: ReadonlyArray<{ href: string; label: string; icon: ReactNode; re
     requires: "report:export",
     icon: (
       <>
-        <rect x="3" y="1.8" width="10" height="12.4" rx="1.2" />
-        <path d="M5.5 5h5M5.5 8h5M5.5 11h3" />
+        <path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5M9 13h6M9 17h6" />
       </>
     )
   },
@@ -78,27 +107,28 @@ const navItems: ReadonlyArray<{ href: string; label: string; icon: ReactNode; re
     href: "/audit",
     label: "Audit",
     requires: "audit:read",
+    icon: <path d="M4 7h2M9 7h11M4 12h2M9 12h11M4 17h2M9 17h11" />
+  },
+  {
+    href: "/admin",
+    label: "Admin",
+    requires: "user:manage",
     icon: (
       <>
-        <path d="M4.5 4h8M4.5 8h8M4.5 12h5" />
-        <circle cx="2" cy="4" r=".7" fill="currentColor" stroke="none" />
-        <circle cx="2" cy="8" r=".7" fill="currentColor" stroke="none" />
-        <circle cx="2" cy="12" r=".7" fill="currentColor" stroke="none" />
+        <circle cx="12" cy="12" r="2.5" />
+        <circle cx="12" cy="3.8" r="1.5" />
+        <circle cx="12" cy="20.2" r="1.5" />
+        <circle cx="3.8" cy="12" r="1.5" />
+        <circle cx="20.2" cy="12" r="1.5" />
+        <path d="M12 9.5V5.3M12 14.5v4.2M9.5 12H5.3M14.5 12h4.2" />
       </>
     )
   },
-  { href: "/admin", label: "Admin", requires: "user:manage", icon: <path d="M8 1.7 13 3.6v3.8c0 3.6-2.3 6.2-5 7-2.7-.8-5-3.4-5-7V3.6Z" /> },
   {
     href: "/platform",
     label: "Clients",
     platformOnly: true,
-    icon: (
-      <>
-        <rect x="1.8" y="6.5" width="4.5" height="7.7" rx="0.6" />
-        <rect x="6.8" y="2.3" width="4.5" height="11.9" rx="0.6" />
-        <rect x="11.8" y="8.8" width="2.4" height="5.4" rx="0.6" />
-      </>
-    )
+    icon: <path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.3 1.5A3.8 3.8 0 0 1 17.5 18z" />
   },
   {
     href: "/settings",
@@ -106,8 +136,8 @@ const navItems: ReadonlyArray<{ href: string; label: string; icon: ReactNode; re
     requires: "settings:manage",
     icon: (
       <>
-        <circle cx="8" cy="8" r="2.6" />
-        <path d="M8 2v1.6M8 12.4V14M14 8h-1.6M3.6 8H2M11.9 4.1l-1.1 1.1M5.2 10.7l-1.1 1.1M11.9 11.9l-1.1-1.1M5.2 5.3 4.1 4.1" />
+        <rect x="5" y="10.5" width="14" height="10" rx="2" />
+        <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5M12 15v2" />
       </>
     )
   }
@@ -125,7 +155,7 @@ export function Nav({ role, isPlatformAdmin = false }: { role: UserRole; isPlatf
         const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
         return (
           <Link href={item.href} key={item.href} aria-current={active ? "page" : undefined}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               {item.icon}
             </svg>
             {item.label}
