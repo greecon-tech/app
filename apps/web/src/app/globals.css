@@ -1,11 +1,24 @@
 :root {
-  /* Greecon brand palette (docs/06-frontend-design-system.md) */
-  --warm-background: #f7f1e9;
-  --surface: #e8e0d3;
-  --deep-green-gray: #2f3d35;
-  --pale-green-blue: #d8e2dc;
-  --living-green: #448561;
-  --near-black-green: #1a211d;
+  /* Greecon brand palette — exact tokens from the October 2026 Design System
+     (docs/06-frontend-design-system.md). "forest" was being used as the primary button/action
+     fill, but the spec's actual action color is a lighter, more saturated green derived from
+     leaf, not the near-black ink — every primary button and accent fill was darker than the
+     brand actually specifies. */
+  --cream: #f7f1e9;
+  --sand: #e8e0d3;
+  --forest: #2f3d35;
+  --mist: #d8e2dc;
+  --leaf: #448561;
+  --night: #1a211d;
+  --action: #2f6b4a;
+  --on-action: #f7f1e9;
+
+  --warm-background: var(--cream);
+  --surface: var(--sand);
+  --deep-green-gray: var(--forest);
+  --pale-green-blue: var(--mist);
+  --living-green: var(--leaf);
+  --near-black-green: var(--night);
 
   --bg: var(--warm-background);
   --bg-sidebar: var(--surface);
@@ -17,7 +30,7 @@
   --faint: rgba(26, 33, 29, 0.48);
   --line: rgba(47, 61, 53, 0.22);
   --accent: var(--living-green);
-  --accent-strong: var(--deep-green-gray);
+  --accent-strong: var(--action);
   --accent-soft: rgba(68, 133, 97, 0.16);
   --critical-fg: #8f3d36;
   --critical-bg: rgba(143, 61, 54, 0.13);
@@ -27,7 +40,25 @@
   --watch-bg: rgba(82, 109, 103, 0.15);
   --ok-fg: #386f54;
   --ok-bg: rgba(56, 111, 84, 0.14);
-  font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+
+  /* Spacing and radius scale, straight from the spec — pills for buttons/tags/swatches, large
+     radii for cards, a small radius for controls (fields keep radius-sm; buttons and tags are
+     radius-pill). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+
+  font-family: var(--font-plex-serif), "IBM Plex Serif", Georgia, "Times New Roman", serif;
 }
 
 * {
@@ -63,10 +94,10 @@ select {
 button {
   min-height: 36px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   background: var(--accent-strong);
   border-color: var(--accent-strong);
-  color: #ffffff;
+  color: var(--on-action);
   padding: 0 14px;
   font-weight: 500;
   cursor: pointer;
@@ -91,7 +122,7 @@ a.button-ghost {
   align-items: center;
   min-height: 36px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   padding: 0 14px;
   font-weight: 500;
   text-decoration: none;
@@ -390,7 +421,7 @@ main {
 .panel,
 .login-panel {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--bg-card);
 }
 
@@ -623,7 +654,7 @@ main {
   align-items: center;
   gap: 5px;
   min-height: 24px;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: 0.78rem;
   font-weight: 500;
@@ -978,7 +1009,7 @@ tbody tr:hover {
   place-items: center;
   border-radius: 50%;
   background: var(--accent-strong);
-  color: #ffffff;
+  color: var(--on-action);
   font-size: 0.8rem;
   font-weight: 600;
 }
