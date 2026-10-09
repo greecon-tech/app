@@ -411,7 +411,7 @@ describe("PlatformService", () => {
 
   describe("platform-admin tenant onboarding", () => {
     it("blocks a regular tenant owner (not a platform admin) from listing or creating tenants", async () => {
-      expect(() => platform.listAllTenants(OWNER)).toThrow(ForbiddenException);
+      expect(() => platform.listAllTenants(OWNER, {})).toThrow(ForbiddenException);
       await expect(
         platform.createTenant({ name: "New Client Farm", domain: "newclient.example", ownerName: "New Owner", ownerEmail: "owner@newclient.example" }, OWNER)
       ).rejects.toThrow(ForbiddenException);
@@ -429,8 +429,8 @@ describe("PlatformService", () => {
       expect(owner.role).toBe("owner");
       expect(temporaryPassword.split("-")).toHaveLength(3);
 
-      const allTenants = platform.listAllTenants(PLATFORM_ADMIN);
-      const created = allTenants.find((candidate) => candidate.id === tenant.id);
+      const allTenants = platform.listAllTenants(PLATFORM_ADMIN, { pageSize: 100 });
+      const created = allTenants.tenants.find((candidate) => candidate.id === tenant.id);
       expect(created?.userCount).toBe(1);
 
       // The new tenant's data must stay invisible to the original demo tenant's own principals.
