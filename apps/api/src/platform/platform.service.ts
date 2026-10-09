@@ -704,16 +704,39 @@ export class PlatformService implements OnModuleInit {
   // Cross-tenant — every client, not just the caller's own. Gated on isPlatformAdmin, not a
   // tenant-scoped role, since this is Greecon staff managing clients, not a client managing
   // itself (see docs/15-master-roadmap.md, Phase 2 "Tenant-level administration").
-  listAllTenants(principal: Principal): Array<Tenant & { userCount: number; siteCount: number }> {
+  //
+  // Paginated and search-filtered server-side: at pilot scale ("about to have 1600 customers or
+  // more") this list is the one screen in the whole app that cannot stay a full unpaginated
+  // fetch-and-render without becoming unusable.
+  listAllTenants(
+    principal: Principal,
+    options?: { search?: string; page?: number; pageSize?: number }
+  ): { tenants: Array<Tenant & { userCount: number; siteCount: number }>; total: number; page: number; pageSize: number } {
     if (!principal.isPlatformAdmin) {
       throw new ForbiddenException("This action requires Greecon platform-administrator access.");
     }
 
-    return this.tenants.map((tenant) => ({
+    const search = options?.search?.trim().toLowerCase();
+    const matching = search
+      ? this.tenants.filter(
+          (tenant) =>
+            tenant.name.toLowerCase().includes(search) ||
+            tenant.domain.toLowerCase().includes(search) ||
+            tenant.status.toLowerCase().includes(search)
+        )
+      : this.tenants;
+
+    const pageSize = Math.min(Math.max(options?.pageSize ?? 25, 1), 100);
+    const page = Math.max(options?.page ?? 1, 1);
+    const start = (page - 1) * pageSize;
+
+    const tenants = matching.slice(start, start + pageSize).map((tenant) => ({
       ...tenant,
       userCount: this.users.filter((user) => user.tenantId === tenant.id).length,
       siteCount: this.sites.filter((site) => site.tenantId === tenant.id).length
     }));
+
+    return { tenants, total: matching.length, page, pageSize };
   }
 
   async createTenant(input: CreateTenantInput, principal: Principal): Promise<{ tenant: Tenant; owner: User; temporaryPassword: string }> {

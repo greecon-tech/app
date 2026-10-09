@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { PlatformAdminGuard } from "../../common/platform-admin.guard";
 import { RequestWithPrincipal } from "../../common/principal";
 import { PlatformService } from "../../platform/platform.service";
@@ -14,8 +14,17 @@ export class PlatformAdminController {
   constructor(private readonly platform: PlatformService) {}
 
   @Get("tenants")
-  listTenants(@Req() request: RequestWithPrincipal) {
-    return this.platform.listAllTenants(request.principal);
+  listTenants(
+    @Query("q") search: string | undefined,
+    @Query("page") page: string | undefined,
+    @Query("pageSize") pageSize: string | undefined,
+    @Req() request: RequestWithPrincipal
+  ) {
+    return this.platform.listAllTenants(request.principal, {
+      search,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined
+    });
   }
 
   @Post("tenants")
