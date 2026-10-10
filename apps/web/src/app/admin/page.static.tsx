@@ -2,7 +2,8 @@ import { GREECON_COMPANY, GREECON_DOMAIN } from "@greecon/shared";
 import { DataTable } from "../../components/DataTable";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
-import { apiGet } from "../../lib/api";
+import { requirePermission } from "../../lib/access";
+import { apiGet, DEMO_ROLE } from "../../lib/api";
 
 interface Site {
   id: string;
@@ -31,7 +32,13 @@ const roleScopes = [
 // Static-export twin of page.tsx (see apps/web/scripts/build-static.sh). Creating users, changing
 // roles, and creating sites all go through real Server Actions that call the live API — none of
 // that exists here, since the static build has no server to send those mutations to.
+//
+// Gated the same way page.tsx is: the API 403s GET /users for any role without user:manage
+// (operator, viewer, auditor), and a static build bakes in one snapshot per role, so without this
+// gate the whole export fails for those roles. Nav hides the Admin link for them anyway.
 export default async function AdminPage() {
+  requirePermission(DEMO_ROLE, "user:manage");
+
   const [sites, users] = await Promise.all([apiGet<Site[]>("/sites"), apiGet<User[]>("/users")]);
 
   return (

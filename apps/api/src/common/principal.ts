@@ -1,5 +1,12 @@
 import { DEMO_TENANT_ID, UserRole, userRoles } from "@greecon/shared";
 
+// Session tokens travel in a dedicated header, not the standard Authorization one — on GCP,
+// Authorization already carries the Cloud Run service-to-service ID token (see authHeader() in
+// apps/web/src/lib/api.ts), which is infrastructure-level access control completely separate
+// from a human user's identity. Reusing that header for both would silently break one or the
+// other depending on deployment target.
+export const SESSION_HEADER = "x-greecon-session";
+
 export const DEMO_OWNER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 export const DEMO_OPERATOR_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
 export const DEMO_AUDITOR_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";

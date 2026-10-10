@@ -1,15 +1,18 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import jwt from "jsonwebtoken";
 import { hashGatewaySecret } from "./gateway-secret";
-import { edgeDeviceIngestPrincipal, JwtClaims, jwtSecret, principalFromClaims, principalFromHeaders, publicRoutePrincipal, RequestWithPrincipal } from "./principal";
+import {
+  edgeDeviceIngestPrincipal,
+  JwtClaims,
+  jwtSecret,
+  principalFromClaims,
+  principalFromHeaders,
+  publicRoutePrincipal,
+  RequestWithPrincipal,
+  SESSION_HEADER
+} from "./principal";
 import { DatabaseService } from "../database/database.service";
 
-// Session tokens travel in a dedicated header, not the standard Authorization one — on GCP,
-// Authorization already carries the Cloud Run service-to-service ID token (see authHeader() in
-// apps/web/src/lib/api.ts), which is infrastructure-level access control completely separate
-// from a human user's identity. Reusing that header for both would silently break one or the
-// other depending on deployment target.
-const SESSION_HEADER = "x-greecon-session";
 const EDGE_DEVICE_TOKEN_HEADER = "x-edge-device-token";
 
 @Injectable()

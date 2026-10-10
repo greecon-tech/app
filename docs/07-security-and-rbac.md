@@ -79,10 +79,18 @@ current one — no admin needed for the common case of just wanting a different 
 seeded demo account still shares one password (`003_auth.sql`) — that one's still an open item,
 tracked in `docs/15-master-roadmap.md`, Phase 0.
 
-`POST /auth/login` is rate-limited to 8 attempts per minute per caller (the rest of the API to 120
-requests per minute per caller as a global default) via `@nestjs/throttler`, in-memory — fine for
-the current single-instance deployment, revisit with a shared (Redis) store only once there's more
-than one API replica running.
+`POST /auth/login` is rate-limited to 8 attempts per minute per **account** (the rest of the API to
+120 requests per minute per **logged-in user** as a global default) via `@nestjs/throttler`,
+in-memory — fine for the current single-instance deployment, revisit with a shared (Redis) store
+only once there's more than one API replica running. Limits are keyed by user/account rather than
+source IP because every browser request reaches the API through the web service, so an IP key would
+be one shared limit for all customers (`apps/api/src/common/client-throttler.ts`). The session token
+is verified before it picks a bucket, so a forged token can't select someone else's. Logins
+additionally share a high per-source ceiling (200/min) as a flood breaker across many accounts —
+behind the web service that source is the web service itself, so it is deliberately far above any
+real login rate. Callers with no session, such as edge devices, are still limited per source
+address. Forwarding the end user's real IP from the web service (and trusting it only from there)
+would allow a true per-IP login limit; that is not done today.
 
 A suspended client (`tenants.status`, set via `/platform-admin`) is enforced twice: `POST
 /auth/login` refuses a fresh token for it, and `TenantStatusGuard` rejects every subsequent request
