@@ -23,6 +23,7 @@ import { SitesModule } from "./modules/sites/sites.module";
 import { TelemetryModule } from "./modules/telemetry/telemetry.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 import { UsersModule } from "./modules/users/users.module";
+import { throttlers } from "./common/client-throttler";
 import { PrincipalGuard } from "./common/principal.guard";
 import { RbacGuard } from "./common/rbac.guard";
 import { TenantStatusGuard } from "./common/tenant-status.guard";
@@ -34,12 +35,12 @@ import { PlatformModule } from "./platform/platform.module";
     ConfigModule.forRoot({ isGlobal: true }),
     // A generous global default (defense in depth for every endpoint) plus a much stricter
     // override on POST /auth/login specifically (see auth.controller.ts's @Throttle) — brute
-    // force protection promised in docs/15-master-roadmap.md, Phase 0. In-memory storage is fine
-    // for a single-instance pilot deployment; revisit with a Redis storage adapter only once
-    // there's more than one API replica running.
-    ThrottlerModule.forRoot({
-      throttlers: [{ name: "default", ttl: 60_000, limit: 120 }]
-    }),
+    // force protection promised in docs/15-master-roadmap.md, Phase 0. Counted per logged-in user
+    // / per login account rather than per source IP, since every browser request reaches this API
+    // via the web service (see common/client-throttler.ts). In-memory storage is fine for a
+    // single-instance pilot deployment; revisit with a Redis storage adapter only once there's
+    // more than one API replica running.
+    ThrottlerModule.forRoot({ throttlers }),
     DatabaseModule,
     PlatformModule,
     AuthModule,
