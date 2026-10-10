@@ -1,7 +1,8 @@
 import { DataTable } from "../../components/DataTable";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
-import { apiGet } from "../../lib/api";
+import { requirePermission } from "../../lib/access";
+import { apiGet, DEMO_ROLE } from "../../lib/api";
 
 interface MaintenanceTask {
   id: string;
@@ -22,7 +23,12 @@ interface SiteOption {
 // Static-export twin of page.tsx (see apps/web/scripts/build-static.sh). Creating, completing, and
 // reopening a task all go through real Server Actions that call the live API — none of that
 // exists here, since the static build has no server to send those mutations to.
+//
+// Gated like page.tsx: the API 403s /maintenance for roles without maintenance:manage (viewer,
+// auditor), which would otherwise fail the whole static build for those roles.
 export default async function MaintenancePage() {
+  requirePermission(DEMO_ROLE, "maintenance:manage");
+
   const [tasks, sites] = await Promise.all([apiGet<MaintenanceTask[]>("/maintenance"), apiGet<SiteOption[]>("/sites")]);
   const siteName = new Map(sites.map((site) => [site.id, site.name]));
   const openTasks = tasks.filter((task) => task.status === "open");
