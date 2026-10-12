@@ -1,7 +1,7 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { UserRole, userRoles } from "@greecon/shared";
+import { DEMO_TENANT_ID, UserRole, userRoles } from "@greecon/shared";
 import { DatabaseService } from "../../database/database.service";
 import { JwtClaims, jwtSecret } from "../../common/principal";
 
@@ -104,7 +104,16 @@ export class AuthService {
   // Requiring the current password (rather than just trusting the session) means a browser left
   // open and logged in can't be used to silently lock the real owner out by changing it to
   // something only the attacker knows.
-  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  // The demo tenant's logins are shared across everyone looking at the live demo — anyone
+  // changing one would lock out every other visitor using the same published credentials. Blocked
+  // here, not only hidden in the UI (apps/web/src/app/settings/page.tsx), since the API is what
+  // actually enforces this (docs/07-security-and-rbac.md: "the frontend hides unauthorized
+  // actions, but the API enforces").
+  async changePassword(userId: string, tenantId: string, currentPassword: string, newPassword: string): Promise<void> {
+    if (tenantId === DEMO_TENANT_ID) {
+      throw new ForbiddenException("Demo account passwords can't be changed — they're shared by everyone viewing the live demo.");
+    }
+
     if (!this.db.isConfigured()) {
       throw new UnauthorizedException("This deployment has no database configured — there is nothing to update.");
     }

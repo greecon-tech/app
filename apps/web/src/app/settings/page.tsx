@@ -1,7 +1,8 @@
-import { GREECON_COMPANY, GREECON_DOMAIN } from "@greecon/shared";
+import { DEMO_TENANT_ID, GREECON_COMPANY, GREECON_DOMAIN } from "@greecon/shared";
 import { ChangePasswordForm } from "../../components/ChangePasswordForm";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
+import { getSession } from "../../lib/session";
 import { cycleWidgetSizeAction, loadWidgetPreferences, moveWidgetAction, toggleWidgetVisibilityAction } from "./actions";
 
 // This page is only ever used for the SSR build (Railway/GCP) — see page.static.tsx for the
@@ -10,7 +11,12 @@ import { cycleWidgetSizeAction, loadWidgetPreferences, moveWidgetAction, toggleW
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const widgets = await loadWidgetPreferences();
+  const [widgets, session] = await Promise.all([loadWidgetPreferences(), getSession()]);
+  // The demo tenant's logins are shared by everyone viewing the live demo — letting one visitor
+  // change the password would lock out every other visitor using those same published
+  // credentials. The API refuses this too (apps/api/src/modules/auth/auth.service.ts); this just
+  // keeps the control from being offered in the first place.
+  const isDemoTenant = session?.user.tenantId === DEMO_TENANT_ID;
 
   return (
     <Shell title="Settings" subtitle="Organization profile, dashboard customization, and future billing.">
@@ -80,9 +86,11 @@ export default async function SettingsPage() {
           </table>
         </div>
       </Section>
-      <Section title="Account Security" aside={<span className="muted">Changes only your own login</span>}>
-        <ChangePasswordForm />
-      </Section>
+      {isDemoTenant ? null : (
+        <Section title="Account Security" aside={<span className="muted">Changes only your own login</span>}>
+          <ChangePasswordForm />
+        </Section>
+      )}
       <Section title="Operational Settings">
         <div className="metric-grid">
           <div className="panel">
