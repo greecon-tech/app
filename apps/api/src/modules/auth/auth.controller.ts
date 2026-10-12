@@ -35,7 +35,7 @@ export class AuthController {
   // caller's own userId from their verified session, never a target the caller chooses.
   @Post("change-password")
   async changePassword(@Body() body: ChangePasswordDto, @Req() request: RequestWithPrincipal): Promise<{ success: true }> {
-    await this.auth.changePassword(request.principal.userId, body.currentPassword, body.newPassword);
+    await this.auth.changePassword(request.principal.userId, request.principal.tenantId, body.currentPassword, body.newPassword);
     return { success: true };
   }
 }
