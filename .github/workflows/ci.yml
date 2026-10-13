@@ -1,0 +1,43 @@
+# Runs on every pull request and every push to main: the same typecheck, tests and builds a
+# contributor runs locally (docs/08-local-development.md, docs/09-testing-and-verification.md).
+# Before this existed nothing checked a change until it reached main, and the only workflow that
+# ran on main (the GitHub Pages demo) failed for weeks without blocking anything.
+name: CI
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22 is what the edge install script puts on a site's industrial PC.
+          node-version: "22"
+          cache: npm
+
+      # `npm ci` installs exactly what package-lock.json says and fails if it disagrees with the
+      # package.json files, so a lockfile drift is caught here rather than on a customer's box.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

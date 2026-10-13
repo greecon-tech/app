@@ -71,6 +71,13 @@ export const LOGIN_ACCOUNT_THROTTLE = { limit: 8, ttl: 60_000, getTracker: login
  * legitimate login rate — it's a flood breaker, not a per-user limit. Skipped on every other route. */
 export const LOGIN_SOURCE_LIMIT = 200;
 
+/** POST /telemetry/ingest is called by an edge box, not a person, and the edge agent sends one
+ * request per device per poll: at the example 5 s poll that is 12 requests a minute per device, so
+ * 50 devices at one site need 600. The shared default of 120/min would start rejecting a site
+ * with only ~10 devices. Counted per source address (an edge box has no session), so this is
+ * per site once TRUST_PROXY makes the real address visible behind a proxy. */
+export const INGEST_THROTTLE = { limit: 600, ttl: 60_000 };
+
 export const throttlers: ThrottlerOptions[] = [
   { name: "default", ttl: 60_000, limit: 120, getTracker: sessionOrSourceTracker },
   { name: "login-source", ttl: 60_000, limit: LOGIN_SOURCE_LIMIT, skipIf: (context) => !isLoginRequest(context) }

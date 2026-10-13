@@ -2,8 +2,10 @@ import "reflect-metadata";
 import helmet from "helmet";
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import { apiDocsEnabled, trustedProxyHops } from "./common/runtime-config";
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("Bootstrap");
@@ -20,9 +22,18 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true
   });
+
+  // Behind a reverse proxy (Railway, a load balancer) every connection arrives from the proxy, so
+  // without this every caller looks like one address and shares one rate-limit bucket. Opt-in and
+  // exact: TRUST_PROXY is the number of trusted hops (see common/runtime-config.ts).
+  const proxyHops = trustedProxyHops(process.env);
+  if (proxyHops !== undefined) {
+    app.set("trust proxy", proxyHops);
+    logger.log(`Trusting ${proxyHops} reverse proxy hop(s) for the caller's address (TRUST_PROXY).`);
+  }
 
   app.use(helmet());
   app.enableCors({
@@ -42,7 +53,13 @@ async function bootstrap(): Promise<void> {
     .setDescription("Operational API for Greecon sites, devices, telemetry, automation, alerts, and audit evidence.")
     .setVersion("0.1.0")
     .build();
-  SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
+  // The spec lists every route, so a production deployment keeps it off unless asked
+  // (ENABLE_API_DOCS=true) — see common/runtime-config.ts.
+  if (apiDocsEnabled(process.env)) {
+    SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
+  } else {
+    logger.log("API docs (/docs) are disabled in production; set ENABLE_API_DOCS=true to enable them.");
+  }
 
   // PORT is Railway's convention; API_PORT is ours (docker-compose, GCP). Railway's
   // private networking requires listening on "::" (IPv6), which also accepts ordinary

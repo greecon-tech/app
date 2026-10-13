@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Post, Query, Req } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
+import { INGEST_THROTTLE } from "../../common/client-throttler";
 import { RequirePermissions } from "../../common/require-permissions.decorator";
 import { RequestWithPrincipal } from "../../common/principal";
 import { PlatformService } from "../../platform/platform.service";
@@ -8,6 +10,7 @@ import { TelemetryMessageDto } from "./telemetry-reading.dto";
 export class TelemetryController {
   constructor(private readonly platform: PlatformService) {}
 
+  @Throttle({ default: INGEST_THROTTLE })
   @Post("ingest")
   @RequirePermissions("telemetry:ingest")
   ingest(@Body() body: TelemetryMessageDto, @Req() request: RequestWithPrincipal) {

@@ -18,6 +18,16 @@ Once a real sensor's industrial PC needs to send readings from outside Railway's
 
 Every gateway gets its own secret this way, scoped to its own tenant only — onboarding a second, third, or hundredth client's device needs nothing beyond step 2 above, repeated on their own site.
 
+**Before you generate that domain, two settings on the `api` service:**
+
+- `TRUST_PROXY=1` — Railway's edge proxy sits in front of a public domain, so without this the API sees
+  the proxy's address for every caller and counts all edge boxes (and everyone else) as one source for
+  rate limiting. It is the number of trusted proxy hops, not "true": trusting more hops than exist lets a
+  caller choose their own address by forging `X-Forwarded-For`. Confirm Railway's hop count for your
+  setup before relying on it (check the `x-forwarded-for` header a request actually arrives with).
+- Leave `ENABLE_API_DOCS` unset. Swagger (`/docs`, `/docs-json`, `/docs-yaml`) is off in production by
+  default; setting it to `true` would publish the API's complete route list to anyone who finds the domain.
+
 **Legacy path, still supported:** a single `EDGE_INGEST_TOKEN`/`EDGE_INGEST_TENANT_ID` variable pair on the `api` service, shared by every gateway in one fixed tenant, was the only option before per-gateway credentials existed. Still works if already configured — both must be set together, either one missing disables it entirely — but a new deployment should use the "Add gateway" form above instead, since this pair can't support more than one client's tenant at all.
 
 ## One-time setup, in the Railway dashboard
