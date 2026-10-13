@@ -6,6 +6,11 @@ Requires=mosquitto.service
 
 [Service]
 Type=simple
+# Readings the API could not take are kept here (JSON lines), so a restart or power cut during an
+# outage does not lose them. StateDirectory creates /var/lib/greecon-edge owned by the service
+# user. edge.env, loaded next, can override BUFFER_PATH.
+StateDirectory=greecon-edge
+Environment=BUFFER_PATH=/var/lib/greecon-edge/buffer.jsonl
 EnvironmentFile=/etc/greecon/edge.env
 WorkingDirectory=/opt/greecon/apps/edge-agent
 ExecStart=/usr/bin/node /opt/greecon/apps/edge-agent/dist/index.js
@@ -13,9 +18,8 @@ Restart=always
 RestartSec=5
 User=greecon
 Group=greecon
-# Buffered readings only live in process memory (see docs/13-pilot-readiness.md) — a restart
-# during an outage loses whatever hadn't flushed yet, which is why RestartSec is short but not
-# aggressive enough to thrash if the API is down for a while.
+# RestartSec is short but not aggressive enough to thrash if the API is down for a while;
+# nothing is lost by a restart because the backlog is on disk (BUFFER_PATH above).
 StandardOutput=journal
 StandardError=journal
 

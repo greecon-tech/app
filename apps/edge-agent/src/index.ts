@@ -1,5 +1,6 @@
 import mqtt from "mqtt";
 import { DEMO_TENANT_ID, TelemetryMessage } from "@greecon/shared";
+import { TelemetryForwarder } from "./forwarder";
 import { OfflineBuffer } from "./offline-buffer";
 
 // Bridges the on-site MQTT broker to the cloud API. Telemetry published locally by drivers or
@@ -19,11 +20,38 @@ const apiUrl = process.env.API_URL ?? "http://localhost:4000";
 const edgeToken = process.env.EDGE_TOKEN;
 const apiRole = process.env.API_ROLE ?? "operator";
 const flushIntervalMs = Number(process.env.FLUSH_INTERVAL_MS ?? 10_000);
+const requestTimeoutMs = Number(process.env.REQUEST_TIMEOUT_MS ?? 10_000);
+// Where readings the API could not take are kept so a restart or power cut does not lose them.
+// Unset keeps them in memory only (local development).
+const bufferPath = process.env.BUFFER_PATH;
+const bufferMaxItems = Number(process.env.BUFFER_MAX_ITEMS ?? 50_000);
 
 const telemetryTopic = `greecon/${tenantId}/${siteId}/telemetry/+`;
 const healthTopic = `greecon/${tenantId}/${siteId}/health/+`;
 
-const buffer = new OfflineBuffer<TelemetryMessage>();
+const log = {
+  info: (message: string) => process.stdout.write(`${message}\n`),
+  error: (message: string) => process.stderr.write(`${message}\n`)
+};
+
+// Readings lost to the size cap are counted and reported once per flush interval, not logged one
+// by one: during a long outage that would be one line per reading.
+let discardedSinceReport = 0;
+const buffer = new OfflineBuffer<TelemetryMessage>({
+  maxItems: bufferMaxItems,
+  persistPath: bufferPath,
+  onDrop: (_item, reason) => {
+    if (reason.startsWith("buffer full")) discardedSinceReport += 1;
+  }
+});
+
+const forwarder = new TelemetryForwarder({
+  apiUrl,
+  headers: edgeToken ? { "x-edge-device-token": edgeToken } : { "x-user-role": apiRole, "x-tenant-id": tenantId },
+  buffer,
+  log,
+  timeoutMs: requestTimeoutMs
+});
 
 const client = mqtt.connect(mqttUrl, {
   clientId: `greecon-edge-agent-${gatewayId}`,
@@ -33,17 +61,17 @@ const client = mqtt.connect(mqttUrl, {
 
 client.on("connect", () => {
   client.subscribe([telemetryTopic, healthTopic]);
-  process.stdout.write(`Edge agent connected to ${mqttUrl}, bridging ${telemetryTopic} -> ${apiUrl}/telemetry/ingest\n`);
-  void flushBuffer();
+  log.info(`Edge agent connected to ${mqttUrl}, bridging ${telemetryTopic} -> ${apiUrl}/telemetry/ingest`);
+  void forwarder.flush();
 });
 
 client.on("error", (error) => {
-  process.stderr.write(`MQTT connection error: ${error.message}\n`);
+  log.error(`MQTT connection error: ${error.message}`);
 });
 
 client.on("message", (topic, payload) => {
   if (topic.includes("/health/")) {
-    process.stdout.write(`[health] ${payload.toString()}\n`);
+    log.info(`[health] ${payload.toString()}`);
     return;
   }
 
@@ -51,49 +79,22 @@ client.on("message", (topic, payload) => {
   try {
     message = JSON.parse(payload.toString()) as TelemetryMessage;
   } catch (error) {
-    process.stderr.write(`Discarding malformed telemetry payload on ${topic}: ${error instanceof Error ? error.message : String(error)}\n`);
+    log.error(`Discarding malformed telemetry payload on ${topic}: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
 
-  void forward(message);
+  void forwarder.forward(message);
 });
 
 setInterval(() => {
-  void flushBuffer();
+  if (discardedSinceReport > 0) {
+    log.error(`Buffer full: discarded ${discardedSinceReport} oldest reading(s) since the last report. The API has been unreachable for a long time.`);
+    discardedSinceReport = 0;
+  }
+  void forwarder.flush();
 }, flushIntervalMs);
 
-async function forward(message: TelemetryMessage): Promise<void> {
-  try {
-    await ingest(message);
-  } catch (error) {
-    buffer.append(message);
-    process.stderr.write(
-      `API unreachable, buffering reading (backlog: ${buffer.size()}): ${error instanceof Error ? error.message : String(error)}\n`
-    );
-  }
-}
-
-async function ingest(message: TelemetryMessage): Promise<void> {
-  const response = await fetch(`${apiUrl}/telemetry/ingest`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(edgeToken ? { "x-edge-device-token": edgeToken } : { "x-user-role": apiRole, "x-tenant-id": tenantId })
-    },
-    body: JSON.stringify(message)
-  });
-
-  if (!response.ok) {
-    throw new Error(`ingest failed with status ${response.status}`);
-  }
-}
-
-async function flushBuffer(): Promise<void> {
-  if (buffer.size() === 0) return;
-  const result = await buffer.flush(ingest);
-  if (result.sent > 0) {
-    process.stdout.write(`Flushed ${result.sent} buffered reading(s), ${result.retained} still pending.\n`);
-  }
-}
-
-process.stdout.write(`Greecon edge agent starting for ${tenantId}/${siteId}, gateway ${gatewayId}.\n`);
+log.info(
+  `Greecon edge agent starting for ${tenantId}/${siteId}, gateway ${gatewayId}. ` +
+    `Buffer: ${bufferPath ? `${bufferPath} (${buffer.size()} reading(s) restored)` : "memory only"}, up to ${bufferMaxItems}.`
+);

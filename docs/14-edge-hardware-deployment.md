@@ -7,8 +7,9 @@ telemetry flowing into the platform.
 ## What actually ships in this pass
 
 - **`apps/edge-agent`** — a small bridge that subscribes to the site's local MQTT topics and
-  forwards telemetry to the cloud API's `POST /telemetry/ingest`, buffering in memory and
-  retrying if the API is briefly unreachable. This did not exist before: nothing in the stack
+  forwards telemetry to the cloud API's `POST /telemetry/ingest`. Readings the API cannot take
+  are kept on disk (`BUFFER_PATH`) and replayed in order when it returns; a reading the API
+  permanently refuses is discarded and logged, never retried forever. This did not exist before: nothing in the stack
   previously connected the MQTT side (`docs/04-edge-runtime.md`) to the HTTP side (the API), so a
   gateway publishing telemetry locally had no way to reach the dashboard at all. This closes that
   gap.
@@ -211,10 +212,29 @@ bridges whatever's on that topic.
   `journalctl -u greecon-edge-agent -e` for the actual error — most likely `/etc/greecon/edge.env`
   is missing a required value, or Node.js failed to resolve `@greecon/shared` (re-run
   `npm run build:packages` in `/opt/greecon`).
-- **Backlog keeps growing and never drains.** The buffer is in-process memory only — if the API
-  stays unreachable for a long outage, restarting the service loses whatever hadn't flushed yet.
-  This is a known limitation (`docs/13-pilot-readiness.md`); for now, fix the connectivity issue
-  rather than relying on the buffer for anything beyond short blips.
+- **Backlog keeps growing and never drains.** While the API is unreachable the agent keeps readings
+  in `/var/lib/greecon-edge/buffer.jsonl` (set by the systemd unit; override with `BUFFER_PATH`), so
+  a restart or power cut does not lose them, and replays them oldest-first once the API answers.
+  The backlog is capped at `BUFFER_MAX_ITEMS` (default 50,000): beyond that the OLDEST readings are
+  discarded, and the journal says how many ("Buffer full: discarded N oldest reading(s)"). Replay is
+  rate-limited by the API (see "How much traffic a site sends" below), so a very large backlog drains
+  over time rather than instantly. If it never shrinks, look for a line saying why: `status 401`/`403`
+  means the gateway secret is wrong (fix `EDGE_TOKEN`; the readings are kept and will be sent), `429`
+  means the API is rate-limiting this site.
+- **`journalctl` shows "refused and discarded".** The API understood the reading and said it can
+  never be accepted: an unknown device or point (provision it first), a reading timestamped in the
+  future (the box's clock is wrong: fix NTP), or a malformed message. These are dropped on purpose so
+  one bad message cannot block the queue; the log line says which reading and why.
+
+## How much traffic a site sends
+
+The agent makes one request per device per poll. At the example 5-second Modbus poll that is 12
+requests a minute per device, so a site with 50 devices sends about 600 a minute. The API accepts
+600 ingest requests a minute per source address (`apps/api/src/common/client-throttler.ts`,
+`INGEST_THROTTLE`). If the API runs behind a proxy such as Railway's, set `TRUST_PROXY=1` on the API
+service (see `docs/11-deployment-railway.md`) so each site is counted by its own address and not
+all sites together. Past roughly 50 devices at one site, batching readings per request is the next
+step; it is not built because no site is that large yet.
 
 ## Hardware reference
 

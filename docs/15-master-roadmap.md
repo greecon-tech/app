@@ -53,8 +53,9 @@ configuration specifically. What's left:
 - Edge-to-cloud network reachability for a genuinely remote site (WireGuard/Tailscale tunnel,
   documented in `docs/14-edge-hardware-deployment.md`) — this is an operational/infra step, not
   code, but still needs doing per site before it's actually reachable.
-- Durable edge-side buffering (currently in-process memory in `apps/edge-agent`; loses backlog on
-  a service restart during a long outage).
+- ~~Durable edge-side buffering~~ — done 2026-10-13: an on-disk, bounded, ordered buffer in
+  `apps/edge-agent` (`docs/14-edge-hardware-deployment.md`). Batching many readings per request is
+  the next step if a site outgrows one request per device per poll.
 - Manual command targets aren't filtered by role/site scope beyond permission — fine for a
   single-site pilot, matters once there are multiple sites with different assigned operators.
 
