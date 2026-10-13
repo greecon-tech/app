@@ -186,3 +186,91 @@ describe("GAIA safety primitives", () => {
     expect(result.simulated).toBe(true);
   });
 });
+
+describe("GAIA safety: data freshness", () => {
+  // The command in this file is issued at 2026-04-29T10:00:00Z.
+  const at = (minutesBeforeCommand: number) => new Date(Date.parse("2026-04-29T10:00:00.000Z") - minutesBeforeCommand * 60_000).toISOString();
+
+  it("blocks a pump start when a required sensor's last reading is too old to trust", () => {
+    const result = evaluateCommandSafety(
+      context({
+        sensors: {
+          ...healthySensors,
+          // The gateway went quiet: the last reading still says 2.4 bar, quality OK, ten minutes ago.
+          "water.pressure.bar": { value: 2.4, unit: "bar", quality: "OK", timestampUtc: at(10) }
+        }
+      })
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.hardSafetyBlock).toBe(true);
+    expect(result.reasons.join(" ")).toContain("water.pressure.bar is out of date");
+    expect(result.reasons.join(" ")).toContain("10 minutes");
+  });
+
+  it("still allows the start when every required reading is within its limit", () => {
+    const result = evaluateCommandSafety(
+      context({
+        sensors: {
+          ...healthySensors,
+          "water.pressure.bar": { value: 2.4, unit: "bar", quality: "OK", timestampUtc: at(4) },
+          "water.flow.lpm": { value: 12, unit: "lpm", quality: "OK", timestampUtc: at(4) }
+        }
+      })
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it("gives a slow field sensor hours, not minutes, before calling it out of date", () => {
+    const irrigation: CommandMessage = {
+      ...command,
+      target: { deviceId: "valve-1", pointId: "point-irrigation", canonicalName: "agri.irrigation.command" }
+    };
+
+    const twoHoursOld = evaluateCommandSafety(
+      context({
+        command: irrigation,
+        sensors: { "agri.soil.moisture.percent": { value: 22, unit: "%", quality: "OK", timestampUtc: at(120) } }
+      })
+    );
+    expect(twoHoursOld.allowed).toBe(true);
+
+    const fiveHoursOld = evaluateCommandSafety(
+      context({
+        command: irrigation,
+        sensors: { "agri.soil.moisture.percent": { value: 22, unit: "%", quality: "OK", timestampUtc: at(300) } }
+      })
+    );
+    expect(fiveHoursOld.allowed).toBe(false);
+    expect(fiveHoursOld.reasons.join(" ")).toContain("agri.soil.moisture.percent is out of date");
+    // A stale soil reading is a reason to check the field, not a hard safety stop.
+    expect(fiveHoursOld.hardSafetyBlock).toBe(false);
+  });
+
+  it("honours a limit set on the point itself", () => {
+    const result = evaluateCommandSafety(
+      context({
+        sensors: {
+          ...healthySensors,
+          // A fast meter: this one is expected to report every few seconds, so two minutes is already late.
+          "water.flow.lpm": { value: 12, unit: "lpm", quality: "OK", timestampUtc: at(2), maxAgeSeconds: 60 }
+        }
+      })
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reasons.join(" ")).toContain("water.flow.lpm is out of date");
+  });
+
+  it("does not call a reading with no usable timestamp fresh", () => {
+    const result = evaluateCommandSafety(
+      context({
+        sensors: {
+          ...healthySensors,
+          "water.flow.lpm": { value: 12, unit: "lpm", quality: "OK", timestampUtc: "garbage" }
+        }
+      })
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reasons.join(" ")).toContain("water.flow.lpm has no usable timestamp");
+  });
+});

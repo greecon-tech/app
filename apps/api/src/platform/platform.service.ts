@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { generateTemporaryPassword } from "../common/generate-password";
@@ -29,11 +29,14 @@ import {
   validateTelemetryMessage
 } from "@greecon/shared";
 import {
+  alertConditionsFromStates,
   defaultSafetyLimits,
   deriveOperationalStates,
   evaluateCommandSafety,
   normalizeTelemetryTimestamp,
+  reconcileAlerts,
   simulateRule,
+  type AlertChange,
   type SensorSnapshot,
   type StateSnapshot
 } from "@greecon/gaia-core";
@@ -179,6 +182,10 @@ export interface AlertRecord {
   title: string;
   suggestedAction: string;
   createdAtUtc: string;
+  /** Set when a person acknowledged it. */
+  acknowledgedAtUtc?: string;
+  /** Set when the condition behind it cleared. */
+  resolvedAtUtc?: string;
 }
 
 export interface IncidentRecord {
@@ -249,9 +256,47 @@ export interface EdgeSyncInput {
   completedAtUtc?: string;
 }
 
+// How often every site's states are re-derived against the clock, so a gateway that has gone quiet is
+// noticed within about a minute even though nothing is arriving to trigger a refresh.
+const HEALTH_MONITOR_INTERVAL_MS = 60_000;
+
 @Injectable()
-export class PlatformService implements OnModuleInit {
+export class PlatformService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
+  private readonly logger = new Logger(PlatformService.name);
+  private healthMonitor?: ReturnType<typeof setInterval>;
+
   constructor(private readonly db: DatabaseService) {}
+
+  // Starts after hydration (onModuleInit) so the first pass sees real data. Derived states are not
+  // stored, so without this a restart would leave every site with no states until its next reading.
+  async onApplicationBootstrap(): Promise<void> {
+    await this.refreshAllDerivedStates();
+    this.startHealthMonitor();
+  }
+
+  onApplicationShutdown(): void {
+    this.stopHealthMonitor();
+  }
+
+  startHealthMonitor(intervalMs: number = HEALTH_MONITOR_INTERVAL_MS): void {
+    if (this.healthMonitor) return;
+    this.healthMonitor = setInterval(() => {
+      // One bad pass must not take the API down; the next tick tries again.
+      void Promise.resolve()
+        .then(() => this.refreshAllDerivedStates())
+        .catch((error: unknown) => {
+          this.logger.warn(`Health monitor pass failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+    }, intervalMs);
+    // The monitor must never be the reason the process stays alive.
+    this.healthMonitor.unref?.();
+  }
+
+  stopHealthMonitor(): void {
+    if (!this.healthMonitor) return;
+    clearInterval(this.healthMonitor);
+    this.healthMonitor = undefined;
+  }
 
   async onModuleInit(): Promise<void> {
     // Every domain with a real mutating endpoint (sites/assets/devices/points, rules, telemetry,
@@ -937,28 +982,28 @@ export class PlatformService implements OnModuleInit {
           // with no battery still reports grid import/export/consumption, and a site with no
           // grid connection still reports solar/battery. Every field is optional by design so
           // the UI can render only what's actually metered per deployment.
-          solarPowerKw: this.latestNumber("energy.solar.power.kw"),
-          batterySocPercent: this.latestNumber("energy.battery.soc.percent"),
-          batteryPowerKw: this.latestNumber("energy.battery.power.kw"),
-          consumptionKw: this.latestNumber("energy.consumption.kw"),
-          gridImportKw: this.latestNumber("energy.grid.import.kw"),
-          gridExportKw: this.latestNumber("energy.grid.export.kw"),
-          surplusState: this.stateValue("energy.surplus_available") ? "Available" : "Constrained"
+          solarPowerKw: this.latestNumber(principal.tenantId, "energy.solar.power.kw"),
+          batterySocPercent: this.latestNumber(principal.tenantId, "energy.battery.soc.percent"),
+          batteryPowerKw: this.latestNumber(principal.tenantId, "energy.battery.power.kw"),
+          consumptionKw: this.latestNumber(principal.tenantId, "energy.consumption.kw"),
+          gridImportKw: this.latestNumber(principal.tenantId, "energy.grid.import.kw"),
+          gridExportKw: this.latestNumber(principal.tenantId, "energy.grid.export.kw"),
+          surplusState: this.stateValue(principal.tenantId, "energy.surplus_available") ? "Available" : "Constrained"
         },
         water: {
-          tankLevelPercent: this.latestNumber("water.tank.level.percent"),
-          flowLpm: this.latestNumber("water.flow.lpm"),
-          pressureBar: this.latestNumber("water.pressure.bar")
+          tankLevelPercent: this.latestNumber(principal.tenantId, "water.tank.level.percent"),
+          flowLpm: this.latestNumber(principal.tenantId, "water.flow.lpm"),
+          pressureBar: this.latestNumber(principal.tenantId, "water.pressure.bar")
         },
         agriculture: {
-          soilMoisturePercent: this.latestNumber("agri.soil.moisture.percent"),
-          temperatureC: this.latestNumber("agri.air.temperature.c"),
-          humidityPercent: this.latestNumber("agri.humidity.percent")
+          soilMoisturePercent: this.latestNumber(principal.tenantId, "agri.soil.moisture.percent"),
+          temperatureC: this.latestNumber(principal.tenantId, "agri.air.temperature.c"),
+          humidityPercent: this.latestNumber(principal.tenantId, "agri.humidity.percent")
         },
         automation: {
           enabledRules: this.rules.filter((rule) => rule.tenantId === principal.tenantId && rule.enabled).length,
           simulatedRules: this.rules.filter((rule) => rule.tenantId === principal.tenantId && rule.executionMode === "simulation").length,
-          lastAction: this.commands[0]?.dispatchStatus ?? "No command dispatched"
+          lastAction: this.scope(this.commands, principal.tenantId)[0]?.dispatchStatus ?? "No command dispatched"
         },
         edge: {
           connectedSites: tenantSites.filter((site) => site.edgeStatus === "OK").length,
@@ -1632,8 +1677,9 @@ export class PlatformService implements OnModuleInit {
       // a clear 404 rather than let it reach Postgres and surface as an opaque FK-violation 500.
       this.requireDevice(item.deviceId, principal.tenantId);
       const point = this.requirePoint(item.pointId, principal.tenantId);
-      this.upsertLatestTelemetry(item);
-      point.quality = item.quality;
+      // A reading replayed late (for example from an edge buffer after an outage) is stored in
+      // history but must not replace a newer 'latest' value or the point's current quality.
+      if (this.upsertLatestTelemetry(item)) point.quality = item.quality;
     }
 
     if (this.db.isConfigured()) {
@@ -1643,6 +1689,7 @@ export class PlatformService implements OnModuleInit {
     }
 
     this.refreshDerivedStates(principal.tenantId, message.siteId);
+    await this.reconcileSiteAlerts(principal.tenantId, message.siteId, Date.now());
 
     return {
       accepted: true,
@@ -1993,6 +2040,7 @@ export class PlatformService implements OnModuleInit {
     if (!alert) throw new NotFoundException("Alert not found.");
     const before = { status: alert.status };
     alert.status = "acknowledged";
+    alert.acknowledgedAtUtc = new Date().toISOString();
 
     if (this.db.isConfigured()) {
       await this.db.query(`UPDATE alerts SET status=$1, acknowledged_at=now() WHERE id=$2 AND tenant_id=$3`, [alert.status, alert.id, principal.tenantId]);
@@ -2345,10 +2393,20 @@ export class PlatformService implements OnModuleInit {
   // this.telemetry only ever holds one row per point (the latest) — every consumer already
   // reduces to latest-per-point via latestReadings, so keeping full history in memory would only
   // grow unbounded for no benefit. Full history lives in Postgres once DATABASE_URL is set.
-  private upsertLatestTelemetry(item: TelemetryReading): void {
+  // Returns whether `item` became the latest value for its point (it does unless a newer reading
+  // is already held).
+  private upsertLatestTelemetry(item: TelemetryReading): boolean {
     const index = this.telemetry.findIndex((existing) => existing.pointId === item.pointId);
-    if (index >= 0) this.telemetry[index] = item;
-    else this.telemetry.push(item);
+    if (index < 0) {
+      this.telemetry.push(item);
+      return true;
+    }
+
+    const existing = this.telemetry[index] as TelemetryReading;
+    if (Date.parse(item.timestampUtc) < Date.parse(existing.timestampUtc)) return false;
+
+    this.telemetry[index] = item;
+    return true;
   }
 
   private async persistTelemetryReading(item: TelemetryReading): Promise<void> {
@@ -2408,13 +2466,20 @@ export class PlatformService implements OnModuleInit {
     );
   }
 
-  private latestNumber(canonicalName: string): number | undefined {
-    const readingValue = this.latestReadings(this.telemetry).find((item) => item.canonicalName === canonicalName);
+  // Both helpers take the tenant explicitly. They used to read every tenant's data, so one
+  // customer's Overview could show another customer's numbers (this.telemetry and
+  // this.derivedStates hold all tenants in memory).
+  private latestNumber(tenantId: string, canonicalName: string): number | undefined {
+    const readingValue = this.latestReadings(this.telemetry.filter((item) => item.tenantId === tenantId)).find(
+      (item) => item.canonicalName === canonicalName
+    );
     return typeof readingValue?.value === "number" ? readingValue.value : undefined;
   }
 
-  private stateValue(stateKey: string): boolean {
-    return this.derivedStates.some((stateValue) => stateValue.stateKey === stateKey && stateValue.stateValue === true);
+  private stateValue(tenantId: string, stateKey: string): boolean {
+    return this.derivedStates.some(
+      (stateValue) => stateValue.tenantId === tenantId && stateValue.stateKey === stateKey && stateValue.stateValue === true
+    );
   }
 
   private sensorSnapshot(tenantId: string, siteId?: string): SensorSnapshot {
@@ -2425,7 +2490,14 @@ export class PlatformService implements OnModuleInit {
         value: item.value,
         unit: item.unit,
         quality: item.quality,
-        timestampUtc: item.timestampUtc
+        timestampUtc: item.timestampUtc,
+        // Simulated readings (the demo tenant, the edge simulator) measure nothing that can go
+        // quiet, so they are never out of date. Real readings use the point's own max_age_seconds
+        // threshold if it sets one, else the default for their kind (gaia-core's freshness.ts).
+        maxAgeSeconds: item.source === "simulator" ? Number.POSITIVE_INFINITY : undefined,
+        // The point's configured thresholds (critical_low, irrigate_below, ...) are what the
+        // derived states are judged against; before this they were stored but never read.
+        thresholds: this.points.find((point) => point.id === item.pointId)?.thresholdConfig
       };
     }
     return snapshot;
@@ -2439,10 +2511,23 @@ export class PlatformService implements OnModuleInit {
     return snapshot;
   }
 
-  private refreshDerivedStates(tenantId: string, siteId: string): void {
+  /** Re-derives every site's states against the clock. Telemetry arriving is not the only thing
+   * that changes the picture: a gateway that goes quiet changes it by saying nothing, so this runs
+   * on a timer as well as on ingestion. Exposed (with an injectable clock) so tests can move time. */
+  async refreshAllDerivedStates(nowMs: number = Date.now()): Promise<void> {
+    for (const site of [...this.sites]) {
+      this.refreshDerivedStates(site.tenantId, site.id, nowMs);
+      await this.reconcileSiteAlerts(site.tenantId, site.id, nowMs);
+    }
+  }
+
+  private refreshDerivedStates(tenantId: string, siteId: string, nowMs: number = Date.now()): void {
+    const site = this.sites.find((candidate) => candidate.id === siteId && candidate.tenantId === tenantId);
     const sensors = this.sensorSnapshot(tenantId, siteId);
-    const generated = deriveOperationalStates(sensors);
-    this.derivedStates = this.derivedStates.filter((stateValue) => stateValue.tenantId !== tenantId || stateValue.siteId !== siteId || !generated.some((item) => item.stateKey === stateValue.stateKey));
+    const generated = deriveOperationalStates(sensors, { nowMs, limits: site?.safetyLimits });
+    // Replace the site's whole set, not just the keys generated this time: a state that is no
+    // longer derived (its reading went out of date) must disappear, not linger with its last value.
+    this.derivedStates = this.derivedStates.filter((stateValue) => stateValue.tenantId !== tenantId || stateValue.siteId !== siteId);
     for (const item of generated) {
       this.derivedStates.push({
         id: randomUUID(),
@@ -2457,6 +2542,89 @@ export class PlatformService implements OnModuleInit {
         updatedAtUtc: nowIso()
       });
     }
+  }
+
+  // Brings a site's alerts into line with what is true now (see gaia-core's alerts.ts for the rules).
+  // The in-memory list is updated first and synchronously, so two passes running close together
+  // cannot both open the same alert; only then is the database written. A failed write is logged and
+  // does not fail the caller: telemetry ingestion must never break because an alert row could not
+  // be stored, and the next pass sees the in-memory truth.
+  private async reconcileSiteAlerts(tenantId: string, siteId: string, nowMs: number): Promise<void> {
+    const conditions = alertConditionsFromStates(this.derivedStates.filter((state) => state.tenantId === tenantId && state.siteId === siteId));
+    const existing = this.alerts.filter((alert) => alert.tenantId === tenantId && alert.siteId === siteId);
+    const changes = reconcileAlerts(conditions, existing, nowMs);
+    if (changes.length === 0) return;
+
+    const at = new Date(nowMs).toISOString();
+    const writes: Array<() => Promise<unknown>> = [];
+
+    for (const change of changes) {
+      const alert = this.applyAlertChange(change, tenantId, siteId, at);
+      if (alert) writes.push(() => (change.type === "open" ? this.insertAlert(alert) : this.updateAlertRow(alert)));
+    }
+
+    if (!this.db.isConfigured()) return;
+    for (const write of writes) {
+      try {
+        await write();
+      } catch (error) {
+        this.logger.warn(`Could not store an alert change: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  private applyAlertChange(change: AlertChange, tenantId: string, siteId: string, at: string): AlertRecord | undefined {
+    if (change.type === "open") {
+      const alert: AlertRecord = {
+        id: randomUUID(),
+        tenantId,
+        siteId,
+        category: change.condition.category,
+        severity: change.condition.severity,
+        status: "open",
+        title: change.condition.title,
+        suggestedAction: change.condition.suggestedAction,
+        createdAtUtc: at
+      };
+      this.alerts.unshift(alert);
+      return alert;
+    }
+
+    const alert = this.alerts.find((candidate) => candidate.id === change.alertId && candidate.tenantId === tenantId);
+    if (!alert) return undefined;
+
+    if (change.type === "resolve") {
+      alert.status = "resolved";
+      alert.resolvedAtUtc = at;
+      return alert;
+    }
+
+    alert.severity = change.condition.severity;
+    alert.title = change.condition.title;
+    alert.suggestedAction = change.condition.suggestedAction;
+    if (change.type === "reopen") {
+      alert.status = "open";
+      alert.resolvedAtUtc = undefined;
+    } else if (change.type === "escalate" && change.reopen) {
+      // It got worse after someone acknowledged it: they need to hear about it again.
+      alert.status = "open";
+    }
+    return alert;
+  }
+
+  private async insertAlert(alert: AlertRecord): Promise<void> {
+    await this.db.query(
+      `INSERT INTO alerts (id, tenant_id, site_id, asset_id, category, severity, status, title, suggested_action, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [alert.id, alert.tenantId, alert.siteId, alert.assetId ?? null, alert.category, alert.severity, alert.status, alert.title, alert.suggestedAction, alert.createdAtUtc]
+    );
+  }
+
+  private async updateAlertRow(alert: AlertRecord): Promise<void> {
+    await this.db.query(
+      `UPDATE alerts SET status=$1, severity=$2, title=$3, suggested_action=$4, resolved_at=$5 WHERE id=$6 AND tenant_id=$7`,
+      [alert.status, alert.severity, alert.title, alert.suggestedAction, alert.resolvedAtUtc ?? null, alert.id, alert.tenantId]
+    );
   }
 
   // Awaited (not fire-and-forget) because commands and report exports store this event's id as
@@ -2816,7 +2984,15 @@ interface AlertRow {
   status: string;
   title: string;
   suggested_action: string;
-  created_at: string;
+  created_at: string | Date;
+  acknowledged_at?: string | Date | null;
+  resolved_at?: string | Date | null;
+}
+
+// pg hands back Date objects for timestamptz columns even though the row types say string; normalise
+// so comparisons and JSON output are always an ISO string.
+function toIso(value: string | Date): string {
+  return new Date(value).toISOString();
 }
 
 function mapAlertRow(row: AlertRow): AlertRecord {
@@ -2830,7 +3006,9 @@ function mapAlertRow(row: AlertRow): AlertRecord {
     status: row.status as AlertRecord["status"],
     title: row.title,
     suggestedAction: row.suggested_action,
-    createdAtUtc: row.created_at
+    createdAtUtc: toIso(row.created_at),
+    acknowledgedAtUtc: row.acknowledged_at ? toIso(row.acknowledged_at) : undefined,
+    resolvedAtUtc: row.resolved_at ? toIso(row.resolved_at) : undefined
   };
 }
 

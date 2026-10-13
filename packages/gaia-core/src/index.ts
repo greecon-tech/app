@@ -11,12 +11,37 @@ import {
   UserRole,
   hasPermission
 } from "@greecon/shared";
+import { assessReadingAge, defaultMaxAgeSeconds, describeAge } from "./freshness";
+
+export * from "./alerts";
+export * from "./freshness";
 
 export interface SensorSnapshotValue {
   value: number | boolean | string;
   unit: string;
   quality: QualityFlag;
+  /** When the measurement was taken (the source's clock), not when it reached the platform. */
   timestampUtc: string;
+  /** How old this reading may be before it can no longer be trusted, when that is already known
+   * (for example "never" for simulated data). Otherwise the point's `max_age_seconds` threshold, then
+   * the default for its kind (see freshness.ts). */
+  maxAgeSeconds?: number;
+  /** The thresholds configured on the point (`critical_low`, `warning_low`, `irrigate_below`,
+   * `dry_run_lpm`, `max_age_seconds`, ...). Anything unset or not a usable number falls back to the
+   * platform default. */
+  thresholds?: Record<string, number>;
+}
+
+function thresholdOf(sensor: SensorSnapshotValue | undefined, key: string, fallback: number): number {
+  const configured = sensor?.thresholds?.[key];
+  return typeof configured === "number" && Number.isFinite(configured) ? configured : fallback;
+}
+
+function maxAgeSecondsFor(name: CanonicalPointName, sensor: SensorSnapshotValue): number {
+  if (sensor.maxAgeSeconds !== undefined) return sensor.maxAgeSeconds;
+  const configured = sensor.thresholds?.max_age_seconds;
+  if (typeof configured === "number" && Number.isFinite(configured) && configured > 0) return configured;
+  return defaultMaxAgeSeconds(name);
 }
 
 export type SensorSnapshot = Partial<Record<CanonicalPointName, SensorSnapshotValue>>;
@@ -83,6 +108,13 @@ export function requiredSensorPointsForCommand(command: CommandMessage): Canonic
   return [];
 }
 
+// Pressure and flow are the inputs to the over-pressure and dry-run interlocks: if they cannot be
+// trusted the interlock cannot be evaluated, which is a hard stop. Soil moisture only informs
+// irrigation; losing it is a reason to look at the field, not a safety event.
+function isProcessInterlockInput(pointName: CanonicalPointName): boolean {
+  return pointName === "water.pressure.bar" || pointName === "water.flow.lpm";
+}
+
 export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation {
   const reasons: string[] = [];
   let hardSafetyBlock = false;
@@ -111,6 +143,10 @@ export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation 
     }
   }
 
+  // "Now" for the purpose of judging how old a reading is: the moment the command was issued.
+  const issuedAtMs = Date.parse(command.issuedAtUtc);
+  const nowMs = Number.isFinite(issuedAtMs) ? issuedAtMs : Date.now();
+
   for (const pointName of requiredSensorPointsForCommand(command)) {
     const point = sensors[pointName];
     if (!point) {
@@ -120,6 +156,19 @@ export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation 
     if (point.quality === "BAD") {
       reasons.push(`Required sensor ${pointName} has BAD quality.`);
       hardSafetyBlock = true;
+    }
+
+    // A reading can be quality OK and still be days old if the gateway stopped reporting. The last
+    // known value is not the current value, so it cannot be used to decide that an action is safe.
+    const age = assessReadingAge(point.timestampUtc, nowMs, maxAgeSecondsFor(pointName, point));
+    if (age.freshness === "unknown") {
+      reasons.push(`Required sensor ${pointName} has no usable timestamp, so its reading cannot be trusted.`);
+      hardSafetyBlock = hardSafetyBlock || isProcessInterlockInput(pointName);
+    } else if (age.freshness === "stale") {
+      reasons.push(
+        `Required sensor ${pointName} is out of date: its last reading was ${describeAge(age.ageSeconds ?? 0)} ago (limit ${describeAge(age.maxAgeSeconds)}).`
+      );
+      hardSafetyBlock = hardSafetyBlock || isProcessInterlockInput(pointName);
     }
   }
 
@@ -174,39 +223,70 @@ export interface DerivedStateEvaluation {
   reason: string;
 }
 
-export function deriveOperationalStates(sensors: SensorSnapshot): DerivedStateEvaluation[] {
-  const tankLevel = numericSensor(sensors["water.tank.level.percent"]);
-  const pressure = numericSensor(sensors["water.pressure.bar"]);
-  const flow = numericSensor(sensors["water.flow.lpm"]);
-  const solarPower = numericSensor(sensors["energy.solar.power.kw"]);
-  const consumption = numericSensor(sensors["energy.consumption.kw"]);
-  const batterySoc = numericSensor(sensors["energy.battery.soc.percent"]);
-  const soilMoisture = numericSensor(sensors["agri.soil.moisture.percent"]);
+export interface DeriveOptions {
+  /** "Now", for judging how old each reading is. When omitted every reading is treated as current
+   * (the behaviour before freshness existed); the platform always supplies it. */
+  nowMs?: number;
+  /** The site's own limits; anything not set falls back to defaultSafetyLimits. */
+  limits?: Partial<SafetyLimits>;
+}
+
+export function deriveOperationalStates(sensors: SensorSnapshot, options: DeriveOptions = {}): DerivedStateEvaluation[] {
+  const limits: SafetyLimits = { ...defaultSafetyLimits, ...options.limits };
+
+  // A reading that has stopped being current says nothing about the present: deriving "tank not
+  // critical" from a three-hour-old level would reassure falsely, deriving "critical" from it would
+  // alarm falsely. Only current readings feed the states below; the rest are reported as a loss of
+  // communication, which is the true statement about them.
+  const stale: Array<{ name: CanonicalPointName; ageSeconds: number }> = [];
+  let current: SensorSnapshot = sensors;
+  if (options.nowMs !== undefined) {
+    current = {};
+    for (const [name, value] of Object.entries(sensors) as Array<[CanonicalPointName, SensorSnapshotValue | undefined]>) {
+      if (!value) continue;
+      const age = assessReadingAge(value.timestampUtc, options.nowMs, maxAgeSecondsFor(name, value));
+      if (age.freshness === "fresh") current[name] = value;
+      else stale.push({ name, ageSeconds: age.ageSeconds ?? Number.POSITIVE_INFINITY });
+    }
+  }
+
+  const tankLevel = numericSensor(current["water.tank.level.percent"]);
+  const pressure = numericSensor(current["water.pressure.bar"]);
+  const flow = numericSensor(current["water.flow.lpm"]);
+  const solarPower = numericSensor(current["energy.solar.power.kw"]);
+  const consumption = numericSensor(current["energy.consumption.kw"]);
+  const batterySoc = numericSensor(current["energy.battery.soc.percent"]);
+  const soilMoisture = numericSensor(current["agri.soil.moisture.percent"]);
 
   const states: DerivedStateEvaluation[] = [];
 
   if (tankLevel !== undefined) {
+    const tank = current["water.tank.level.percent"];
+    const criticalBelow = thresholdOf(tank, "critical_low", 15);
+    const lowBelow = thresholdOf(tank, "warning_low", 35);
     states.push({
       stateKey: "water.tank.critical",
-      stateValue: tankLevel < 15,
-      severity: tankLevel < 15 ? "critical" : "info",
-      confidence: sensors["water.tank.level.percent"]?.quality === "OK" ? 0.95 : 0.65,
+      stateValue: tankLevel < criticalBelow,
+      severity: tankLevel < criticalBelow ? "critical" : "info",
+      confidence: tank?.quality === "OK" ? 0.95 : 0.65,
       reason: `Tank level is ${tankLevel.toFixed(1)}%.`
     });
     states.push({
       stateKey: "water.tank.low",
-      stateValue: tankLevel < 35,
-      severity: tankLevel < 35 ? "warning" : "info",
+      stateValue: tankLevel < lowBelow,
+      severity: tankLevel < lowBelow ? "warning" : "info",
       confidence: 0.9,
       reason: `Tank low threshold evaluated at ${tankLevel.toFixed(1)}%.`
     });
   }
 
   if (flow !== undefined) {
+    // The meter's own setting wins over the site's limit, which wins over the platform default.
+    const dryRunAt = thresholdOf(current["water.flow.lpm"], "dry_run_lpm", limits.dryRunFlowLpm);
     states.push({
       stateKey: "water.pump.dry_run_risk",
-      stateValue: flow <= defaultSafetyLimits.dryRunFlowLpm,
-      severity: flow <= defaultSafetyLimits.dryRunFlowLpm ? "critical" : "info",
+      stateValue: flow <= dryRunAt,
+      severity: flow <= dryRunAt ? "critical" : "info",
       confidence: 0.9,
       reason: `Flow is ${flow.toFixed(2)} lpm.`
     });
@@ -215,10 +295,10 @@ export function deriveOperationalStates(sensors: SensorSnapshot): DerivedStateEv
   if (pressure !== undefined) {
     states.push({
       stateKey: "system.sensor_quality_bad",
-      stateValue: hasBadQuality(sensors),
-      severity: hasBadQuality(sensors) ? "warning" : "info",
+      stateValue: hasBadQuality(current),
+      severity: hasBadQuality(current) ? "warning" : "info",
       confidence: 1,
-      reason: hasBadQuality(sensors) ? "One or more required sensors reports BAD quality." : "Required sensor quality is acceptable."
+      reason: hasBadQuality(current) ? "One or more required sensors reports BAD quality." : "Required sensor quality is acceptable."
     });
   }
 
@@ -234,22 +314,40 @@ export function deriveOperationalStates(sensors: SensorSnapshot): DerivedStateEv
   }
 
   if (batterySoc !== undefined) {
+    const constrainedBelow = thresholdOf(current["energy.battery.soc.percent"], "warning_low", 25);
     states.push({
       stateKey: "energy.battery.constrained",
-      stateValue: batterySoc < 25,
-      severity: batterySoc < 25 ? "warning" : "info",
+      stateValue: batterySoc < constrainedBelow,
+      severity: batterySoc < constrainedBelow ? "warning" : "info",
       confidence: 0.9,
       reason: `Battery state of charge is ${batterySoc.toFixed(1)}%.`
     });
   }
 
   if (soilMoisture !== undefined) {
+    const irrigateBelow = thresholdOf(current["agri.soil.moisture.percent"], "irrigate_below", 28);
     states.push({
       stateKey: "agri.irrigation_required",
-      stateValue: soilMoisture < 28,
-      severity: soilMoisture < 28 ? "watch" : "info",
+      stateValue: soilMoisture < irrigateBelow,
+      severity: soilMoisture < irrigateBelow ? "watch" : "info",
       confidence: 0.85,
       reason: `Soil moisture is ${soilMoisture.toFixed(1)}%.`
+    });
+  }
+
+  // Only meaningful when there is something to be out of date: a site with no readings at all has
+  // nothing connected yet, which the platform reports separately.
+  if (options.nowMs !== undefined && Object.keys(sensors).length > 0) {
+    const oldest = stale.reduce((max, item) => Math.max(max, item.ageSeconds), 0);
+    states.push({
+      stateKey: "system.communication_degraded",
+      stateValue: stale.length > 0,
+      severity: stale.length > 0 ? "warning" : "info",
+      confidence: 1,
+      reason:
+        stale.length > 0
+          ? `${stale.length} ${stale.length === 1 ? "reading is" : "readings are"} out of date; the oldest was taken ${describeAge(oldest)} ago.`
+          : "All readings are current."
     });
   }
 

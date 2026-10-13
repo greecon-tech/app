@@ -474,6 +474,7 @@ export interface AlertMessage {
     | "sensor_quality_degradation"
     | "resource_threshold"
     | "water_tank_critical"
+    | "water_tank_low"
     | "pump_dry_run_risk"
     | "overpressure"
     | "battery_constrained"
@@ -520,7 +521,13 @@ export function isCanonicalPointName(value: unknown): value is CanonicalPointNam
   return typeof value === "string" && canonicalPoints.includes(value as CanonicalPointName);
 }
 
-export function validateTelemetryMessage(message: TelemetryMessage): string[] {
+/** How far ahead of the receiving server's clock a reading's own timestamp may be. A little slack
+ * covers ordinary clock drift between a gateway and the cloud; far more than this means the
+ * gateway's clock is wrong, and accepting it would let one bad timestamp shadow every real reading
+ * that follows (the platform shows the reading with the newest timestamp as 'current'). */
+export const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+export function validateTelemetryMessage(message: TelemetryMessage, nowMs: number = Date.now()): string[] {
   const errors: string[] = [];
   if (message.messageType !== "telemetry") errors.push("messageType must be telemetry");
   if (!message.tenantId) errors.push("tenantId is required");
@@ -529,8 +536,20 @@ export function validateTelemetryMessage(message: TelemetryMessage): string[] {
   if (!Array.isArray(message.readings) || message.readings.length === 0) errors.push("readings are required");
 
   for (const [index, reading] of message.readings.entries()) {
+    // Each reading carries its own tenant and site. They must agree with the message they arrived
+    // in: the caller is authenticated for the message's tenant, so a reading claiming another
+    // tenant must never be stored under it. (A message may carry several devices' readings, so the
+    // reading's deviceId is deliberately not required to equal the message's.)
+    if (reading.tenantId !== message.tenantId) {
+      errors.push(`readings[${index}].tenantId must match the message tenantId`);
+    }
+    if (reading.siteId !== message.siteId) {
+      errors.push(`readings[${index}].siteId must match the message siteId`);
+    }
     if (!reading.timestampUtc || Number.isNaN(Date.parse(reading.timestampUtc))) {
       errors.push(`readings[${index}].timestampUtc must be an ISO UTC timestamp`);
+    } else if (Date.parse(reading.timestampUtc) > nowMs + MAX_FUTURE_SKEW_MS) {
+      errors.push(`readings[${index}].timestampUtc is in the future by more than ${MAX_FUTURE_SKEW_MS / 60000} minutes; check the gateway clock`);
     }
     if (reading.timestampUtc && !reading.timestampUtc.endsWith("Z")) {
       errors.push(`readings[${index}].timestampUtc must be normalized to UTC`);
