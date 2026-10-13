@@ -6,6 +6,7 @@ import {
   AlertMessage,
   Asset,
   AutomationRule,
+  CanonicalPointName,
   CommandAckMessage,
   CommandMessage,
   DashboardWidgetPreference,
@@ -15,11 +16,14 @@ import {
   EdgeGateway,
   EdgeSyncMessage,
   Point,
+  QualityFlag,
   RuleAction,
   RuleCondition,
   RuleExecutionMode,
   RulePriorityLevel,
   Site,
+  StateKey,
+  StatusLabel,
   TelemetryMessage,
   TelemetryReading,
   Tenant,
@@ -30,19 +34,54 @@ import {
 } from "@greecon/shared";
 import {
   alertConditionsFromStates,
+  assessSensorAge,
+  assessSiteHealth,
+  assessTenantHealth,
+  concernForReading,
   defaultSafetyLimits,
+  evaluableCategories,
   deriveOperationalStates,
   evaluateCommandSafety,
   normalizeTelemetryTimestamp,
   reconcileAlerts,
   simulateRule,
+  statusLabelFor,
   type AlertChange,
+  type Concern,
+  type HealthState,
   type SensorSnapshot,
+  type SensorSnapshotValue,
+  type SiteHealth,
   type StateSnapshot
 } from "@greecon/gaia-core";
 import { Principal } from "../common/principal";
 import { generateGatewaySecret, hashGatewaySecret } from "../common/gateway-secret";
 import { DatabaseService } from "../database/database.service";
+
+/** A latest reading as the Overview presents it: the value, where it came from, and how old it is. */
+export interface OverviewReading {
+  value: number | boolean | string;
+  unit: string;
+  siteId: string;
+  siteName: string;
+  /** When the measurement was taken, by the source's own clock. */
+  asOfUtc: string;
+  /** How old that is, in seconds. Absent when the reading carries no usable timestamp. */
+  ageSeconds?: number;
+  /** "current" while it can still be relied on. "out_of_date" once it cannot: the last value is
+   * kept, because it is worth seeing, but it must never look live. */
+  freshness: "current" | "out_of_date";
+  quality: QualityFlag;
+  /** Set only for a current reading the rules judge abnormal. */
+  concern?: Concern;
+}
+
+const OVERVIEW_STATUS: Record<HealthState, string> = {
+  stable: "System stable",
+  attention: "Attention needed",
+  action: "Action required",
+  unknown: "Status unknown"
+};
 
 export interface CreateRuleInput {
   siteId?: string;
@@ -969,12 +1008,20 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return user;
   }
 
-  overview(principal: Principal) {
-    const tenantSites = this.listSites(principal);
+  /** The one question the product exists to answer: is everything all right? `health` is the
+   * answer (one state, one sentence, what it rests on); the rest is the evidence behind it.
+   * `nowMs` is injectable so a test can move the clock. */
+  overview(principal: Principal, nowMs: number = Date.now()) {
+    const assessed = this.assessSites(principal.tenantId, nowMs);
+    const tenantSites = assessed.map(({ site, health }) => ({ ...site, health }));
+    const health = assessTenantHealth(assessed.map((item) => item.health));
     const activeAlerts = this.listAlerts(principal).filter((alert) => alert.status === "open");
     return {
       tenant: this.requireTenant(principal.tenantId),
-      status: "System stable",
+      // The older one-line status, kept in step with `health` for anything that still reads it.
+      status: OVERVIEW_STATUS[health.state],
+      asOfUtc: new Date(nowMs).toISOString(),
+      health,
       sites: tenantSites,
       summaries: {
         energy: {
@@ -988,7 +1035,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
           consumptionKw: this.latestNumber(principal.tenantId, "energy.consumption.kw"),
           gridImportKw: this.latestNumber(principal.tenantId, "energy.grid.import.kw"),
           gridExportKw: this.latestNumber(principal.tenantId, "energy.grid.export.kw"),
-          surplusState: this.stateValue(principal.tenantId, "energy.surplus_available") ? "Available" : "Constrained"
+          // Absent when it cannot be judged (no readings, or they are out of date): neither
+          // "Available" nor "Constrained" is true then.
+          surplusState: this.stateFlag(principal.tenantId, "energy.surplus_available", "Available", "Constrained")
         },
         water: {
           tankLevelPercent: this.latestNumber(principal.tenantId, "water.tank.level.percent"),
@@ -1010,18 +1059,25 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
           simulatedSites: tenantSites.filter((site) => site.edgeStatus === "Simulated").length
         }
       },
+      // The same latest values, each with where it came from and how old it is, so a screen can
+      // show "62% · Hotel plant · 3 minutes ago" and "out of date" instead of a bare number.
+      readings: this.overviewReadings(principal.tenantId, nowMs),
       activeAlerts
     };
   }
 
-  listSites(principal: Principal): Site[] {
-    return this.scope(this.sites, principal.tenantId);
+  /** The tenant's sites with their status computed from what is known, not from a label stored
+   * when the site was created. */
+  listSites(principal: Principal, nowMs: number = Date.now()): Site[] {
+    return this.assessSites(principal.tenantId, nowMs).map((item) => item.site);
   }
 
-  siteDetail(siteId: string, principal: Principal) {
-    const site = this.requireSite(siteId, principal.tenantId);
+  siteDetail(siteId: string, principal: Principal, nowMs: number = Date.now()) {
+    const stored = this.requireSite(siteId, principal.tenantId);
+    const { site, health } = this.assessSite(stored, nowMs);
     return {
       site,
+      health,
       assets: this.assets.filter((asset) => asset.tenantId === principal.tenantId && asset.siteId === siteId),
       devices: this.devices.filter((device) => device.tenantId === principal.tenantId && device.siteId === siteId),
       points: this.points.filter((point) => point.tenantId === principal.tenantId && point.siteId === siteId),
@@ -1140,10 +1196,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       locationName: input.locationName,
       latitude: input.latitude,
       longitude: input.longitude,
-      status: "OK",
-      // A newly provisioned site has no edge gateway registered yet — "Simulated" reflects that
-      // accurately rather than implying a real connection that doesn't exist.
-      edgeStatus: "Simulated"
+      // Placeholders only: what is shown for a site is computed from its readings (assessSite),
+      // so a new site reads "Unknown" and "Offline" until it has reported, never "OK".
+      status: "Unknown",
+      edgeStatus: "Offline"
     };
 
     if (this.db.isConfigured()) {
@@ -2476,31 +2532,102 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return typeof readingValue?.value === "number" ? readingValue.value : undefined;
   }
 
-  private stateValue(tenantId: string, stateKey: string): boolean {
-    return this.derivedStates.some(
-      (stateValue) => stateValue.tenantId === tenantId && stateValue.stateKey === stateKey && stateValue.stateValue === true
-    );
+  /** One of two words for a yes/no state across the tenant's sites, or undefined when the state
+   * does not exist: it could not be judged (nothing reports it, or its readings are out of date). */
+  private stateFlag<A extends string, B extends string>(tenantId: string, stateKey: StateKey, whenTrue: A, whenFalse: B): A | B | undefined {
+    const states = this.derivedStates.filter((state) => state.tenantId === tenantId && state.stateKey === stateKey);
+    if (states.length === 0) return undefined;
+    return states.some((state) => state.stateValue === true) ? whenTrue : whenFalse;
+  }
+
+  private sensorValue(item: TelemetryReading): SensorSnapshotValue {
+    return {
+      value: item.value,
+      unit: item.unit,
+      quality: item.quality,
+      timestampUtc: item.timestampUtc,
+      // Simulated readings (the demo tenant, the edge simulator) measure nothing that can go
+      // quiet, so they are never out of date. Real readings use the point's own max_age_seconds
+      // threshold if it sets one, else the default for their kind (gaia-core's freshness.ts).
+      maxAgeSeconds: item.source === "simulator" ? Number.POSITIVE_INFINITY : undefined,
+      // The point's configured thresholds (critical_low, irrigate_below, ...) are what the
+      // derived states are judged against; before this they were stored but never read.
+      thresholds: this.points.find((point) => point.id === item.pointId)?.thresholdConfig
+    };
   }
 
   private sensorSnapshot(tenantId: string, siteId?: string): SensorSnapshot {
     const snapshot: SensorSnapshot = {};
     const readings = this.latestReadings(this.telemetry.filter((item) => item.tenantId === tenantId && (!siteId || item.siteId === siteId)));
-    for (const item of readings) {
-      snapshot[item.canonicalName] = {
+    for (const item of readings) snapshot[item.canonicalName] = this.sensorValue(item);
+    return snapshot;
+  }
+
+  private assessSites(tenantId: string, nowMs: number): Array<{ site: Site; health: SiteHealth }> {
+    return this.scope(this.sites, tenantId).map((stored) => this.assessSite(stored, nowMs));
+  }
+
+  // What is true of one site right now, worked out from the readings and alerts it has: whether it
+  // has ever reported, whether it has gone quiet, what is standing against it. Its stored `status`
+  // and `edgeStatus` are not consulted: a label somebody typed once says nothing about now.
+  private assessSite(stored: Site, nowMs: number): { site: Site; health: SiteHealth } {
+    const readings = this.latestReadings(this.telemetry.filter((item) => item.tenantId === stored.tenantId && item.siteId === stored.id));
+    const quiet = deriveOperationalStates(this.sensorSnapshot(stored.tenantId, stored.id), { nowMs, limits: stored.safetyLimits }).find(
+      (state) => state.stateKey === "system.communication_degraded" && state.stateValue === true
+    );
+    const health = assessSiteHealth({
+      siteId: stored.id,
+      siteName: stored.name,
+      readingCount: readings.length,
+      communicationProblem: quiet !== undefined,
+      communicationDetail: quiet?.reason,
+      alerts: this.alerts.filter((alert) => alert.tenantId === stored.tenantId && alert.siteId === stored.id)
+    });
+    return { site: { ...stored, status: statusLabelFor(health), edgeStatus: this.edgeStatusOf(readings, nowMs) }, health };
+  }
+
+  // The gateway is online if something real has been heard from it lately; "Simulated" if the only
+  // readings are simulated ones; offline if nothing has ever arrived or what did has gone quiet.
+  private edgeStatusOf(readings: TelemetryReading[], nowMs: number): StatusLabel {
+    if (readings.length === 0) return "Offline";
+    const real = readings.filter((item) => item.source !== "simulator");
+    if (real.length === 0) return "Simulated";
+    const heardLately = real.some((item) => assessSensorAge(item.canonicalName, this.sensorValue(item), nowMs).freshness === "fresh");
+    return heardLately ? "OK" : "Offline";
+  }
+
+  /** The newest reading of each kind across the tenant's sites, with its age at `nowMs`. */
+  private overviewReadings(tenantId: string, nowMs: number): Partial<Record<CanonicalPointName, OverviewReading>> {
+    const newest = new Map<CanonicalPointName, TelemetryReading>();
+    for (const item of this.latestReadings(this.telemetry.filter((candidate) => candidate.tenantId === tenantId))) {
+      const held = newest.get(item.canonicalName);
+      if (!held || Date.parse(item.timestampUtc) > Date.parse(held.timestampUtc)) newest.set(item.canonicalName, item);
+    }
+
+    const readings: Partial<Record<CanonicalPointName, OverviewReading>> = {};
+    for (const [name, item] of [...newest.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const age = assessSensorAge(name, this.sensorValue(item), nowMs);
+      const current = age.freshness === "fresh";
+      const trueStates = new Set<StateKey>(
+        this.derivedStates
+          .filter((state) => state.tenantId === tenantId && state.siteId === item.siteId && state.stateValue === true)
+          .map((state) => state.stateKey)
+      );
+      readings[name] = {
         value: item.value,
         unit: item.unit,
+        siteId: item.siteId,
+        siteName: this.sites.find((site) => site.id === item.siteId)?.name ?? "",
+        asOfUtc: item.timestampUtc,
+        ageSeconds: age.ageSeconds,
+        freshness: current ? "current" : "out_of_date",
         quality: item.quality,
-        timestampUtc: item.timestampUtc,
-        // Simulated readings (the demo tenant, the edge simulator) measure nothing that can go
-        // quiet, so they are never out of date. Real readings use the point's own max_age_seconds
-        // threshold if it sets one, else the default for their kind (gaia-core's freshness.ts).
-        maxAgeSeconds: item.source === "simulator" ? Number.POSITIVE_INFINITY : undefined,
-        // The point's configured thresholds (critical_low, irrigate_below, ...) are what the
-        // derived states are judged against; before this they were stored but never read.
-        thresholds: this.points.find((point) => point.id === item.pointId)?.thresholdConfig
+        // An out-of-date reading is flagged as out of date; what the rules concluded from it is no
+        // longer about the present.
+        concern: current ? concernForReading(name, trueStates) : undefined
       };
     }
-    return snapshot;
+    return readings;
   }
 
   private stateSnapshot(tenantId: string, siteId?: string): StateSnapshot {
@@ -2525,12 +2652,23 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const site = this.sites.find((candidate) => candidate.id === siteId && candidate.tenantId === tenantId);
     const sensors = this.sensorSnapshot(tenantId, siteId);
     const generated = deriveOperationalStates(sensors, { nowMs, limits: site?.safetyLimits });
+    const at = new Date(nowMs).toISOString();
+
+    // A state keeps its start time for as long as its value holds, so "how long has this been true"
+    // is answerable (an alert can require a condition to persist before it fires). It starts again
+    // when the value changes.
+    const previous = new Map(
+      this.derivedStates.filter((state) => state.tenantId === tenantId && state.siteId === siteId).map((state) => [state.stateKey, state] as const)
+    );
+
     // Replace the site's whole set, not just the keys generated this time: a state that is no
     // longer derived (its reading went out of date) must disappear, not linger with its last value.
     this.derivedStates = this.derivedStates.filter((stateValue) => stateValue.tenantId !== tenantId || stateValue.siteId !== siteId);
     for (const item of generated) {
+      const before = previous.get(item.stateKey);
+      const unchanged = before !== undefined && before.stateValue === item.stateValue;
       this.derivedStates.push({
-        id: randomUUID(),
+        id: unchanged ? before.id : randomUUID(),
         tenantId,
         siteId,
         stateKey: item.stateKey,
@@ -2538,8 +2676,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
         severity: item.severity,
         confidence: item.confidence,
         reason: item.reason,
-        createdAtUtc: nowIso(),
-        updatedAtUtc: nowIso()
+        createdAtUtc: unchanged ? before.createdAtUtc : at,
+        updatedAtUtc: at
       });
     }
   }
@@ -2550,9 +2688,13 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   // does not fail the caller: telemetry ingestion must never break because an alert row could not
   // be stored, and the next pass sees the in-memory truth.
   private async reconcileSiteAlerts(tenantId: string, siteId: string, nowMs: number): Promise<void> {
-    const conditions = alertConditionsFromStates(this.derivedStates.filter((state) => state.tenantId === tenantId && state.siteId === siteId));
+    const siteStates = this.derivedStates
+      .filter((state) => state.tenantId === tenantId && state.siteId === siteId)
+      .map((state) => ({ stateKey: state.stateKey, stateValue: state.stateValue, severity: state.severity, sinceUtc: state.createdAtUtc }));
+    const conditions = alertConditionsFromStates(siteStates, nowMs);
     const existing = this.alerts.filter((alert) => alert.tenantId === tenantId && alert.siteId === siteId);
-    const changes = reconcileAlerts(conditions, existing, nowMs);
+    // Only close an alert because its condition cleared if that condition can actually be seen.
+    const changes = reconcileAlerts(conditions, existing, nowMs, undefined, evaluableCategories(siteStates));
     if (changes.length === 0) return;
 
     const at = new Date(nowMs).toISOString();

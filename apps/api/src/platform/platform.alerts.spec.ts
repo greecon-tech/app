@@ -110,4 +110,59 @@ describe("alerts follow the facts", () => {
     expect(platform.listAlerts(DEMO_OWNER).map((alert) => `${alert.id}:${alert.status}`)).toEqual(before);
     expect(platform.listAlerts(client).every((alert) => alert.tenantId === client.tenantId)).toBe(true);
   });
+
+  it("waits for a pump's start-up before telling anyone it is running dry, then does", async () => {
+    const provisioned = await provisionSite(platform, client, [
+      { canonicalName: "water.flow.lpm", unit: "lpm" },
+      { canonicalName: "water.pump.status", unit: "state" }
+    ]);
+    const justStarted = [
+      { name: "water.flow.lpm" as const, value: 0 },
+      { name: "water.pump.status" as const, value: 1 }
+    ];
+    await sendReadings(platform, client, provisioned, justStarted);
+
+    // The pump is running with no flow, but it has only just started: the state is true, nobody is paged.
+    expect(platform.listDerivedStates(client, provisioned.site.id).find((state) => state.stateKey === "water.pump.dry_run_risk")?.stateValue).toBe(true);
+    expect(alertsFor(provisioned.site.id)).toEqual([]);
+
+    // Forty seconds later it is still running with no flow.
+    await platform.refreshAllDerivedStates(Date.now() + 40_000);
+    expect(alertsFor(provisioned.site.id)[0]).toMatchObject({ category: "pump_dry_run_risk", severity: "critical", status: "open" });
+
+    // And it clears when flow returns.
+    await sendReadings(platform, client, provisioned, [
+      { name: "water.flow.lpm", value: 14 },
+      { name: "water.pump.status", value: 1 }
+    ]);
+    expect(alertsFor(provisioned.site.id)[0]?.status).toBe("resolved");
+  });
+
+  it("tracks how long a state has held, restarting the clock when its value changes", async () => {
+    const provisioned = await tankSite();
+    await sendReadings(platform, client, provisioned, [{ name: "water.tank.level.percent", value: 5 }]);
+    const first = platform.listDerivedStates(client, provisioned.site.id).find((state) => state.stateKey === "water.tank.critical");
+
+    await platform.refreshAllDerivedStates(Date.now() + 60_000);
+    const later = platform.listDerivedStates(client, provisioned.site.id).find((state) => state.stateKey === "water.tank.critical");
+    expect(later?.createdAtUtc).toBe(first?.createdAtUtc);
+    expect(later?.updatedAtUtc).not.toBe(first?.updatedAtUtc);
+  });
+
+  it("keeps a critical alert open when the readings go quiet: no news is not good news", async () => {
+    const provisioned = await tankSite();
+    await sendReadings(platform, client, provisioned, [{ name: "water.tank.level.percent", value: 5 }]);
+    expect(alertsFor(provisioned.site.id).filter((alert) => alert.status === "open").map((alert) => alert.category)).toEqual(["water_tank_critical"]);
+
+    // The gateway goes quiet. The level is no longer known, so the tank alert must NOT quietly resolve.
+    await platform.refreshAllDerivedStates(Date.now() + minutes(30));
+    const byCategory = (category: string) => alertsFor(provisioned.site.id).find((alert) => alert.category === category);
+    expect(byCategory("water_tank_critical")?.status).toBe("open");
+    expect(byCategory("communication_degraded")?.status).toBe("open");
+
+    // A fresh reading showing recovery is what clears it.
+    await sendReadings(platform, client, provisioned, [{ name: "water.tank.level.percent", value: 80 }]);
+    expect(byCategory("water_tank_critical")?.status).toBe("resolved");
+    expect(byCategory("communication_degraded")?.status).toBe("resolved");
+  });
 });

@@ -11,10 +11,11 @@ import {
   UserRole,
   hasPermission
 } from "@greecon/shared";
-import { assessReadingAge, defaultMaxAgeSeconds, describeAge } from "./freshness";
+import { assessReadingAge, defaultMaxAgeSeconds, describeAge, ReadingAge } from "./freshness";
 
 export * from "./alerts";
 export * from "./freshness";
+export * from "./health";
 
 export interface SensorSnapshotValue {
   value: number | boolean | string;
@@ -44,6 +45,12 @@ function maxAgeSecondsFor(name: CanonicalPointName, sensor: SensorSnapshotValue)
   return defaultMaxAgeSeconds(name);
 }
 
+/** How old a sensor's reading is, judged against its own limit (see freshness.ts). The one place
+ * that decides "is this reading still current?", so a page and the safety rules cannot disagree. */
+export function assessSensorAge(name: CanonicalPointName, sensor: SensorSnapshotValue, nowMs: number): ReadingAge {
+  return assessReadingAge(sensor.timestampUtc, nowMs, maxAgeSecondsFor(name, sensor));
+}
+
 export type SensorSnapshot = Partial<Record<CanonicalPointName, SensorSnapshotValue>>;
 export type StateSnapshot = Partial<Record<StateKey, DerivedState>>;
 
@@ -68,9 +75,13 @@ export interface SafetyContext {
 export interface SafetyEvaluation {
   allowed: boolean;
   result: "passed" | "blocked";
+  /** Why a command was refused. Empty when it was allowed. */
   reasons: string[];
   hardSafetyBlock: boolean;
   requiredAudit: boolean;
+  /** Plain statements about how the command was judged, shown with the audit record (for example
+   * that process checks do not apply to a stop). Never a reason to refuse. */
+  notes?: string[];
 }
 
 export const defaultSafetyLimits: SafetyLimits = {
@@ -115,11 +126,32 @@ function isProcessInterlockInput(pointName: CanonicalPointName): boolean {
   return pointName === "water.pressure.bar" || pointName === "water.flow.lpm";
 }
 
+const OFF_WORDS = new Set(["OFF", "STOP", "CLOSE", "CLOSED", "FALSE", "0"]);
+
+/** An explicit "turn it off / close it". Anything not clearly that is treated as the hazardous
+ * direction, so an unfamiliar value can only make the checks stricter, never looser. */
+function isOffValue(value: number | boolean | string): boolean {
+  if (value === false || value === 0) return true;
+  return typeof value === "string" && OFF_WORDS.has(value.trim().toUpperCase());
+}
+
+const ACTUATOR_COMMANDS: ReadonlySet<CanonicalPointName> = new Set(["water.pump.command", "agri.irrigation.command"]);
+
+/** Stop, close and disable move a machine toward its safe state. Process interlocks (over-pressure,
+ * dry-run, bad or old data, rest time) exist to stop a dangerous START; applied to a stop they would
+ * block the very action that resolves the condition, so they never apply to one. Who is asking and
+ * why is still always checked. (docs/23-safety-and-security-case.md) */
+export function isSafeDirectionCommand(command: CommandMessage): boolean {
+  return ACTUATOR_COMMANDS.has(command.target.canonicalName) && isOffValue(command.requestedValue);
+}
+
 export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation {
   const reasons: string[] = [];
+  const notes: string[] = [];
   let hardSafetyBlock = false;
   const { command, sensors, states, limits } = context;
 
+  // Who is asking, and why: checked for every command, in either direction.
   if (!hasPermission(command.requestedByRole, "command:create")) {
     reasons.push(`Role ${command.requestedByRole} cannot issue equipment commands.`);
   }
@@ -128,6 +160,14 @@ export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation 
     reasons.push("A clear operating reason is required.");
   }
 
+  if (isSafeDirectionCommand(command)) {
+    notes.push("A stop or close command is never blocked by process interlocks; only who is asking, and why, is checked.");
+    const allowed = reasons.length === 0;
+    return { allowed, result: allowed ? "passed" : "blocked", reasons, hardSafetyBlock: false, requiredAudit: true, notes };
+  }
+
+  // From here on the command moves toward a hazardous state (a start or open), so the process
+  // interlocks apply.
   if (context.systemMode === "emergency_stop") {
     reasons.push("Emergency stop is active.");
     hardSafetyBlock = true;
@@ -160,7 +200,7 @@ export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation 
 
     // A reading can be quality OK and still be days old if the gateway stopped reporting. The last
     // known value is not the current value, so it cannot be used to decide that an action is safe.
-    const age = assessReadingAge(point.timestampUtc, nowMs, maxAgeSecondsFor(pointName, point));
+    const age = assessSensorAge(pointName, point, nowMs);
     if (age.freshness === "unknown") {
       reasons.push(`Required sensor ${pointName} has no usable timestamp, so its reading cannot be trusted.`);
       hardSafetyBlock = hardSafetyBlock || isProcessInterlockInput(pointName);
@@ -178,19 +218,16 @@ export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation 
     hardSafetyBlock = true;
   }
 
+  // Dry-run is a condition of a pump that is RUNNING with no flow. Flow is zero before every start,
+  // so it is deliberately not a condition for starting. A start is refused only when the pump is
+  // already known to be running dry (stop it first).
   const dryRunState = states["water.pump.dry_run_risk"];
   if (dryRunState?.stateValue === true) {
-    reasons.push("Dry-run risk state is active.");
+    reasons.push("Dry-run risk is active: the pump is running without flow. Stop it before starting it again.");
     hardSafetyBlock = true;
   }
 
   if (command.target.canonicalName === "water.pump.command" && isOnValue(command.requestedValue)) {
-    const flow = numericSensor(sensors["water.flow.lpm"]);
-    if (flow !== undefined && flow <= limits.dryRunFlowLpm) {
-      reasons.push(`Pump command blocked because flow is ${flow.toFixed(2)} lpm.`);
-      hardSafetyBlock = true;
-    }
-
     if (context.lastPumpStoppedAtUtc) {
       const minutesSinceStop = minutesBetween(context.lastPumpStoppedAtUtc, command.issuedAtUtc);
       if (minutesSinceStop < limits.minPumpRestMinutes) {
@@ -211,7 +248,8 @@ export function evaluateCommandSafety(context: SafetyContext): SafetyEvaluation 
     result: allowed ? "passed" : "blocked",
     reasons,
     hardSafetyBlock,
-    requiredAudit: true
+    requiredAudit: true,
+    notes: notes.length > 0 ? notes : undefined
   };
 }
 
@@ -244,7 +282,7 @@ export function deriveOperationalStates(sensors: SensorSnapshot, options: Derive
     current = {};
     for (const [name, value] of Object.entries(sensors) as Array<[CanonicalPointName, SensorSnapshotValue | undefined]>) {
       if (!value) continue;
-      const age = assessReadingAge(value.timestampUtc, options.nowMs, maxAgeSecondsFor(name, value));
+      const age = assessSensorAge(name, value, options.nowMs);
       if (age.freshness === "fresh") current[name] = value;
       else stale.push({ name, ageSeconds: age.ageSeconds ?? Number.POSITIVE_INFINITY });
     }
@@ -280,25 +318,30 @@ export function deriveOperationalStates(sensors: SensorSnapshot, options: Derive
     });
   }
 
-  if (flow !== undefined) {
+  // Dry-run is a pump that is RUNNING with no flow; a stopped pump has none by definition. If we
+  // cannot tell whether it is running (no status point, or its reading is not current) we say
+  // nothing rather than guess either way. Flow-only detection cannot tell the two apart.
+  const pumpRunning = runningState(current["water.pump.status"]?.value);
+  if (flow !== undefined && pumpRunning !== undefined) {
     // The meter's own setting wins over the site's limit, which wins over the platform default.
     const dryRunAt = thresholdOf(current["water.flow.lpm"], "dry_run_lpm", limits.dryRunFlowLpm);
+    const dry = pumpRunning && flow <= dryRunAt;
     states.push({
       stateKey: "water.pump.dry_run_risk",
-      stateValue: flow <= dryRunAt,
-      severity: flow <= dryRunAt ? "critical" : "info",
+      stateValue: dry,
+      severity: dry ? "critical" : "info",
       confidence: 0.9,
-      reason: `Flow is ${flow.toFixed(2)} lpm.`
+      reason: pumpRunning ? `The pump is running and flow is ${flow.toFixed(2)} lpm.` : "The pump is stopped, so no flow is expected."
     });
   }
 
-  if (pressure !== undefined) {
+  if (Object.keys(current).length > 0) {
     states.push({
       stateKey: "system.sensor_quality_bad",
       stateValue: hasBadQuality(current),
       severity: hasBadQuality(current) ? "warning" : "info",
       confidence: 1,
-      reason: hasBadQuality(current) ? "One or more required sensors reports BAD quality." : "Required sensor quality is acceptable."
+      reason: hasBadQuality(current) ? "One or more sensors report BAD quality." : "Sensor quality is acceptable."
     });
   }
 
@@ -441,6 +484,18 @@ function numericSensor(sensor: SensorSnapshotValue | undefined): number | undefi
 
 function hasBadQuality(sensors: SensorSnapshot): boolean {
   return Object.values(sensors).some((sensor) => sensor?.quality === "BAD");
+}
+
+/** Whether a pump status reading says running (true), stopped (false), or neither (undefined). */
+function runningState(value: number | boolean | string | undefined): boolean | undefined {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return false;
+  if (typeof value !== "string") return undefined;
+
+  const word = value.trim().toUpperCase();
+  if (["ON", "RUN", "RUNNING", "STARTED"].includes(word)) return true;
+  if (["OFF", "STOP", "STOPPED"].includes(word)) return false;
+  return undefined;
 }
 
 function isOnValue(value: number | boolean | string): boolean {

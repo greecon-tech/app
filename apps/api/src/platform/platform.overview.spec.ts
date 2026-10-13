@@ -108,7 +108,10 @@ describe("overview tenant isolation", () => {
     const demoBefore = platform.overview(DEMO_OWNER).summaries.energy.surplusState;
     await provisionReading(platform, CLIENT_OWNER, "energy.solar.power.kw", "kW", 0.2);
 
-    expect(platform.overview(CLIENT_OWNER).summaries.energy.surplusState).toBe("Constrained");
+    // Surplus is solar minus consumption, so solar alone cannot judge it: the client says nothing
+    // (it used to say "Constrained", a claim with no basis) and, above all, does not inherit the
+    // demo tenant's answer.
+    expect(platform.overview(CLIENT_OWNER).summaries.energy.surplusState).toBeUndefined();
     expect(platform.overview(DEMO_OWNER).summaries.energy.surplusState).toBe(demoBefore);
   });
 

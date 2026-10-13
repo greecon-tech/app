@@ -80,12 +80,32 @@ describe("site health follows the data, not the calendar", () => {
     expect(stateOf(provisioned.site.id, "water.tank.critical")?.stateValue).toBe(true);
   });
 
-  it("judges dry-run against the site's own safety limit", async () => {
-    const provisioned = await provisionSite(platform, client, [{ canonicalName: "water.flow.lpm", unit: "lpm" }]);
+  it("judges dry-run against the site's own safety limit, for a pump that is running", async () => {
+    const provisioned = await provisionSite(platform, client, [
+      { canonicalName: "water.flow.lpm", unit: "lpm" },
+      { canonicalName: "water.pump.status", unit: "state" }
+    ]);
     await platform.updateSite(provisioned.site.id, { safetyLimits: { dryRunFlowLpm: 5 } }, client);
-    await sendReadings(platform, client, provisioned, [{ name: "water.flow.lpm", value: 3 }]);
+    await sendReadings(platform, client, provisioned, [
+      { name: "water.flow.lpm", value: 3 },
+      { name: "water.pump.status", value: 1 }
+    ]);
 
     expect(stateOf(provisioned.site.id, "water.pump.dry_run_risk")?.stateValue).toBe(true);
+  });
+
+  it("does not call an idle pump dry, however little water is flowing", async () => {
+    const provisioned = await provisionSite(platform, client, [
+      { canonicalName: "water.flow.lpm", unit: "lpm" },
+      { canonicalName: "water.pump.status", unit: "state" }
+    ]);
+    await sendReadings(platform, client, provisioned, [
+      { name: "water.flow.lpm", value: 0 },
+      { name: "water.pump.status", value: 0 }
+    ]);
+
+    expect(stateOf(provisioned.site.id, "water.pump.dry_run_risk")?.stateValue).toBe(false);
+    expect(platform.listAlerts(client, provisioned.site.id)).toEqual([]);
   });
 });
 
@@ -126,6 +146,35 @@ describe("pump commands refuse to rely on a reading that is no longer current", 
   it("dispatches the start when pressure and flow are current", async () => {
     const command = await startPump(await pumpSite(1, 1));
     expect(command.dispatchStatus).toBe("simulated_dispatch");
+  });
+
+  it("dispatches a start even though flow reads zero, as it does before every start", async () => {
+    const provisioned = await provisionSite(platform, client, [
+      { canonicalName: "water.flow.lpm", unit: "lpm" },
+      { canonicalName: "water.pressure.bar", unit: "bar" },
+      { canonicalName: "water.pump.command", unit: "state", capability: "write" }
+    ]);
+    await sendReadings(platform, client, provisioned, [
+      { name: "water.flow.lpm", value: 0 },
+      { name: "water.pressure.bar", value: 2.4 }
+    ]);
+    expect((await startPump(provisioned)).dispatchStatus).toBe("simulated_dispatch");
+  });
+
+  it("still dispatches a STOP when the readings are old, because stopping must always be possible", async () => {
+    const provisioned = await pumpSite(60, 60);
+    const command = await platform.createCommand(
+      {
+        siteId: provisioned.site.id,
+        targetDeviceId: provisioned.device.id,
+        targetPointId: provisioned.pointIds["water.pump.command"] as string,
+        requestedValue: "OFF",
+        reason: "Stop the pump: leak reported"
+      },
+      client
+    );
+    expect(command.dispatchStatus).toBe("simulated_dispatch");
+    expect(command.safetyEvaluation.notes?.join(" ")).toContain("never blocked by process interlocks");
   });
 
   it("blocks the start, and says why, when the pressure reading is ten minutes old", async () => {

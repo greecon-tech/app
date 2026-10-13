@@ -42,10 +42,30 @@ export interface ConditionState {
   stateKey: StateKey;
   stateValue: boolean | number | string;
   severity: SeverityLevel;
+  /** When this value began (not when it was last re-checked). Lets a condition be required to
+   * persist before it alerts. */
+  sinceUtc?: string;
 }
 
-export function alertConditionsFromStates(states: ReadonlyArray<ConditionState>): AlertCondition[] {
-  const active = (key: StateKey) => states.find((state) => state.stateKey === key && state.stateValue === true);
+// Some conditions are normal for a few seconds. A pump that has just started has little flow until
+// it prime and pressurises, so "running with no flow" must hold this long before anyone is told
+// (an on-delay, in ISA-18.2 terms). Conditions not listed alert immediately.
+const ON_DELAY_SECONDS: Partial<Record<StateKey, number>> = {
+  "water.pump.dry_run_risk": 30
+};
+
+export function alertConditionsFromStates(states: ReadonlyArray<ConditionState>, nowMs?: number): AlertCondition[] {
+  const active = (key: StateKey) => {
+    const found = states.find((state) => state.stateKey === key && state.stateValue === true);
+    if (!found) return undefined;
+
+    const delay = ON_DELAY_SECONDS[key];
+    if (delay !== undefined && nowMs !== undefined && found.sinceUtc) {
+      const sinceMs = Date.parse(found.sinceUtc);
+      if (Number.isFinite(sinceMs) && nowMs - sinceMs < delay * 1000) return undefined;
+    }
+    return found;
+  };
   const conditions: AlertCondition[] = [];
 
   // A tank is one thing with one level: critical includes low, so only the worse alert is raised.
@@ -108,6 +128,28 @@ export function alertConditionsFromStates(states: ReadonlyArray<ConditionState>)
   return conditions;
 }
 
+// The states that decide each category. A category can only be judged while at least one of its
+// states is being derived: if the reading behind it has gone out of date the state is absent, and
+// "absent" means "we cannot tell", not "all clear".
+const CATEGORY_STATES: Partial<Record<AlertCategory, ReadonlyArray<StateKey>>> = {
+  water_tank_critical: ["water.tank.critical", "water.tank.low"],
+  water_tank_low: ["water.tank.critical", "water.tank.low"],
+  pump_dry_run_risk: ["water.pump.dry_run_risk"],
+  battery_constrained: ["energy.battery.constrained"],
+  communication_degraded: ["system.communication_degraded"],
+  sensor_quality_degradation: ["system.sensor_quality_bad"]
+};
+
+/** The managed categories that can be judged right now (true OR false) from these states. */
+export function evaluableCategories(states: ReadonlyArray<ConditionState>): Set<AlertCategory> {
+  const present = new Set(states.map((state) => state.stateKey));
+  const evaluable = new Set<AlertCategory>();
+  for (const category of MANAGED_ALERT_CATEGORIES) {
+    if (CATEGORY_STATES[category]?.some((key) => present.has(key))) evaluable.add(category);
+  }
+  return evaluable;
+}
+
 export interface ReconcilableAlert {
   id: string;
   category: AlertCategory;
@@ -126,12 +168,18 @@ export type AlertChange =
 
 const severityRank: Record<SeverityLevel, number> = { info: 0, watch: 1, warning: 2, critical: 3 };
 
-/** What to change so the alerts for ONE site match what is true now. `existing` is that site's alerts. */
+/** What to change so the alerts for ONE site match what is true now. `existing` is that site's alerts.
+ *
+ * `evaluable` is the set of categories that can be judged right now (see evaluableCategories). An
+ * alert is only closed because its condition cleared if that condition can actually be seen: when a
+ * reading goes out of date its state disappears, which must leave the alert standing, not resolve
+ * it. Omit it to treat every category as judgeable. */
 export function reconcileAlerts(
   desired: ReadonlyArray<AlertCondition>,
   existing: ReadonlyArray<ReconcilableAlert>,
   nowMs: number,
-  flapWindowSeconds: number = FLAP_WINDOW_SECONDS
+  flapWindowSeconds: number = FLAP_WINDOW_SECONDS,
+  evaluable?: ReadonlySet<AlertCategory>
 ): AlertChange[] {
   const changes: AlertChange[] = [];
   const managed = existing.filter((alert) => MANAGED_ALERT_CATEGORIES.has(alert.category));
@@ -162,7 +210,9 @@ export function reconcileAlerts(
   }
 
   for (const alert of managed) {
-    if (alert.status !== "resolved" && !wanted.has(alert.category)) changes.push({ type: "resolve", alertId: alert.id });
+    if (alert.status === "resolved" || wanted.has(alert.category)) continue;
+    if (evaluable && !evaluable.has(alert.category)) continue; // cannot tell: leave it standing
+    changes.push({ type: "resolve", alertId: alert.id });
   }
 
   return changes;

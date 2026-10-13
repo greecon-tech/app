@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { alertConditionsFromStates, reconcileAlerts, type AlertCondition, type ReconcilableAlert } from "./alerts";
+import { alertConditionsFromStates, evaluableCategories, reconcileAlerts, type AlertCondition, type ReconcilableAlert } from "./alerts";
 
 const NOW = Date.parse("2026-10-13T12:00:00.000Z");
 const minutesAgo = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 
-const state = (stateKey: string, stateValue: boolean, severity: "info" | "watch" | "warning" | "critical" = "warning") => ({
+const state = (stateKey: string, stateValue: boolean, severity: "info" | "watch" | "warning" | "critical" = "warning", sinceUtc?: string) => ({
   stateKey: stateKey as never,
   stateValue,
   severity,
-  reason: ""
+  reason: "",
+  sinceUtc
 });
 
 describe("alertConditionsFromStates", () => {
@@ -59,6 +60,28 @@ describe("alertConditionsFromStates", () => {
       expect(condition.suggestedAction.length).toBeGreaterThan(20);
       expect(`${condition.title} ${condition.suggestedAction}`).not.toMatch(/!|\bGAIA\b/);
     }
+  });
+});
+
+describe("alert on-delay", () => {
+  const dryRun = (secondsAgo: number) => state("water.pump.dry_run_risk", true, "critical", new Date(NOW - secondsAgo * 1000).toISOString());
+
+  it("waits out a pump's start-up, when flow is briefly low, before alerting", () => {
+    expect(alertConditionsFromStates([dryRun(10)], NOW)).toEqual([]);
+    expect(alertConditionsFromStates([dryRun(29)], NOW)).toEqual([]);
+  });
+
+  it("alerts once the condition has persisted past the delay", () => {
+    expect(alertConditionsFromStates([dryRun(31)], NOW).map((condition) => condition.category)).toEqual(["pump_dry_run_risk"]);
+  });
+
+  it("does not delay a condition that has no start-up transient, such as a critical tank", () => {
+    const fresh = state("water.tank.critical", true, "critical", new Date(NOW - 1000).toISOString());
+    expect(alertConditionsFromStates([fresh], NOW)).toHaveLength(1);
+  });
+
+  it("applies no delay when it is not told how long the condition has held", () => {
+    expect(alertConditionsFromStates([state("water.pump.dry_run_risk", true, "critical")], NOW)).toHaveLength(1);
   });
 });
 
@@ -125,5 +148,50 @@ describe("reconcileAlerts", () => {
   it("closes duplicates, keeping one, so a condition can never show twice", () => {
     const changes = reconcileAlerts([tankCritical], [alert({ id: "a" }), alert({ id: "b" })], NOW);
     expect(changes).toEqual([{ type: "resolve", alertId: "b" }]);
+  });
+});
+
+describe("losing sight of a condition is not the same as it clearing", () => {
+  const states = (keys: Array<[string, boolean]>) => keys.map(([key, value]) => state(key, value, "info"));
+
+  it("treats a category as evaluable only while a state for it is actually being derived", () => {
+    const evaluable = evaluableCategories(states([["water.tank.critical", false], ["water.tank.low", false]]));
+    expect(evaluable.has("water_tank_critical")).toBe(true);
+    expect(evaluable.has("water_tank_low")).toBe(true);
+    expect(evaluable.has("battery_constrained")).toBe(false);
+    expect(evaluable.has("pump_dry_run_risk")).toBe(false);
+  });
+
+  it("maps every managed category to the states that decide it", () => {
+    const all = evaluableCategories(
+      states([
+        ["water.tank.critical", false],
+        ["water.tank.low", false],
+        ["water.pump.dry_run_risk", false],
+        ["energy.battery.constrained", false],
+        ["system.communication_degraded", false],
+        ["system.sensor_quality_bad", false]
+      ])
+    );
+    expect([...all].sort()).toEqual(
+      ["battery_constrained", "communication_degraded", "pump_dry_run_risk", "sensor_quality_degradation", "water_tank_critical", "water_tank_low"].sort()
+    );
+  });
+
+  const critical: ReconcilableAlert = { id: "alert-1", category: "water_tank_critical", severity: "critical", status: "open" };
+
+  it("keeps an alert open when its condition can no longer be evaluated", () => {
+    // The tank reading went out of date: 'tank critical' is no longer derived. Nobody knows the tank recovered.
+    expect(reconcileAlerts([], [critical], NOW, undefined, new Set(["communication_degraded"]))).toEqual([]);
+  });
+
+  it("resolves it once the condition is evaluable again and genuinely clear", () => {
+    expect(reconcileAlerts([], [critical], NOW, undefined, new Set(["water_tank_critical", "water_tank_low"]))).toEqual([
+      { type: "resolve", alertId: "alert-1" }
+    ]);
+  });
+
+  it("still clears alerts when no evaluable set is given, as before", () => {
+    expect(reconcileAlerts([], [critical], NOW)).toEqual([{ type: "resolve", alertId: "alert-1" }]);
   });
 });

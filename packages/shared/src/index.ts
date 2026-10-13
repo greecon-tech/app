@@ -39,7 +39,8 @@ export const statusLabels = [
   "Critical",
   "Offline",
   "Simulated",
-  "Manual Override"
+  "Manual Override",
+  "Unknown"
 ] as const;
 export type StatusLabel = (typeof statusLabels)[number];
 

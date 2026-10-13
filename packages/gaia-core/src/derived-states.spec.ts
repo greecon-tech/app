@@ -85,7 +85,10 @@ describe("derived states and data freshness", () => {
   });
 
   it("judges dry-run against the site's own limit, not only the platform default", () => {
-    const sensors: SensorSnapshot = { "water.flow.lpm": reading(1.5, "lpm", 1) };
+    const sensors: SensorSnapshot = {
+      "water.pump.status": { value: "ON", unit: "state", quality: "OK", timestampUtc: at(1) },
+      "water.flow.lpm": reading(1.5, "lpm", 1)
+    };
     const withDefault = deriveOperationalStates(sensors, { nowMs: NOW });
     expect(withDefault.find((state) => state.stateKey === "water.pump.dry_run_risk")?.stateValue).toBe(false);
 
@@ -137,7 +140,10 @@ describe("derived states use the thresholds configured on the point", () => {
 
   it("lets the flow meter's own dry-run level take precedence over the site's limit", () => {
     const states = deriveOperationalStates(
-      { "water.flow.lpm": withThresholds(1, "lpm", { dry_run_lpm: 3 }) },
+      {
+        "water.pump.status": { value: "ON", unit: "state", quality: "OK", timestampUtc: at(1) },
+        "water.flow.lpm": withThresholds(1, "lpm", { dry_run_lpm: 3 })
+      },
       { nowMs: NOW, limits: { dryRunFlowLpm: 0.2 } }
     );
     expect(stateOf(states, "water.pump.dry_run_risk")?.stateValue).toBe(true);
@@ -158,5 +164,45 @@ describe("derived states use the thresholds configured on the point", () => {
       { nowMs: NOW }
     );
     expect(stateOf(states, "system.communication_degraded")?.stateValue).toBe(false);
+  });
+});
+
+describe("dry-run risk means a pump that is running with no flow", () => {
+  const pump = (value: string | boolean | number, minutesAgo = 1) => ({
+    value: value as never,
+    unit: "state",
+    quality: "OK" as const,
+    timestampUtc: at(minutesAgo)
+  });
+  const dryRun = (states: ReturnType<typeof deriveOperationalStates>) => states.find((state) => state.stateKey === "water.pump.dry_run_risk");
+
+  it("is raised when the pump is running and flow is below the limit", () => {
+    for (const running of ["ON", "RUNNING", "run", true, 1]) {
+      const states = deriveOperationalStates({ "water.pump.status": pump(running), "water.flow.lpm": reading(0, "lpm", 1) }, { nowMs: NOW });
+      expect(dryRun(states)?.stateValue).toBe(true);
+      expect(dryRun(states)?.severity).toBe("critical");
+    }
+  });
+
+  it("is NOT raised for a stopped pump, whose flow is zero by definition", () => {
+    for (const stopped of ["OFF", "STOPPED", false, 0]) {
+      const states = deriveOperationalStates({ "water.pump.status": pump(stopped), "water.flow.lpm": reading(0, "lpm", 1) }, { nowMs: NOW });
+      expect(dryRun(states)?.stateValue).toBe(false);
+    }
+  });
+
+  it("is NOT raised for a running pump that is moving water", () => {
+    const states = deriveOperationalStates({ "water.pump.status": pump("ON"), "water.flow.lpm": reading(12, "lpm", 1) }, { nowMs: NOW });
+    expect(dryRun(states)?.stateValue).toBe(false);
+  });
+
+  it("says nothing when it cannot tell whether the pump is running: unknown is not 'fine', and not 'dry'", () => {
+    expect(dryRun(deriveOperationalStates({ "water.flow.lpm": reading(0, "lpm", 1) }, { nowMs: NOW }))).toBeUndefined();
+    expect(dryRun(deriveOperationalStates({ "water.pump.status": pump("???"), "water.flow.lpm": reading(0, "lpm", 1) }, { nowMs: NOW }))).toBeUndefined();
+  });
+
+  it("does not act on a pump status or a flow reading that is out of date", () => {
+    expect(dryRun(deriveOperationalStates({ "water.pump.status": pump("ON", 60), "water.flow.lpm": reading(0, "lpm", 1) }, { nowMs: NOW }))).toBeUndefined();
+    expect(dryRun(deriveOperationalStates({ "water.pump.status": pump("ON"), "water.flow.lpm": reading(0, "lpm", 60) }, { nowMs: NOW }))).toBeUndefined();
   });
 });

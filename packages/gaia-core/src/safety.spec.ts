@@ -76,7 +76,9 @@ describe("GAIA safety primitives", () => {
     expect(result.hardSafetyBlock).toBe(true);
   });
 
-  it("blocks dry-run risk when pump is requested on and flow is zero", () => {
+  it("does not refuse a pump start because flow is zero: a stopped pump has no flow", () => {
+    // Flow is zero before every start. Gating a start on discharge flow would make it impossible to
+    // ever start a pump remotely; dry-run is a condition of a pump that is RUNNING (see derived states).
     const result = evaluateCommandSafety(
       context({
         sensors: {
@@ -85,8 +87,31 @@ describe("GAIA safety primitives", () => {
         }
       })
     );
+    expect(result.allowed).toBe(true);
+  });
+
+  it("refuses to start a pump that is already running without flow", () => {
+    const result = evaluateCommandSafety(
+      context({
+        states: {
+          "water.pump.dry_run_risk": {
+            id: "state-1",
+            tenantId: DEMO_TENANT_ID,
+            siteId: "site-1",
+            stateKey: "water.pump.dry_run_risk",
+            stateValue: true,
+            severity: "critical",
+            confidence: 0.9,
+            reason: "The pump is running and flow is 0.00 lpm.",
+            createdAtUtc: "2026-04-29T09:59:00.000Z",
+            updatedAtUtc: "2026-04-29T09:59:00.000Z"
+          }
+        }
+      })
+    );
     expect(result.allowed).toBe(false);
-    expect(result.reasons.join(" ")).toContain("flow is 0.00 lpm");
+    expect(result.hardSafetyBlock).toBe(true);
+    expect(result.reasons.join(" ")).toContain("Dry-run risk");
   });
 
   it("blocks overpressure", () => {
@@ -272,5 +297,101 @@ describe("GAIA safety: data freshness", () => {
     );
     expect(result.allowed).toBe(false);
     expect(result.reasons.join(" ")).toContain("water.flow.lpm has no usable timestamp");
+  });
+});
+
+describe("GAIA safety: stopping is always possible", () => {
+  const stop: CommandMessage = { ...command, requestedValue: "OFF", reason: "Stop the pump now" };
+  const at = (minutesBeforeCommand: number) => new Date(Date.parse("2026-04-29T10:00:00.000Z") - minutesBeforeCommand * 60_000).toISOString();
+  const dryRunState = {
+    "water.pump.dry_run_risk": {
+      id: "state-1",
+      tenantId: DEMO_TENANT_ID,
+      siteId: "site-1",
+      stateKey: "water.pump.dry_run_risk" as const,
+      stateValue: true,
+      severity: "critical" as const,
+      confidence: 0.9,
+      reason: "The pump is running and flow is 0.00 lpm.",
+      createdAtUtc: at(2),
+      updatedAtUtc: at(1)
+    }
+  };
+
+  it("lets a stop through when the same condition would refuse a start: over-pressure", () => {
+    const sensors: SensorSnapshot = {
+      ...healthySensors,
+      "water.pressure.bar": { value: 6.1, unit: "bar", quality: "OK", timestampUtc: at(1) }
+    };
+    expect(evaluateCommandSafety(context({ sensors })).allowed).toBe(false);
+
+    const result = evaluateCommandSafety(context({ command: stop, sensors }));
+    expect(result.allowed).toBe(true);
+    expect(result.hardSafetyBlock).toBe(false);
+  });
+
+  it("lets a stop through while the pump is running dry, which is exactly when it is needed", () => {
+    expect(evaluateCommandSafety(context({ states: dryRunState })).allowed).toBe(false);
+    expect(evaluateCommandSafety(context({ command: stop, states: dryRunState })).allowed).toBe(true);
+  });
+
+  it("lets a stop through when a required sensor is bad, missing or out of date", () => {
+    const bad: SensorSnapshot = { "water.pressure.bar": { value: 2, unit: "bar", quality: "BAD", timestampUtc: at(1) } };
+    const stale: SensorSnapshot = {
+      "water.flow.lpm": { value: 12, unit: "lpm", quality: "OK", timestampUtc: at(60) },
+      "water.pressure.bar": { value: 2, unit: "bar", quality: "OK", timestampUtc: at(60) }
+    };
+    for (const sensors of [bad, stale, {} as SensorSnapshot]) {
+      expect(evaluateCommandSafety(context({ command: stop, sensors })).allowed).toBe(true);
+    }
+  });
+
+  it("lets a stop through straight after a stop, inside the rest period that delays a restart", () => {
+    const result = evaluateCommandSafety(context({ command: stop, lastPumpStoppedAtUtc: at(1) }));
+    expect(result.allowed).toBe(true);
+  });
+
+  it("lets a stop through while emergency stop is active (the pump is meant to be stopped)", () => {
+    expect(evaluateCommandSafety(context({ systemMode: "emergency_stop" })).allowed).toBe(false);
+    expect(evaluateCommandSafety(context({ command: stop, systemMode: "emergency_stop" })).allowed).toBe(true);
+  });
+
+  it("treats closing an irrigation valve the same way", () => {
+    const close: CommandMessage = {
+      ...command,
+      target: { deviceId: "valve-1", pointId: "point-irrigation", canonicalName: "agri.irrigation.command" },
+      requestedValue: "OFF",
+      reason: "Close the zone valve"
+    };
+    expect(evaluateCommandSafety(context({ command: close, sensors: {} })).allowed).toBe(true);
+  });
+
+  it("recognises the other ways of saying stop", () => {
+    for (const requestedValue of [false, 0, "off", "STOP", "close", "Closed"]) {
+      expect(evaluateCommandSafety(context({ command: { ...stop, requestedValue }, sensors: {} })).allowed).toBe(true);
+    }
+  });
+
+  it("still requires who and why: authority and a reason are never skipped", () => {
+    const viewerStop = evaluateCommandSafety(context({ command: { ...stop, requestedByRole: "viewer" } }));
+    expect(viewerStop.allowed).toBe(false);
+    expect(viewerStop.reasons.join(" ")).toContain("cannot issue equipment commands");
+
+    const noReason = evaluateCommandSafety(context({ command: { ...stop, reason: "" } }));
+    expect(noReason.allowed).toBe(false);
+    expect(noReason.reasons.join(" ")).toContain("operating reason");
+  });
+
+  it("explains why process checks were not applied, and always asks for an audit record", () => {
+    const result = evaluateCommandSafety(context({ command: stop }));
+    expect(result.notes?.join(" ")).toContain("never blocked by process interlocks");
+    expect(result.requiredAudit).toBe(true);
+  });
+
+  it("does not let a word that merely contains 'off' turn a start into a stop", () => {
+    const sensors: SensorSnapshot = { ...healthySensors, "water.pressure.bar": { value: 6.1, unit: "bar", quality: "OK", timestampUtc: at(1) } };
+    for (const requestedValue of ["ON", "START", "turn off valve later", 1, true]) {
+      expect(evaluateCommandSafety(context({ command: { ...stop, requestedValue }, sensors })).allowed).toBe(false);
+    }
   });
 });

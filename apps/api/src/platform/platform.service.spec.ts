@@ -204,8 +204,8 @@ describe("PlatformService", () => {
           siteId: SITE_ID,
           targetDeviceId: PUMP_DEVICE_ID,
           targetPointId: PUMP_POINT_ID,
-          requestedValue: "OFF",
-          reason: "Manual maintenance stop",
+          requestedValue: "ON",
+          reason: "Manual refill run",
           manualOverride: {
             durationMinutes: -5,
             reason: "Backdated override"
@@ -216,6 +216,25 @@ describe("PlatformService", () => {
 
       expect(record.dispatchStatus).toBe("blocked");
       expect(record.safetyEvaluation.reasons.join(" ")).toContain("expired");
+    });
+
+    it("still accepts a stop whose override window has expired: stopping needs no override", async () => {
+      const record = await platform.createCommand(
+        {
+          siteId: SITE_ID,
+          targetDeviceId: PUMP_DEVICE_ID,
+          targetPointId: PUMP_POINT_ID,
+          requestedValue: "OFF",
+          reason: "Manual maintenance stop",
+          manualOverride: {
+            durationMinutes: -5,
+            reason: "Backdated override"
+          }
+        },
+        OWNER
+      );
+
+      expect(record.dispatchStatus).toBe("simulated_dispatch");
     });
   });
 
@@ -474,14 +493,33 @@ describe("PlatformService", () => {
           siteId: SITE_ID,
           targetDeviceId: PUMP_DEVICE_ID,
           targetPointId: PUMP_POINT_ID,
-          requestedValue: "OFF",
-          reason: "Routine shutdown"
+          requestedValue: "ON",
+          reason: "Refill the tank"
         },
         OWNER
       );
 
       expect(record.dispatchStatus).toBe("blocked");
       expect(record.safetyEvaluation.reasons.join(" ")).toContain("exceeds limit");
+    });
+
+    it("does not let that same limit stand in the way of stopping the pump", async () => {
+      // The interlock exists to stop a pump being STARTED into over-pressure. Applied to a stop it
+      // would block the action that relieves the pressure.
+      await platform.updateSite(SITE_ID, { safetyLimits: { maxPressureBar: 1 } }, OWNER);
+
+      const record = await platform.createCommand(
+        {
+          siteId: SITE_ID,
+          targetDeviceId: PUMP_DEVICE_ID,
+          targetPointId: PUMP_POINT_ID,
+          requestedValue: "OFF",
+          reason: "Routine shutdown"
+        },
+        OWNER
+      );
+
+      expect(record.dispatchStatus).toBe("simulated_dispatch");
     });
 
     it("falls back to the global default for any field a site hasn't overridden", async () => {
