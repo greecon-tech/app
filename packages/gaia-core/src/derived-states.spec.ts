@@ -108,6 +108,18 @@ describe("derived states use the thresholds configured on the point", () => {
   });
   const stateOf = (states: ReturnType<typeof deriveOperationalStates>, key: string) => states.find((state) => state.stateKey === key);
 
+  it("does not call solar surplus available or constrained until the site says what a useful surplus is", () => {
+    const energy = (thresholds: Record<string, number>) => ({
+      "energy.solar.power.kw": withThresholds(6, "kW", thresholds),
+      "energy.consumption.kw": withThresholds(4, "kW", {})
+    });
+
+    // 2 kW spare is plenty for a small load and nothing for a pump that needs 4: only the site knows.
+    expect(deriveOperationalStates(energy({}), { nowMs: NOW }).map((state) => state.stateKey)).not.toContain("energy.surplus_available");
+    expect(stateOf(deriveOperationalStates(energy({ surplus_min_kw: 1.5 }), { nowMs: NOW }), "energy.surplus_available")?.stateValue).toBe(true);
+    expect(stateOf(deriveOperationalStates(energy({ surplus_min_kw: 4 }), { nowMs: NOW }), "energy.surplus_available")?.stateValue).toBe(false);
+  });
+
   it("does not say whether irrigation is needed until the field has its own limit", () => {
     const soil = (thresholds?: Record<string, number>) => ({ "agri.soil.moisture.percent": withThresholds(10, "%", thresholds ?? {}) });
 

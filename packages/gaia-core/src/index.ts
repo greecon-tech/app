@@ -345,14 +345,21 @@ export function deriveOperationalStates(sensors: SensorSnapshot, options: Derive
     });
   }
 
-  if (solarPower !== undefined && consumption !== undefined) {
+  // Surplus only means something relative to a load that could use it: a 4 kW pump needs 4 kW, not
+  // 1.5, and 1.5 kW is a third of one plant and a rounding error on another. So there is no
+  // built-in minimum: the site states the smallest surplus worth acting on (`surplus_min_kw`, set on
+  // the solar reading), and without it the platform does not claim a surplus either way
+  // (docs/19-domain-playbook.md).
+  const surplusMinKw = current["energy.solar.power.kw"]?.thresholds?.surplus_min_kw;
+  if (solarPower !== undefined && consumption !== undefined && typeof surplusMinKw === "number" && Number.isFinite(surplusMinKw)) {
     const surplus = solarPower - consumption;
+    const available = surplus >= surplusMinKw;
     states.push({
       stateKey: "energy.surplus_available",
-      stateValue: surplus > 1.5,
-      severity: surplus > 1.5 ? "watch" : "info",
+      stateValue: available,
+      severity: available ? "watch" : "info",
       confidence: 0.85,
-      reason: `Solar surplus estimate is ${surplus.toFixed(1)} kW.`
+      reason: `Solar production exceeds consumption by ${surplus.toFixed(1)} kW; this site's smallest useful surplus is ${surplusMinKw.toFixed(1)} kW.`
     });
   }
 

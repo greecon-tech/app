@@ -293,7 +293,7 @@ describe("status is computed from the facts", () => {
 
     it("calls surplus solar 'Available' or 'Constrained' only when it can actually tell", async () => {
       const provisioned = await provisionSite(platform, client, [
-        { canonicalName: "energy.solar.power.kw", unit: "kW" },
+        { canonicalName: "energy.solar.power.kw", unit: "kW", thresholds: { surplus_min_kw: 1.5 } },
         { canonicalName: "energy.consumption.kw", unit: "kW" }
       ]);
       const surplus = () => platform.overview(client).summaries.energy.surplusState;
@@ -316,6 +316,18 @@ describe("status is computed from the facts", () => {
       // Once the readings go quiet it cannot be judged again, rather than keeping its last answer.
       await platform.refreshAllDerivedStates(Date.now() + minutes(30));
       expect(surplus()).toBeUndefined();
+    });
+
+    it("makes no claim about surplus at a site that has not said what a useful surplus is", async () => {
+      const provisioned = await provisionSite(platform, client, [
+        { canonicalName: "energy.solar.power.kw", unit: "kW" },
+        { canonicalName: "energy.consumption.kw", unit: "kW" }
+      ]);
+      await sendReadings(platform, client, provisioned, [
+        { name: "energy.solar.power.kw", value: 8, unit: "kW" },
+        { name: "energy.consumption.kw", value: 2, unit: "kW" }
+      ]);
+      expect(platform.overview(client).summaries.energy.surplusState).toBeUndefined();
     });
 
     it("leaves out readings that were never sent, rather than showing a blank card", async () => {
