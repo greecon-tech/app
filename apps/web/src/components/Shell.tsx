@@ -4,7 +4,7 @@ import { GREECON_COMPANY, GREECON_DOMAIN, userRoles } from "@greecon/shared";
 import { DEMO_ROLE } from "../lib/api";
 import { logoutAction } from "../app/login/actions";
 import { getSession } from "../lib/session";
-import { Nav } from "./Nav";
+import { Nav, SectionTabs } from "./Nav";
 
 export async function Shell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
   // Set only by the multi-role GitHub Pages build (docs/12-deployment-github-pages.md), which
@@ -72,6 +72,7 @@ export async function Shell({ children, title, subtitle }: { children: ReactNode
             </div>
           )}
         </header>
+        <SectionTabs role={role} />
         <main>{children}</main>
       </div>
     </div>

@@ -1,5 +1,8 @@
 import { CanonicalPointName } from "@greecon/shared";
 
+// Worded the same everywhere an age is shown, so it lives in shared.
+export { describeAge } from "@greecon/shared";
+
 // A monitoring system that cannot tell "the value is 12" from "the value was 12 three days ago"
 // reassures people falsely. Every decision that depends on a reading therefore asks how old it is.
 // These helpers are pure (no clock of their own): the caller passes "now", so the same input always
@@ -39,13 +42,4 @@ export function assessReadingAge(timestampUtc: string | undefined, nowMs: number
   // (ingestion already refuses anything far in the future); it means "just now", not "negative age".
   const ageSeconds = Math.max(0, Math.round((nowMs - takenAtMs) / 1000));
   return { freshness: ageSeconds <= maxAgeSeconds ? "fresh" : "stale", ageSeconds, maxAgeSeconds };
-}
-
-/** "20 seconds", "2 minutes", "3 hours", "2 days": the largest whole unit, for messages people read. */
-export function describeAge(ageSeconds: number): string {
-  const plural = (value: number, unit: string) => `${value} ${unit}${value === 1 ? "" : "s"}`;
-  if (ageSeconds < 60) return plural(Math.round(ageSeconds), "second");
-  if (ageSeconds < 3600) return plural(Math.floor(ageSeconds / 60), "minute");
-  if (ageSeconds < 86400) return plural(Math.floor(ageSeconds / 3600), "hour");
-  return plural(Math.floor(ageSeconds / 86400), "day");
 }

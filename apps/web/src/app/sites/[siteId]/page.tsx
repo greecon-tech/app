@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { hasPermission } from "@greecon/shared";
+import { HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
+import { Ago } from "../../../components/Ago";
+import { HealthReasons } from "../../../components/HealthHeadline";
+import { LiveRefresh } from "../../../components/LiveRefresh";
 import { CreateAssetForm } from "../../../components/CreateAssetForm";
 import { CreateDeviceForm } from "../../../components/CreateDeviceForm";
 import { CreateGatewayForm } from "../../../components/CreateGatewayForm";
@@ -13,19 +16,23 @@ import { SensorMap } from "../../../components/SensorMap";
 import { Shell } from "../../../components/Shell";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
-import { apiGet, DEMO_ROLE } from "../../../lib/api";
+import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
 import { groupByCanonicalName } from "../../../lib/telemetry-history";
+import { titleCase } from "../../../lib/health";
+import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
 import { Metric } from "../../../lib/types";
 import { deleteAssetAction, deleteDeviceAction, deleteGatewayAction, deletePointAction } from "./actions";
 
 interface SiteDetail {
   site: { id: string; name: string; type: string; locationName: string; status: string; edgeStatus: string };
+  health: SiteHealth;
+  lastReadingAtUtc?: string;
   assets: Array<{ id: string; name: string; type: string; status: string }>;
   devices: Array<{ id: string; name: string; deviceType: string; protocol: string; health: string; lastSeenUtc?: string; positionX?: number; positionY?: number; placementNote?: string }>;
   points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: string; capability: string }>;
   gateways: Array<{ id: string; name: string; status: string; secureIdentityStatus: string }>;
-  latestTelemetry: Array<{ pointId: string; canonicalName: string; value: number | boolean | string; unit: string; quality: string }>;
+  latestTelemetry: Array<ReadingView & { pointId: string }>;
   rules: Array<{ id: string; name: string; priority: string; executionMode: string; approvalState: string }>;
   alerts: Array<{ id: string; severity: string; title: string; status: string }>;
 }
@@ -85,13 +92,20 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
     }));
 
   return (
-    <Shell title={site.name} subtitle={`${site.type} · ${site.locationName}`}>
-      <div className="tabs">
-        {["Summary", "Equipment", "Automation", "Alerts"].map((tab) => (
-          <span key={tab}>{tab}</span>
-        ))}
-      </div>
-      <Section title="Summary" aside={<StatusBadge status={site.status} />}>
+    <Shell title={site.name} subtitle={`${site.type.replace(/_/g, " ")} · ${site.locationName}`}>
+      <LiveRefresh enabled={!isStaticExport()} />
+      <Section title="Summary" aside={<StatusBadge status={HEALTH_LABELS[detail.health.state]} />}>
+        <p className="muted">
+          {detail.health.reasons.length === 0 ? "All readings current. Nothing open." : null}
+          {detail.lastReadingAtUtc ? (
+            <>
+              {detail.health.reasons.length === 0 ? " " : ""}Last reading <Ago iso={detail.lastReadingAtUtc} />.
+            </>
+          ) : (
+            "No readings have been received from this site yet."
+          )}
+        </p>
+        <HealthReasons reasons={detail.health.reasons} showSite={false} />
         <MetricGrid metrics={metrics} />
       </Section>
       <Section title="Trends" aside={<Link href={`/analytics?siteId=${site.id}`}>Full analytics for this site →</Link>}>
@@ -121,7 +135,6 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
                 columns={[
                   { key: "name", label: "Name" },
                   { key: "type", label: "Type" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
                   {
                     key: "id",
                     label: "",
@@ -146,7 +159,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
                 rows={detail.gateways}
                 columns={[
                   { key: "name", label: "Name" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
+                  { key: "secureIdentityStatus", label: "Credential" },
                   {
                     key: "id",
                     label: "",
@@ -233,9 +246,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <DataTable
           rows={detail.alerts}
           columns={[
-            { key: "severity", label: "Severity", render: (row) => <StatusBadge status={row.severity} /> },
+            { key: "severity", label: "Severity", render: (row) => <StatusBadge status={titleCase(row.severity)} /> },
             { key: "title", label: "Alert" },
-            { key: "status", label: "Status" }
+            { key: "status", label: "Status", render: (row) => titleCase(row.status) }
           ]}
         />
       </Section>
@@ -244,11 +257,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
 }
 
 function buildMetrics(detail: SiteDetail): Metric[] {
-  return detail.latestTelemetry.map((reading) => ({
-    label: reading.canonicalName,
-    value: typeof reading.value === "number" ? reading.value.toFixed(1) : String(reading.value),
-    unit: reading.unit,
-    status: reading.quality === "OK" ? "OK" : reading.quality === "WARN" ? "Watch" : "Critical",
-    note: `Quality: ${reading.quality}`
-  }));
+  return detail.latestTelemetry.map((reading) =>
+    readingMetric(reading, reading.timestampUtc ? <Ago iso={reading.timestampUtc} /> : "No timestamp", readingLabel(reading.canonicalName))
+  );
 }

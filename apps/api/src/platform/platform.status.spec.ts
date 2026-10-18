@@ -81,6 +81,34 @@ describe("status is computed from the facts", () => {
     });
   });
 
+  describe("a device", () => {
+    it("is Offline until it has been heard from, then reports when that was", async () => {
+      const provisioned = await tankSite();
+      expect(platform.listDevices(client)[0]).toMatchObject({ health: "Offline", lastSeenUtc: undefined });
+
+      await sendReadings(platform, client, provisioned, [tank(60, { minutesAgo: 2 })]);
+      const [device] = platform.listDevices(client);
+      expect(device?.health).toBe("OK");
+      expect(Date.parse(device?.lastSeenUtc as string)).toBeLessThanOrEqual(Date.now() - 119_000);
+      expect(platform.siteDetail(provisioned.site.id, client).devices[0]?.health).toBe("OK");
+    });
+
+    it("goes Offline when its readings stop, but still says when it was last heard", async () => {
+      const provisioned = await tankSite();
+      await sendReadings(platform, client, provisioned, [tank(60)]);
+
+      const [device] = platform.listDevices(client, undefined, Date.now() + minutes(30));
+      expect(device?.health).toBe("Offline");
+      expect(device?.lastSeenUtc).toBeDefined();
+    });
+
+    it("is Simulated when what it reports comes from a simulator", async () => {
+      const provisioned = await tankSite();
+      await sendReadings(platform, client, provisioned, [tank(60, { source: "simulator" })]);
+      expect(platform.listDevices(client)[0]?.health).toBe("Simulated");
+    });
+  });
+
   describe("the account", () => {
     it("answers 'is everything all right?' with one state, one sentence, and what it rests on", async () => {
       const first = await tankSite();
@@ -138,6 +166,31 @@ describe("status is computed from the facts", () => {
 
       await sendReadings(platform, client, provisioned, [tank(5)]);
       expect(platform.overview(client).status).toBe("Action required");
+    });
+
+    it("tells when each site last reported", async () => {
+      const provisioned = await tankSite();
+      expect(platform.overview(client).sites[0]?.lastReadingAtUtc).toBeUndefined();
+
+      await sendReadings(platform, client, provisioned, [tank(60, { minutesAgo: 3 })]);
+      const last = platform.overview(client).sites[0]?.lastReadingAtUtc;
+      expect(Date.parse(last as string)).toBeLessThanOrEqual(Date.now() - 179_000);
+      expect(platform.listSites(client)[0]?.lastReadingAtUtc).toBe(last);
+    });
+
+    it("keeps an acknowledged critical alert in the active list: acknowledging it did not fix it", async () => {
+      const provisioned = await tankSite();
+      await sendReadings(platform, client, provisioned, [tank(5)]);
+      const [alert] = platform.listAlerts(client);
+      await platform.acknowledgeAlert(alert?.id as string, client);
+
+      const { activeAlerts, health } = platform.overview(client);
+      expect(activeAlerts.map((item) => item.id)).toEqual([alert?.id]);
+      expect(health.state).toBe("action");
+
+      // Once the tank recovers the alert resolves itself and leaves the list.
+      await sendReadings(platform, client, provisioned, [tank(80)]);
+      expect(platform.overview(client).activeAlerts).toEqual([]);
     });
 
     it("never lets another account's sites change this account's answer", async () => {
@@ -207,6 +260,35 @@ describe("status is computed from the facts", () => {
 
       await sendReadings(platform, client, provisioned, [tank(5)]);
       expect(concernOf()).toBe("critical");
+    });
+
+    it("stamps the latest readings of a site with their age too, so every page can say so", async () => {
+      const provisioned = await tankSite();
+      await sendReadings(platform, client, provisioned, [tank(62.5, { minutesAgo: 1 })]);
+
+      const [now] = platform.latestTelemetry(client, provisioned.site.id);
+      expect(now).toMatchObject({ canonicalName: "water.tank.level.percent", value: 62.5, freshness: "current" });
+      expect(now?.ageSeconds).toBeGreaterThanOrEqual(60);
+
+      const [later] = platform.latestTelemetry(client, provisioned.site.id, Date.now() + minutes(30));
+      expect(later).toMatchObject({ value: 62.5, freshness: "out_of_date" });
+      expect(platform.siteDetail(provisioned.site.id, client, Date.now() + minutes(30)).latestTelemetry[0]?.freshness).toBe("out_of_date");
+    });
+
+    it("flags the same abnormal readings on every list, not only on the Overview", async () => {
+      const provisioned = await tankSite();
+      const concernOf = (siteId?: string) => platform.latestTelemetry(client, siteId)[0]?.concern;
+
+      await sendReadings(platform, client, provisioned, [tank(60)]);
+      expect(concernOf(provisioned.site.id)).toBeUndefined();
+
+      await sendReadings(platform, client, provisioned, [tank(5)]);
+      expect(concernOf(provisioned.site.id)).toBe("critical");
+      expect(platform.siteDetail(provisioned.site.id, client).latestTelemetry[0]?.concern).toBe("critical");
+
+      // A reading that has gone out of date is flagged as that instead: what the rules concluded
+      // from it is no longer about the present.
+      expect(platform.latestTelemetry(client, provisioned.site.id, Date.now() + minutes(30))[0]).toMatchObject({ freshness: "out_of_date", concern: undefined });
     });
 
     it("calls surplus solar 'Available' or 'Constrained' only when it can actually tell", async () => {

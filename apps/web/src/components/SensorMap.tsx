@@ -1,3 +1,4 @@
+import { readingStatus } from "../lib/readings";
 import { normalizeStatus, StatusBadge } from "./StatusBadge";
 
 interface SensorMapDevice {
@@ -23,11 +24,24 @@ interface SensorMapReading {
   pointId: string;
   value: number | boolean | string;
   quality: string;
+  /** "out_of_date" once the reading is too old to rely on. */
+  freshness?: "current" | "out_of_date";
+  /** Set when the platform's rules judge a current reading abnormal. */
+  concern?: "warning" | "critical";
 }
 
-const LEGEND_ORDER = ["ok", "watch", "warning", "critical"];
-const LEGEND_LABEL: Record<string, string> = { ok: "Normal", watch: "Watch", warning: "Warning", critical: "Critical" };
-const BUCKET_RANK: Record<string, number> = { ok: 0, watch: 1, warning: 2, critical: 3 };
+// Worst last. "Unknown" outranks a warning: not being able to tell is worse than a known small
+// problem, and only a known critical one is worse than not knowing.
+const LEGEND_ORDER = ["ok", "simulated", "watch", "warning", "unknown", "critical"];
+const LEGEND_LABEL: Record<string, string> = {
+  ok: "Normal",
+  simulated: "Simulated",
+  watch: "Watch",
+  warning: "Warning",
+  unknown: "Unknown",
+  critical: "Critical"
+};
+const BUCKET_RANK: Record<string, number> = { ok: 0, simulated: 1, watch: 2, warning: 3, unknown: 4, critical: 5 };
 
 export function SensorMap({
   devices,
@@ -107,7 +121,7 @@ export function SensorMap({
                             {reading ? formatValue(reading.value) : "—"}
                             {point.unit ? <small> {point.unit}</small> : null}
                           </strong>
-                          {reading ? <StatusBadge status={qualityToStatus(reading.quality)} /> : <span className="muted">No data</span>}
+                          {reading ? <ReadingChip reading={reading} /> : <span className="muted">No data</span>}
                         </div>
                       </div>
                     );
@@ -160,12 +174,35 @@ function layoutDevices(devices: readonly SensorMapDevice[]): Array<{ device: Sen
   return placed;
 }
 
+/** A word beside a reading only when it has something to say: nothing is claimed for a reading
+ * that is merely fine. */
+function ReadingChip({ reading }: { reading: SensorMapReading }) {
+  const status = readingStatus(reading);
+  return status ? <StatusBadge status={status} /> : null;
+}
+
 function legendBucket(status: string): string {
-  const normalized = normalizeStatus(status);
-  if (normalized === "ok") return "ok";
-  if (normalized === "watch" || normalized === "simulated" || normalized === "manual-override") return "watch";
-  if (normalized === "warning") return "warning";
-  return "critical";
+  switch (normalizeStatus(status)) {
+    case "ok":
+    case "stable":
+      return "ok";
+    case "simulated":
+    case "manual-override":
+      return "simulated";
+    case "watch":
+      return "watch";
+    case "warning":
+    case "uncertain":
+    case "bad-data":
+    case "attention-needed":
+      return "warning";
+    case "critical":
+    case "action-required":
+      return "critical";
+    default:
+      // Offline, Unknown, Out of date: we cannot tell, which is not the same as fine or as failed.
+      return "unknown";
+  }
 }
 
 /** A device can look healthy (health: OK) while one of its readings has degraded quality —
@@ -176,7 +213,7 @@ function worstBucket(device: SensorMapDevice, points: readonly SensorMapPoint[],
     if (point.deviceId !== device.id) continue;
     const reading = readingByPoint.get(point.id);
     if (!reading) continue;
-    const readingBucket = legendBucket(qualityToStatus(reading.quality));
+    const readingBucket = legendBucket(readingStatus(reading) ?? "OK");
     if ((BUCKET_RANK[readingBucket] ?? 0) > (BUCKET_RANK[bucket] ?? 0)) bucket = readingBucket;
   }
   return bucket;
@@ -194,10 +231,4 @@ function formatValue(value: number | boolean | string): string {
 
 function formatTimestamp(timestampUtc: string): string {
   return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(timestampUtc));
-}
-
-function qualityToStatus(quality: string): string {
-  if (quality === "OK") return "OK";
-  if (quality === "WARN") return "Watch";
-  return "Critical";
 }

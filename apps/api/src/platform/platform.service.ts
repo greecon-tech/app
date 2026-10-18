@@ -76,6 +76,21 @@ export interface OverviewReading {
   concern?: Concern;
 }
 
+/** A site as it is shown: its record with status computed from the evidence, its own health, and
+ * when it last reported (absent if it never has). */
+export type SiteView = Site & { health: SiteHealth; lastReadingAtUtc?: string };
+
+/** A point's latest reading, with its age, whether it can still be relied on, and, for a current
+ * reading, whether the rules judge it abnormal. */
+export type LatestReading = TelemetryReading & { ageSeconds?: number; freshness: "current" | "out_of_date"; concern?: Concern };
+
+function newestTimestamp(readings: ReadonlyArray<TelemetryReading>): string | undefined {
+  return readings.reduce<string | undefined>(
+    (latest, item) => (latest === undefined || Date.parse(item.timestampUtc) > Date.parse(latest) ? item.timestampUtc : latest),
+    undefined
+  );
+}
+
 const OVERVIEW_STATUS: Record<HealthState, string> = {
   stable: "System stable",
   attention: "Attention needed",
@@ -1012,10 +1027,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
    * answer (one state, one sentence, what it rests on); the rest is the evidence behind it.
    * `nowMs` is injectable so a test can move the clock. */
   overview(principal: Principal, nowMs: number = Date.now()) {
-    const assessed = this.assessSites(principal.tenantId, nowMs);
-    const tenantSites = assessed.map(({ site, health }) => ({ ...site, health }));
-    const health = assessTenantHealth(assessed.map((item) => item.health));
-    const activeAlerts = this.listAlerts(principal).filter((alert) => alert.status === "open");
+    const tenantSites = this.listSites(principal, nowMs);
+    const health = assessTenantHealth(tenantSites.map((site) => site.health));
+    // Everything not yet resolved: an acknowledged alert is still standing until its condition clears.
+    const activeAlerts = this.listAlerts(principal).filter((alert) => alert.status !== "resolved");
     return {
       tenant: this.requireTenant(principal.tenantId),
       // The older one-line status, kept in step with `health` for anything that still reads it.
@@ -1067,22 +1082,22 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   /** The tenant's sites with their status computed from what is known, not from a label stored
-   * when the site was created. */
-  listSites(principal: Principal, nowMs: number = Date.now()): Site[] {
-    return this.assessSites(principal.tenantId, nowMs).map((item) => item.site);
+   * when the site was created, plus each site's own health and when it last reported. */
+  listSites(principal: Principal, nowMs: number = Date.now()): SiteView[] {
+    return this.scope(this.sites, principal.tenantId).map((stored) => this.assessSite(stored, nowMs));
   }
 
   siteDetail(siteId: string, principal: Principal, nowMs: number = Date.now()) {
-    const stored = this.requireSite(siteId, principal.tenantId);
-    const { site, health } = this.assessSite(stored, nowMs);
+    const { health, lastReadingAtUtc, ...site } = this.assessSite(this.requireSite(siteId, principal.tenantId), nowMs);
     return {
       site,
       health,
+      lastReadingAtUtc,
       assets: this.assets.filter((asset) => asset.tenantId === principal.tenantId && asset.siteId === siteId),
-      devices: this.devices.filter((device) => device.tenantId === principal.tenantId && device.siteId === siteId),
+      devices: this.listDevices(principal, siteId, nowMs),
       points: this.points.filter((point) => point.tenantId === principal.tenantId && point.siteId === siteId),
       gateways: this.gateways.filter((gateway) => gateway.tenantId === principal.tenantId && gateway.siteId === siteId),
-      latestTelemetry: this.latestTelemetry(principal, siteId),
+      latestTelemetry: this.latestTelemetry(principal, siteId, nowMs),
       derivedStates: this.listDerivedStates(principal, siteId),
       alerts: this.listAlerts(principal, siteId),
       rules: this.listRules(principal, siteId),
@@ -1094,8 +1109,12 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.scope(this.assets, principal.tenantId).filter((asset) => !siteId || asset.siteId === siteId);
   }
 
-  listDevices(principal: Principal, siteId?: string): Device[] {
-    return this.scope(this.devices, principal.tenantId).filter((device) => !siteId || device.siteId === siteId);
+  /** Devices with their health and last-seen time worked out from what they have reported, not
+   * from the values stored when they were registered. */
+  listDevices(principal: Principal, siteId?: string, nowMs: number = Date.now()): Device[] {
+    return this.scope(this.devices, principal.tenantId)
+      .filter((device) => !siteId || device.siteId === siteId)
+      .map((device) => this.assessDevice(device, nowMs));
   }
 
   listPoints(principal: Principal, deviceId?: string): Point[] {
@@ -1709,8 +1728,27 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return result.rows.map((row) => mapTelemetryRow(row));
   }
 
-  latestTelemetry(principal: Principal, siteId?: string): TelemetryReading[] {
-    return this.latestReadings(this.telemetry.filter((readingValue) => readingValue.tenantId === principal.tenantId && (!siteId || readingValue.siteId === siteId)));
+  /** The newest reading of each point, each stamped with how old it is and whether it can still be
+   * relied on. */
+  latestTelemetry(principal: Principal, siteId?: string, nowMs: number = Date.now()): LatestReading[] {
+    return this.latestReadings(this.telemetry.filter((item) => item.tenantId === principal.tenantId && (!siteId || item.siteId === siteId))).map((item) => {
+      const view = this.viewReading(item, nowMs);
+      return { ...item, ageSeconds: view.ageSeconds, freshness: view.freshness, concern: view.concern };
+    });
+  }
+
+  // How old a reading is, whether it can still be relied on, and what the rules concluded about it.
+  // An out-of-date reading carries no verdict: what was concluded from it is no longer about the
+  // present.
+  private viewReading(item: TelemetryReading, nowMs: number): { ageSeconds?: number; freshness: "current" | "out_of_date"; concern?: Concern } {
+    const age = assessSensorAge(item.canonicalName, this.sensorValue(item), nowMs);
+    if (age.freshness !== "fresh") return { ageSeconds: age.ageSeconds, freshness: "out_of_date" };
+    const trueStates = new Set<StateKey>(
+      this.derivedStates
+        .filter((state) => state.tenantId === item.tenantId && state.siteId === item.siteId && state.stateValue === true)
+        .map((state) => state.stateKey)
+    );
+    return { ageSeconds: age.ageSeconds, freshness: "current", concern: concernForReading(item.canonicalName, trueStates) };
   }
 
   async ingestTelemetry(message: TelemetryMessage, principal: Principal) {
@@ -2563,14 +2601,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return snapshot;
   }
 
-  private assessSites(tenantId: string, nowMs: number): Array<{ site: Site; health: SiteHealth }> {
-    return this.scope(this.sites, tenantId).map((stored) => this.assessSite(stored, nowMs));
-  }
-
   // What is true of one site right now, worked out from the readings and alerts it has: whether it
   // has ever reported, whether it has gone quiet, what is standing against it. Its stored `status`
   // and `edgeStatus` are not consulted: a label somebody typed once says nothing about now.
-  private assessSite(stored: Site, nowMs: number): { site: Site; health: SiteHealth } {
+  private assessSite(stored: Site, nowMs: number): SiteView {
     const readings = this.latestReadings(this.telemetry.filter((item) => item.tenantId === stored.tenantId && item.siteId === stored.id));
     const quiet = deriveOperationalStates(this.sensorSnapshot(stored.tenantId, stored.id), { nowMs, limits: stored.safetyLimits }).find(
       (state) => state.stateKey === "system.communication_degraded" && state.stateValue === true
@@ -2583,7 +2617,12 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       communicationDetail: quiet?.reason,
       alerts: this.alerts.filter((alert) => alert.tenantId === stored.tenantId && alert.siteId === stored.id)
     });
-    return { site: { ...stored, status: statusLabelFor(health), edgeStatus: this.edgeStatusOf(readings, nowMs) }, health };
+    return { ...stored, status: statusLabelFor(health), edgeStatus: this.edgeStatusOf(readings, nowMs), health, lastReadingAtUtc: newestTimestamp(readings) };
+  }
+
+  private assessDevice(stored: Device, nowMs: number): Device {
+    const readings = this.latestReadings(this.telemetry.filter((item) => item.tenantId === stored.tenantId && item.deviceId === stored.id));
+    return { ...stored, health: this.edgeStatusOf(readings, nowMs), lastSeenUtc: newestTimestamp(readings) };
   }
 
   // The gateway is online if something real has been heard from it lately; "Simulated" if the only
@@ -2606,25 +2645,17 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     const readings: Partial<Record<CanonicalPointName, OverviewReading>> = {};
     for (const [name, item] of [...newest.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-      const age = assessSensorAge(name, this.sensorValue(item), nowMs);
-      const current = age.freshness === "fresh";
-      const trueStates = new Set<StateKey>(
-        this.derivedStates
-          .filter((state) => state.tenantId === tenantId && state.siteId === item.siteId && state.stateValue === true)
-          .map((state) => state.stateKey)
-      );
+      const view = this.viewReading(item, nowMs);
       readings[name] = {
         value: item.value,
         unit: item.unit,
         siteId: item.siteId,
         siteName: this.sites.find((site) => site.id === item.siteId)?.name ?? "",
         asOfUtc: item.timestampUtc,
-        ageSeconds: age.ageSeconds,
-        freshness: current ? "current" : "out_of_date",
+        ageSeconds: view.ageSeconds,
+        freshness: view.freshness,
         quality: item.quality,
-        // An out-of-date reading is flagged as out of date; what the rules concluded from it is no
-        // longer about the present.
-        concern: current ? concernForReading(name, trueStates) : undefined
+        concern: view.concern
       };
     }
     return readings;

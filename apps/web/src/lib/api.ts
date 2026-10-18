@@ -13,15 +13,19 @@ export type DemoRole = UserRole;
 const rawDemoRole = process.env.GREECON_DEMO_ROLE;
 export const DEMO_ROLE: DemoRole = userRoles.includes(rawDemoRole as DemoRole) ? (rawDemoRole as DemoRole) : "operator";
 
-export async function apiGet<T>(path: string, role: DemoRole = DEMO_ROLE): Promise<T> {
-  // A static export (NEXT_OUTPUT_EXPORT=1, see docs/12-deployment-github-pages.md) has no
-  // server to re-fetch on each request — every page bakes in whatever the API returns at
-  // build time, so `no-store` (which Next.js's static export forbids outright) doesn't apply.
-  const isStaticExport = process.env.NEXT_OUTPUT_EXPORT === "1";
+/** True only in the GitHub Pages build (NEXT_OUTPUT_EXPORT=1, see docs/12-deployment-github-pages.md):
+ * every page is baked once from whatever the API returned at build time, and nothing can be
+ * re-fetched afterwards. */
+export function isStaticExport(): boolean {
+  return process.env.NEXT_OUTPUT_EXPORT === "1";
+}
 
+export async function apiGet<T>(path: string, role: DemoRole = DEMO_ROLE): Promise<T> {
+  // A static export has no server to re-fetch on each request, so `no-store` (which Next.js's
+  // static export forbids outright) doesn't apply.
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: await requestHeaders(role),
-    ...(isStaticExport ? {} : { cache: "no-store" as const })
+    ...(isStaticExport() ? {} : { cache: "no-store" as const })
   });
 
   if (!response.ok) {
@@ -70,8 +74,7 @@ export async function apiMutate<T>(path: string, method: "POST" | "PATCH" | "PUT
  * The `role` argument only still matters when there is no session at all: the static export
  * (which never has one) and any request made before a user has logged in. */
 async function requestHeaders(role: DemoRole): Promise<Record<string, string>> {
-  const isStaticExport = process.env.NEXT_OUTPUT_EXPORT === "1";
-  const session = isStaticExport ? undefined : await getSession();
+  const session = isStaticExport() ? undefined : await getSession();
 
   return {
     ...(session ? { "x-greecon-session": session.token } : { "x-user-role": role }),

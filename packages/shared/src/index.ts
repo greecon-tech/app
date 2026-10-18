@@ -44,8 +44,68 @@ export const statusLabels = [
 ] as const;
 export type StatusLabel = (typeof statusLabels)[number];
 
+/** "20 seconds", "2 minutes", "3 hours", "2 days": the largest whole unit, for messages people read.
+ * One wording for an age everywhere: in an alert, a refused command and on a screen. */
+export function describeAge(ageSeconds: number): string {
+  const plural = (value: number, unit: string) => `${value} ${unit}${value === 1 ? "" : "s"}`;
+  if (ageSeconds < 60) return plural(Math.round(ageSeconds), "second");
+  if (ageSeconds < 3600) return plural(Math.floor(ageSeconds / 60), "minute");
+  if (ageSeconds < 86400) return plural(Math.floor(ageSeconds / 3600), "hour");
+  return plural(Math.floor(ageSeconds / 86400), "day");
+}
+
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;
 export type SeverityLevel = (typeof severityLevels)[number];
+
+// ---- Health: the answer to "is everything all right?" ------------------------------------------
+// The contract types for what the platform says about a site and about an account. How they are
+// worked out lives in gaia-core (assessSiteHealth, assessTenantHealth); the screens only show them.
+
+export const healthStates = ["stable", "attention", "action", "unknown"] as const;
+export type HealthState = (typeof healthStates)[number];
+
+/** One distinct word per state, so no screen has to rely on colour. */
+export const HEALTH_LABELS: Readonly<Record<HealthState, string>> = {
+  stable: "Stable",
+  attention: "Attention needed",
+  action: "Action required",
+  unknown: "Unknown"
+};
+
+export interface HealthReason {
+  state: Exclude<HealthState, "stable">;
+  /** One plain sentence: what is wrong. */
+  message: string;
+  /** How serious the alert behind this reason is. Absent for "we cannot tell" reasons, which are
+   * not alerts. */
+  severity?: SeverityLevel;
+  siteId: string;
+  siteName: string;
+}
+
+export interface SiteHealth {
+  siteId: string;
+  siteName: string;
+  state: HealthState;
+  /** Why the site is not stable. Empty only when it is. Worst first. */
+  reasons: HealthReason[];
+}
+
+export interface TenantHealth {
+  state: HealthState;
+  /** The state's word: Stable, Attention needed, Action required, Unknown. */
+  label: string;
+  /** One sentence that answers "is everything all right?". */
+  headline: string;
+  /** Everything behind the headline, worst first. Empty only when everything is stable. */
+  reasons: HealthReason[];
+  /** How much of the account the answer rests on. "9 of 10 sites reporting" is part of the answer. */
+  coverage: { sites: number; sitesReporting: number };
+}
+
+/** Whether the rules judge a current reading abnormal. */
+export type ReadingConcern = "warning" | "critical";
+
 
 export const incidentStatuses = ["open", "acknowledged", "investigating", "resolved", "closed"] as const;
 export type IncidentStatus = (typeof incidentStatuses)[number];
@@ -165,6 +225,29 @@ export const canonicalPoints = [
   "system.gateway.online"
 ] as const;
 export type CanonicalPointName = (typeof canonicalPoints)[number];
+
+/** What each canonical point is called on screen. The one place these names live, so every page
+ * and message says the same thing. The wording of the first nine is also what saved dashboard
+ * preferences are keyed by (see dashboardWidgetCatalog): change one and a saved preference stops
+ * matching. */
+export const canonicalPointLabels: Readonly<Record<CanonicalPointName, string>> = {
+  "water.tank.level.percent": "Tank level",
+  "water.flow.lpm": "Water flow",
+  "water.pressure.bar": "Line pressure",
+  "water.pump.status": "Pump status",
+  "water.pump.command": "Pump command",
+  "energy.solar.power.kw": "Solar production",
+  "energy.consumption.kw": "Energy consumption",
+  "energy.battery.soc.percent": "Battery state",
+  "energy.battery.power.kw": "Battery power",
+  "energy.grid.import.kw": "Grid import",
+  "energy.grid.export.kw": "Grid export",
+  "agri.soil.moisture.percent": "Soil moisture",
+  "agri.air.temperature.c": "Air temperature",
+  "agri.humidity.percent": "Humidity",
+  "agri.irrigation.command": "Irrigation command",
+  "system.gateway.online": "Gateway online"
+};
 
 export const stateKeys = [
   "water.tank.critical",

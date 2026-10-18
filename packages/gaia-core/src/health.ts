@@ -1,4 +1,20 @@
-import { AlertMessage, CanonicalPointName, SeverityLevel, StateKey, StatusLabel } from "@greecon/shared";
+import {
+  AlertMessage,
+  CanonicalPointName,
+  HEALTH_LABELS,
+  HealthReason,
+  HealthState,
+  ReadingConcern,
+  SeverityLevel,
+  SiteHealth,
+  StateKey,
+  StatusLabel,
+  TenantHealth
+} from "@greecon/shared";
+
+// The contract types and the four words live in shared, where the screens can use them too.
+export { HEALTH_LABELS };
+export type { HealthReason, HealthState, SiteHealth, TenantHealth };
 
 // The answer to "is everything all right?", for one site and for a whole account. Pure: it is given
 // facts (how many readings are current, whether the site has gone quiet, which alerts stand) and says
@@ -15,34 +31,14 @@ import { AlertMessage, CanonicalPointName, SeverityLevel, StateKey, StatusLabel 
 // site that is fine. And a failure is never averaged away: one site out of ten that cannot be
 // verified makes the account "unknown", not "mostly stable".
 
-export type HealthState = "stable" | "attention" | "action" | "unknown";
-
-export const HEALTH_LABELS: Readonly<Record<HealthState, string>> = {
-  stable: "Stable",
-  attention: "Attention needed",
-  action: "Action required",
-  unknown: "Unknown"
-};
-
 /** Worst first. When states differ, the one nearest the front wins. */
 const HEALTH_PRECEDENCE: ReadonlyArray<HealthState> = ["action", "unknown", "attention", "stable"];
-
-export interface HealthReason {
-  state: Exclude<HealthState, "stable">;
-  /** One plain sentence: what is wrong. */
-  message: string;
-  /** How serious the alert behind this reason is. Absent for "we cannot tell" reasons, which are
-   * not alerts. */
-  severity?: SeverityLevel;
-  siteId: string;
-  siteName: string;
-}
 
 export interface SiteHealthInput {
   siteId: string;
   siteName: string;
-  /** How many readings from this site are current (not out of date). Zero means we have nothing
-   * to base an "all is well" on. */
+  /** How many readings this site has ever reported, current or not. Zero means it has never
+   * reported, so there is nothing to base an "all is well" on. */
   readingCount: number;
   /** True when readings that should be arriving are out of date. */
   communicationProblem: boolean;
@@ -56,14 +52,6 @@ export interface SiteHealthInput {
     category?: AlertMessage["category"];
     status: "open" | "acknowledged" | "resolved" | string;
   }>;
-}
-
-export interface SiteHealth {
-  siteId: string;
-  siteName: string;
-  state: HealthState;
-  /** Why the site is not stable. Empty only when it is. Worst first. */
-  reasons: HealthReason[];
 }
 
 const rank = (state: HealthState): number => HEALTH_PRECEDENCE.indexOf(state);
@@ -116,7 +104,7 @@ export function statusLabelFor(health: SiteHealth): StatusLabel {
   }
 }
 
-export type Concern = "warning" | "critical";
+export type Concern = ReadingConcern;
 
 // Which derived state judges which reading, worst first. A card for a reading is flagged by what
 // the rules concluded about it, so the page needs no thresholds of its own.
@@ -133,18 +121,6 @@ const READING_CONCERNS: Partial<Record<CanonicalPointName, ReadonlyArray<{ state
  * Only meaningful for a current reading: an out-of-date one is flagged as out of date instead. */
 export function concernForReading(name: CanonicalPointName, trueStates: ReadonlySet<StateKey>): Concern | undefined {
   return READING_CONCERNS[name]?.find((candidate) => trueStates.has(candidate.stateKey))?.concern;
-}
-
-export interface TenantHealth {
-  state: HealthState;
-  /** The state's word: Stable, Attention needed, Action required, Unknown. */
-  label: string;
-  /** One sentence that answers "is everything all right?". */
-  headline: string;
-  /** Everything behind the headline, worst first. Empty only when everything is stable. */
-  reasons: HealthReason[];
-  /** How much of the account the answer rests on. "9 of 10 sites reporting" is part of the answer. */
-  coverage: { sites: number; sitesReporting: number };
 }
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
