@@ -112,7 +112,7 @@ export default async function AutomationPage() {
             <p className="muted">Your role does not have permission to read audit history.</p>
           )}
         </Section>
-        <Section title="Manual Control" aside={<span className="muted">Automatic (rules/AI) is the default mode</span>}>
+        <Section title="Manual Control" aside={<span className="muted">Simulated: nothing is sent to equipment yet</span>}>
           {canControl ? (
             <ManualControlPanel targets={controllableTargets} emptyMessage="No manually controllable equipment is configured yet." />
           ) : (

@@ -238,6 +238,30 @@ describe("PlatformService", () => {
     });
   });
 
+  describe("what a command is in this build", () => {
+    it("is always a simulation: nothing in this build can reach equipment, and the record says so", async () => {
+      const allowed = await platform.createCommand(
+        { siteId: SITE_ID, targetDeviceId: PUMP_DEVICE_ID, targetPointId: PUMP_POINT_ID, requestedValue: "OFF", reason: "Routine stop" },
+        OWNER
+      );
+      const blocked = await platform.createCommand(
+        {
+          siteId: SITE_ID,
+          targetDeviceId: PUMP_DEVICE_ID,
+          targetPointId: PUMP_POINT_ID,
+          requestedValue: "ON",
+          reason: "Backdated",
+          manualOverride: { durationMinutes: -5, reason: "Backdated override" }
+        },
+        OWNER
+      );
+
+      // A "live" mode is added only when the release gate in docs/23-safety-and-security-case.md is met.
+      for (const record of [allowed, blocked, ...platform.listCommands(OWNER)]) expect(record.executionMode).toBe("simulated");
+      expect(allowed.dispatchStatus).toBe("simulated_dispatch");
+    });
+  });
+
   describe("command acknowledgement", () => {
     it("moves a dispatched command to acknowledged on a successful ack", async () => {
       const record = await platform.createCommand(

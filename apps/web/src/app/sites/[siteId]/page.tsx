@@ -229,7 +229,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         ) : null}
       </Section>
       {canControl ? (
-        <Section title="Manual Control" aside={<span className="muted">Automatic (rules/AI) is the default mode</span>}>
+        <Section title="Manual Control" aside={<span className="muted">Simulated: nothing is sent to equipment yet</span>}>
           <ManualControlPanel targets={controllableTargets} emptyMessage="No manually controllable equipment is configured for this site." />
         </Section>
       ) : null}

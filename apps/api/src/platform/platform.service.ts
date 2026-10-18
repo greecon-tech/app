@@ -216,6 +216,10 @@ export interface CommandRecord {
   requestedByRole: UserRole;
   reason: string;
   safetyEvaluation: ReturnType<typeof evaluateCommandSafety>;
+  /** Whether this command could reach equipment. Every command is "simulated" in this build: the
+   * request, the checks and the person are recorded, and nothing is sent. "live" is added only when
+   * the release gate for the first real write has been met (docs/23-safety-and-security-case.md). */
+  executionMode: "simulated";
   dispatchStatus: "blocked" | "simulated_dispatch" | "acknowledged" | "failed";
   acknowledgement?: CommandAckMessage;
   result?: string;
@@ -2084,6 +2088,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       requestedByRole: principal.role,
       reason: commandMessage.reason,
       safetyEvaluation,
+      executionMode: "simulated",
       dispatchStatus: safetyEvaluation.allowed ? "simulated_dispatch" : "blocked",
       failureReason: safetyEvaluation.allowed ? undefined : safetyEvaluation.reasons.join(" "),
       rollbackStatus: safetyEvaluation.allowed ? "not_required" : "not_dispatched",
@@ -3160,6 +3165,7 @@ function mapCommandRow(row: CommandRow, points: readonly Point[]): CommandRecord
     requestedByRole: row.requested_by_role as UserRole,
     reason: row.reason,
     safetyEvaluation: row.safety_evaluation,
+    executionMode: "simulated",
     dispatchStatus: row.dispatch_status as CommandRecord["dispatchStatus"],
     acknowledgement: row.acknowledgement ?? undefined,
     result: row.result ?? undefined,

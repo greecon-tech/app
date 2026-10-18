@@ -30,7 +30,7 @@ interface User {
 const roleScopes = [
   { role: "Owner", scope: "Tenant, billing, users, sites, rules, audit" },
   { role: "Admin", scope: "Sites, assets, devices, users, approved rules" },
-  { role: "Operator", scope: "Monitoring and operation within safety policy" },
+  { role: "Operator", scope: "Monitoring and operation within the site's operating limits" },
   { role: "Viewer", scope: "Read-only operational access" },
   { role: "Auditor", scope: "Reports, audit logs, automation history, compliance evidence" }
 ] as const;
