@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
+import { CanonicalPointName, HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
 import { Ago } from "../../../components/Ago";
 import { HealthReasons } from "../../../components/HealthHeadline";
 import { LiveRefresh } from "../../../components/LiveRefresh";
@@ -7,6 +7,7 @@ import { CreateAssetForm } from "../../../components/CreateAssetForm";
 import { CreateDeviceForm } from "../../../components/CreateDeviceForm";
 import { CreateGatewayForm } from "../../../components/CreateGatewayForm";
 import { CreatePointForm } from "../../../components/CreatePointForm";
+import { PointLimitsForm } from "../../../components/PointLimitsForm";
 import { DataTable } from "../../../components/DataTable";
 import { DeleteButton } from "../../../components/DeleteButton";
 import { ManualControlPanel } from "../../../components/ManualControlPanel";
@@ -19,7 +20,7 @@ import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
 import { groupByCanonicalName } from "../../../lib/telemetry-history";
-import { titleCase } from "../../../lib/health";
+import { priorityWord, titleCase } from "../../../lib/health";
 import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
 import { Metric } from "../../../lib/types";
 import { deleteAssetAction, deleteDeviceAction, deleteGatewayAction, deletePointAction } from "./actions";
@@ -30,7 +31,7 @@ interface SiteDetail {
   lastReadingAtUtc?: string;
   assets: Array<{ id: string; name: string; type: string; status: string }>;
   devices: Array<{ id: string; name: string; deviceType: string; protocol: string; health: string; lastSeenUtc?: string; positionX?: number; positionY?: number; placementNote?: string }>;
-  points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: string; capability: string }>;
+  points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: CanonicalPointName; capability: string; thresholdConfig?: Record<string, number> }>;
   gateways: Array<{ id: string; name: string; status: string; secureIdentityStatus: string }>;
   latestTelemetry: Array<ReadingView & { pointId: string }>;
   rules: Array<{ id: string; name: string; priority: string; executionMode: string; approvalState: string }>;
@@ -210,6 +211,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
                       { key: "label", label: "Label" },
                       { key: "deviceName", label: "Device" },
                       { key: "capability", label: "Capability" },
+                      { key: "thresholdConfig", label: "Limits", render: (row) => <PointLimitsForm siteId={site.id} point={row} /> },
                       {
                         key: "id",
                         label: "",
@@ -246,7 +248,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <DataTable
           rows={detail.alerts}
           columns={[
-            { key: "severity", label: "Severity", render: (row) => <StatusBadge status={titleCase(row.severity)} /> },
+            { key: "severity", label: "Priority", render: (row) => <StatusBadge status={priorityWord(row.severity)} /> },
             { key: "title", label: "Alert" },
             { key: "status", label: "Status", render: (row) => titleCase(row.status) }
           ]}

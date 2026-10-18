@@ -715,6 +715,7 @@ main {
 
 .status-warning,
 .status-attention-needed,
+.status-check-today,
 .status-uncertain,
 .status-bad-data {
   background: var(--warning-bg);
@@ -722,7 +723,8 @@ main {
 }
 
 .status-critical,
-.status-action-required {
+.status-action-required,
+.status-act-now {
   background: var(--critical-bg);
   color: var(--critical-fg);
 }
@@ -730,7 +732,8 @@ main {
 .status-unknown,
 .status-offline,
 .status-out-of-date,
-.status-info {
+.status-info,
+.status-for-your-information {
   background: var(--unknown-bg);
   color: var(--unknown-fg);
 }
@@ -744,6 +747,7 @@ main {
 .status-watch::before,
 .status-warning::before,
 .status-attention-needed::before,
+.status-check-today::before,
 .status-uncertain::before,
 .status-bad-data::before {
   border-radius: 0;
@@ -751,7 +755,8 @@ main {
 }
 
 .status-critical::before,
-.status-action-required::before {
+.status-action-required::before,
+.status-act-now::before {
   border-radius: 0;
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }
@@ -1497,4 +1502,25 @@ tbody tr:hover {
   .health__headline {
     font-size: 1.35rem;
   }
+}
+
+/* ---- Limits a site sets on a reading ---------------------------------------------------------- */
+
+.limits summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.86rem;
+  padding: 6px 0;
+}
+
+.limits__form {
+  display: grid;
+  gap: 12px;
+  min-width: 260px;
+  padding: 8px 0 4px;
+}
+
+.limits__help {
+  font-size: 0.8rem;
+  font-weight: 400;
 }

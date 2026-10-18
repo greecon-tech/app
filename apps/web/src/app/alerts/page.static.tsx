@@ -6,7 +6,7 @@ import { Shell } from "../../components/Shell";
 import { StatusBadge } from "../../components/StatusBadge";
 import { apiGet } from "../../lib/api";
 import { AlertRow, partitionAlerts } from "../../lib/alerts";
-import { titleCase } from "../../lib/health";
+import { priorityWord, titleCase } from "../../lib/health";
 
 type Alert = AlertRow;
 
@@ -42,7 +42,7 @@ export default async function AlertsPage() {
           rows={alerts}
           emptyLabel="Nothing is open. Alerts appear here when a reading or a lost connection needs attention."
           columns={[
-            { key: "severity", label: "Severity", render: (row) => <StatusBadge status={titleCase(row.severity)} /> },
+            { key: "severity", label: "Priority", render: (row) => <StatusBadge status={priorityWord(row.severity)} /> },
             { key: "title", label: "Alert" },
             { key: "siteId", label: "Site", render: (row) => siteName.get(row.siteId ?? "") ?? "" },
             { key: "status", label: "Status", render: (row) => titleCase(row.status) },
@@ -57,7 +57,7 @@ export default async function AlertsPage() {
           rows={cleared}
           emptyLabel="Nothing has cleared yet."
           columns={[
-            { key: "severity", label: "Severity", render: (row) => titleCase(row.severity) },
+            { key: "severity", label: "Priority", render: (row) => priorityWord(row.severity) },
             { key: "title", label: "Alert" },
             { key: "siteId", label: "Site", render: (row) => siteName.get(row.siteId ?? "") ?? "" },
             { key: "resolvedAtUtc", label: "Cleared", render: (row) => (row.resolvedAtUtc ? <Ago iso={row.resolvedAtUtc} /> : null) }

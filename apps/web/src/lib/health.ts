@@ -11,3 +11,12 @@ export function worstFirst<T extends { name: string; health: { state: HealthStat
 export function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
+
+/** The three priorities people see on an alert (docs/20-design-and-interaction.md): what to do and
+ * how soon, not an engineering severity. Critical is Act now, warning is Check today, anything
+ * lower is information that is never pushed to anyone. */
+export function priorityWord(severity: string): string {
+  if (severity === "critical") return "Act now";
+  if (severity === "warning") return "Check today";
+  return "For your information";
+}

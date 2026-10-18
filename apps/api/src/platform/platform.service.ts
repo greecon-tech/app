@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { generateTemporaryPassword } from "../common/generate-password";
@@ -30,6 +30,7 @@ import {
   User,
   UserRole,
   hasPermission,
+  validatePointLimits,
   validateTelemetryMessage
 } from "@greecon/shared";
 import {
@@ -1582,6 +1583,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       throw new ForbiddenException("Device does not belong to the given site.");
     }
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
+    this.assertValidLimits(input.canonicalName, input.thresholdConfig);
 
     const point: Point = {
       id: randomUUID(),
@@ -1639,9 +1641,11 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     const point = this.requirePoint(pointId, principal.tenantId);
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
+    if (input.thresholdConfig !== undefined) this.assertValidLimits(point.canonicalName, input.thresholdConfig);
     const before = { ...point };
     const patch = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
     Object.assign(point, patch);
+    const limitsChanged = JSON.stringify(before.thresholdConfig ?? {}) !== JSON.stringify(point.thresholdConfig ?? {});
 
     if (this.db.isConfigured()) {
       await this.db.query(`UPDATE points SET label=$1, unit=$2, capability=$3, quality=$4, threshold_config=$5, updated_at=now() WHERE id=$6 AND tenant_id=$7`, [
@@ -1662,12 +1666,28 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteId: point.siteId,
       entityType: "point",
       entityId: point.id,
-      beforeMetadata: { label: before.label, capability: before.capability },
-      afterMetadata: { label: point.label, capability: point.capability },
-      reason: `Point "${point.label}" updated.`
+      // A change of limits is what decides when people are alerted, so it is recorded with the old
+      // and the new values, not just "updated".
+      beforeMetadata: { label: before.label, capability: before.capability, ...(limitsChanged ? { thresholdConfig: before.thresholdConfig ?? {} } : {}) },
+      afterMetadata: { label: point.label, capability: point.capability, ...(limitsChanged ? { thresholdConfig: point.thresholdConfig ?? {} } : {}) },
+      reason: limitsChanged ? `Limits for point "${point.label}" changed.` : `Point "${point.label}" updated.`
     });
 
+    // The states and alerts follow the new limits now, not at the next reading.
+    if (limitsChanged) {
+      const nowMs = Date.now();
+      this.refreshDerivedStates(point.tenantId, point.siteId, nowMs);
+      await this.reconcileSiteAlerts(point.tenantId, point.siteId, nowMs);
+    }
+
     return point;
+  }
+
+  // A limit that is misspelt, out of range or set on the wrong reading is refused rather than
+  // ignored: ignored, it would do nothing and look as if it had worked.
+  private assertValidLimits(canonicalName: CanonicalPointName, limits: Record<string, number> | undefined): void {
+    const problems = validatePointLimits(canonicalName, limits);
+    if (problems.length > 0) throw new BadRequestException(problems.join(" "));
   }
 
   async deletePoint(pointId: string, principal: Principal): Promise<{ deleted: true }> {

@@ -1,4 +1,4 @@
-import { titleCase } from "../lib/health";
+import { priorityWord } from "../lib/health";
 import { Ago } from "./Ago";
 import { StatusBadge } from "./StatusBadge";
 
@@ -26,7 +26,7 @@ export function AlertList({ alerts, siteNames }: { alerts: readonly AlertItem[];
       {ordered.map((alert) => (
         <li className="alert-item" key={alert.id}>
           <div className="alert-item__head">
-            <StatusBadge status={titleCase(alert.severity)} />
+            <StatusBadge status={priorityWord(alert.severity)} />
             <strong>{alert.title}</strong>
           </div>
           <p className="muted">

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { apiMutate } from "../../../lib/api";
+import { apiErrorMessage, apiMutate } from "../../../lib/api";
 
 export async function createAssetAction(siteId: string, name: string, type: string): Promise<{ error?: string; created?: boolean }> {
   if (!name.trim()) {
@@ -115,5 +115,18 @@ export async function deletePointAction(siteId: string, pointId: string): Promis
     return {};
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to delete point." };
+  }
+}
+
+/** Saves the limits for one reading point (an empty set clears them). The API refuses a limit that
+ * does not exist for that reading or is out of range, and says why. */
+export async function updatePointLimitsAction(siteId: string, pointId: string, limits: Record<string, number>): Promise<{ error?: string; saved?: boolean }> {
+  try {
+    await apiMutate(`/points/${pointId}`, "PATCH", { thresholdConfig: limits });
+    revalidatePath(`/sites/${siteId}`);
+    revalidatePath("/");
+    return { saved: true };
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Failed to save limits.") };
   }
 }

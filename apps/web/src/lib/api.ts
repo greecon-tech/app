@@ -96,3 +96,20 @@ async function gcpServiceAuthHeader(): Promise<Record<string, string>> {
   const idToken = await client.idTokenProvider.fetchIdToken(API_BASE_URL);
   return { Authorization: `Bearer ${idToken}` };
 }
+
+/** The API's own explanation of a refusal ("Critical below must be lower than Low below."), when
+ * it sent one, instead of the whole "request failed: ... -> 400 {json}" line. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  const start = error.message.indexOf("{");
+  if (start >= 0) {
+    try {
+      const body = JSON.parse(error.message.slice(start)) as { message?: string | string[] };
+      if (typeof body.message === "string") return body.message;
+      if (Array.isArray(body.message)) return body.message.join(" ");
+    } catch {
+      // not JSON: fall through to the plain message
+    }
+  }
+  return error.message || fallback;
+}

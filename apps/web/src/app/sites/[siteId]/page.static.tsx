@@ -11,7 +11,7 @@ import { StatusBadge } from "../../../components/StatusBadge";
 import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { groupByCanonicalName } from "../../../lib/telemetry-history";
-import { titleCase } from "../../../lib/health";
+import { priorityWord, titleCase } from "../../../lib/health";
 import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
 import { Metric } from "../../../lib/types";
 
@@ -21,7 +21,7 @@ interface SiteDetail {
   lastReadingAtUtc?: string;
   assets: Array<{ id: string; name: string; type: string; status: string }>;
   devices: Array<{ id: string; name: string; deviceType: string; protocol: string; health: string; lastSeenUtc?: string; positionX?: number; positionY?: number; placementNote?: string }>;
-  points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: string; capability: string }>;
+  points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: string; capability: string; thresholdConfig?: Record<string, number> }>;
   latestTelemetry: Array<ReadingView & { pointId: string }>;
   rules: Array<{ id: string; name: string; priority: string; executionMode: string; approvalState: string }>;
   alerts: Array<{ id: string; severity: string; title: string; status: string }>;
@@ -112,7 +112,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <DataTable
           rows={detail.alerts}
           columns={[
-            { key: "severity", label: "Severity", render: (row) => <StatusBadge status={titleCase(row.severity)} /> },
+            { key: "severity", label: "Priority", render: (row) => <StatusBadge status={priorityWord(row.severity)} /> },
             { key: "title", label: "Alert" },
             { key: "status", label: "Status", render: (row) => titleCase(row.status) }
           ]}

@@ -249,6 +249,137 @@ export const canonicalPointLabels: Readonly<Record<CanonicalPointName, string>> 
   "system.gateway.online": "Gateway online"
 };
 
+// ---- Limits a site sets on a reading --------------------------------------------------------
+// What counts as low, dry or out of date depends on the tank, the soil, the pump and the plant, so
+// it belongs to the site, not to the platform. A limit is stored on the point (`thresholdConfig`).
+// These definitions are the one list of which limits exist, what each means and what is allowed:
+// the form reads them to show the right fields, and the API reads them to refuse a typo that would
+// otherwise silently do nothing.
+
+export const pointLimitKeys = ["critical_low", "warning_low", "irrigate_below", "dry_run_lpm", "surplus_min_kw", "max_age_seconds"] as const;
+export type PointLimitKey = (typeof pointLimitKeys)[number];
+
+export interface PointLimitDefinition {
+  key: PointLimitKey;
+  label: string;
+  /** One sentence in plain language: what happens when the reading crosses it. */
+  help: string;
+  unit: string;
+  /** The readings it can be set on. */
+  appliesTo: readonly CanonicalPointName[] | "all";
+  min: number;
+  max: number;
+  /** What the platform uses when the site sets nothing. Null means the platform then says nothing
+   * rather than guess (irrigation advice, solar surplus). */
+  fallback: number | null;
+}
+
+export const pointLimitDefinitions: readonly PointLimitDefinition[] = [
+  {
+    key: "critical_low",
+    label: "Critical below",
+    help: "Below this level the tank is critical and an Act now alert opens.",
+    unit: "%",
+    appliesTo: ["water.tank.level.percent"],
+    min: 0,
+    max: 100,
+    fallback: 15
+  },
+  {
+    key: "warning_low",
+    label: "Low below",
+    help: "Below this level a Check today alert opens that says to plan a refill.",
+    unit: "%",
+    appliesTo: ["water.tank.level.percent"],
+    min: 0,
+    max: 100,
+    fallback: 35
+  },
+  {
+    key: "warning_low",
+    label: "Low below",
+    help: "Below this charge a Check today alert opens. Set it above the reserve your battery system keeps for itself.",
+    unit: "%",
+    appliesTo: ["energy.battery.soc.percent"],
+    min: 0,
+    max: 100,
+    fallback: 25
+  },
+  {
+    key: "irrigate_below",
+    label: "Start irrigating below",
+    help: "The reading at which irrigation should start, in this sensor's own unit. It depends on this field's soil, crop and sensor depth. Without it the platform gives no irrigation advice.",
+    unit: "as the sensor reports",
+    appliesTo: ["agri.soil.moisture.percent"],
+    min: 0,
+    max: 1000,
+    fallback: null
+  },
+  {
+    key: "dry_run_lpm",
+    label: "No flow at or below",
+    help: "With the pump running, flow at or below this means no water is moving.",
+    unit: "lpm",
+    appliesTo: ["water.flow.lpm"],
+    min: 0,
+    max: 100000,
+    fallback: null
+  },
+  {
+    key: "surplus_min_kw",
+    label: "Smallest useful surplus",
+    help: "Solar production above consumption by at least this much counts as available surplus. Set it to what the load you would run needs. Without it the platform makes no claim about surplus.",
+    unit: "kW",
+    appliesTo: ["energy.solar.power.kw"],
+    min: 0,
+    max: 100000,
+    fallback: null
+  },
+  {
+    key: "max_age_seconds",
+    label: "Out of date after",
+    help: "How long this reading may go without being renewed before it is shown as out of date.",
+    unit: "seconds",
+    appliesTo: "all",
+    min: 30,
+    max: 604800,
+    fallback: null
+  }
+];
+
+/** The limits that can be set on a given reading. A key can appear for more than one reading with
+ * its own wording and standard value (a tank's low level is not a battery's). */
+export function limitsFor(canonicalName: CanonicalPointName): PointLimitDefinition[] {
+  return pointLimitDefinitions.filter((definition) => definition.appliesTo === "all" || definition.appliesTo.includes(canonicalName));
+}
+
+/** What is wrong with a set of limits, in sentences a person can act on. Empty when they are valid.
+ * An unknown or misplaced limit is refused, not ignored: a mistyped name would otherwise do nothing
+ * and look as if it worked. */
+export function validatePointLimits(canonicalName: CanonicalPointName, limits: Record<string, unknown> | undefined): string[] {
+  if (!limits) return [];
+  const allowed = new Map(limitsFor(canonicalName).map((definition) => [definition.key as string, definition]));
+  const problems: string[] = [];
+
+  for (const [key, value] of Object.entries(limits)) {
+    const definition = allowed.get(key);
+    if (!definition) {
+      problems.push(`"${key}" is not a limit that can be set on ${canonicalPointLabels[canonicalName]}.`);
+    } else if (typeof value !== "number" || !Number.isFinite(value)) {
+      problems.push(`${definition.label} must be a number.`);
+    } else if (value < definition.min || value > definition.max) {
+      problems.push(`${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}.`);
+    }
+  }
+
+  const critical = limits.critical_low;
+  const low = limits.warning_low;
+  if (typeof critical === "number" && typeof low === "number" && critical >= low) {
+    problems.push("Critical below must be lower than Low below.");
+  }
+  return problems;
+}
+
 export const stateKeys = [
   "water.tank.critical",
   "water.tank.low",
