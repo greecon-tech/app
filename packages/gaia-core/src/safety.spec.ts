@@ -166,7 +166,7 @@ describe("GAIA safety primitives", () => {
   it("derives irrigation and energy surplus states from normalized telemetry", () => {
     const states = deriveOperationalStates({
       ...healthySensors,
-      "agri.soil.moisture.percent": { value: 21, unit: "%", quality: "OK", timestampUtc: "2026-04-29T09:59:00.000Z" }
+      "agri.soil.moisture.percent": { value: 21, unit: "%", quality: "OK", timestampUtc: "2026-04-29T09:59:00.000Z", thresholds: { irrigate_below: 28 } }
     });
     expect(states.find((state) => state.stateKey === "agri.irrigation_required")?.stateValue).toBe(true);
     expect(states.find((state) => state.stateKey === "energy.surplus_available")?.stateValue).toBe(true);

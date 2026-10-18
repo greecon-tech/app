@@ -108,6 +108,15 @@ describe("derived states use the thresholds configured on the point", () => {
   });
   const stateOf = (states: ReturnType<typeof deriveOperationalStates>, key: string) => states.find((state) => state.stateKey === key);
 
+  it("does not say whether irrigation is needed until the field has its own limit", () => {
+    const soil = (thresholds?: Record<string, number>) => ({ "agri.soil.moisture.percent": withThresholds(10, "%", thresholds ?? {}) });
+
+    // 10% is dry in some soils and fine in others. With no limit set for this field, say nothing.
+    expect(deriveOperationalStates(soil(), { nowMs: NOW }).map((state) => state.stateKey)).not.toContain("agri.irrigation_required");
+    expect(stateOf(deriveOperationalStates(soil({ irrigate_below: 14 }), { nowMs: NOW }), "agri.irrigation_required")?.stateValue).toBe(true);
+    expect(stateOf(deriveOperationalStates(soil({ irrigate_below: 8 }), { nowMs: NOW }), "agri.irrigation_required")?.stateValue).toBe(false);
+  });
+
   it("applies a tank's own critical and low levels instead of the platform defaults", () => {
     const configured = { critical_low: 25, warning_low: 50 };
 

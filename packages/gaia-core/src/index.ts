@@ -367,14 +367,19 @@ export function deriveOperationalStates(sensors: SensorSnapshot, options: Derive
     });
   }
 
-  if (soilMoisture !== undefined) {
-    const irrigateBelow = thresholdOf(current["agri.soil.moisture.percent"], "irrigate_below", 28);
+  // When to irrigate belongs to the field: the same percentage is waterlogged in sandy soil and
+  // bone dry in clay, and it depends on the crop, the root depth and the sensor (FAO-56; see
+  // docs/19-domain-playbook.md). So there is no platform-wide default. Without the field's own
+  // start-at limit the platform does not say whether irrigation is needed, which is the honest
+  // answer, rather than guessing from a number that suits no particular soil.
+  const irrigateBelowConfigured = current["agri.soil.moisture.percent"]?.thresholds?.irrigate_below;
+  if (soilMoisture !== undefined && typeof irrigateBelowConfigured === "number" && Number.isFinite(irrigateBelowConfigured)) {
     states.push({
       stateKey: "agri.irrigation_required",
-      stateValue: soilMoisture < irrigateBelow,
-      severity: soilMoisture < irrigateBelow ? "watch" : "info",
+      stateValue: soilMoisture < irrigateBelowConfigured,
+      severity: soilMoisture < irrigateBelowConfigured ? "watch" : "info",
       confidence: 0.85,
-      reason: `Soil moisture is ${soilMoisture.toFixed(1)}%.`
+      reason: `Soil moisture is ${soilMoisture.toFixed(1)}%; this field's start-at limit is ${irrigateBelowConfigured.toFixed(1)}%.`
     });
   }
 
