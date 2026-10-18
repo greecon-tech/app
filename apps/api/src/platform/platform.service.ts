@@ -2301,6 +2301,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   async createReportExport(input: ReportExportInput, principal: Principal) {
+    // A report is for the caller's own site. Without this, one tenant could request an export (and
+    // write an audit entry) naming another tenant's site, and a real export would hand its data over.
+    if (input.siteId) this.requireSite(input.siteId, principal.tenantId);
+
     const auditEvent = await this.recordAudit({
       tenantId: principal.tenantId,
       userId: principal.userId,
