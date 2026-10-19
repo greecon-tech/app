@@ -264,6 +264,25 @@ describe("tenant isolation across the service", () => {
     ).toBe(before);
   });
 
+  it("refuses every message of a batch that is addressed to another account's site, and changes nothing", async () => {
+    const now = new Date().toISOString();
+    const aMessage = (value: number): TelemetryMessage => ({
+      messageType: "telemetry",
+      tenantId: DEMO_TENANT_ID,
+      siteId: a.site,
+      deviceId: a.device,
+      publishedAtUtc: now,
+      correlationId: "x",
+      readings: [{ timestampUtc: now, tenantId: DEMO_TENANT_ID, siteId: a.site, deviceId: a.device, pointId: aPoint, canonicalName: "water.tank.level.percent", value, unit: "%", quality: "OK", source: "edge", ingestionTimestampUtc: now }]
+    });
+    const before = JSON.stringify(platform.latestTelemetry(DEMO_OWNER, a.site));
+    // Addressed to A with B's credentials: refused as a mismatch. Addressed to B's account but naming A's
+    // records: refused as not B's.
+    const results = await platform.ingestTelemetryBatch([aMessage(1), { ...aMessage(2), tenantId: b.tenantId, readings: aMessage(2).readings.map((reading) => ({ ...reading, tenantId: b.tenantId })) }], b);
+    expect(results.map((result) => result.accepted)).toEqual([false, false]);
+    expect(JSON.stringify(platform.latestTelemetry(DEMO_OWNER, a.site))).toBe(before);
+  });
+
   it("does not name another account's box to anyone but its own account", () => {
     expect(platform.findGateway(aGateway, b.tenantId)).toBeUndefined();
     expect(platform.findGateway(aGateway, DEMO_TENANT_ID)?.id).toBe(aGateway);
@@ -313,7 +332,9 @@ describe("tenant isolation across the service", () => {
       "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask", "createReportExport",
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
       "siteProfile", "updateSiteProfile", "siteValue", "valueSummary",
-      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway"
+      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway",
+      // The batch route and the shared implementation behind both ingest routes.
+      "ingestTelemetryBatch", "applyTelemetry"
     ]);
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
     const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser"]);

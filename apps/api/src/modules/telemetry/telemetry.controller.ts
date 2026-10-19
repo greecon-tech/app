@@ -4,7 +4,7 @@ import { INGEST_THROTTLE } from "../../common/client-throttler";
 import { RequirePermissions } from "../../common/require-permissions.decorator";
 import { RequestWithPrincipal } from "../../common/principal";
 import { PlatformService } from "../../platform/platform.service";
-import { TelemetryMessageDto } from "./telemetry-reading.dto";
+import { TelemetryBatchDto, TelemetryMessageDto } from "./telemetry-reading.dto";
 
 @Controller("telemetry")
 export class TelemetryController {
@@ -15,6 +15,15 @@ export class TelemetryController {
   @RequirePermissions("telemetry:ingest")
   ingest(@Body() body: TelemetryMessageDto, @Req() request: RequestWithPrincipal) {
     return this.platform.ingestTelemetry(body, request.principal);
+  }
+
+  // What a box sends: everything one round of reading produced, or a backlog after an outage. Each
+  // message is judged on its own, and the reply says which were taken, in the order they were sent.
+  @Throttle({ default: INGEST_THROTTLE })
+  @Post("ingest-batch")
+  @RequirePermissions("telemetry:ingest")
+  async ingestBatch(@Body() body: TelemetryBatchDto, @Req() request: RequestWithPrincipal) {
+    return { results: await this.platform.ingestTelemetryBatch(body.messages, request.principal) };
   }
 
   @Get("latest")

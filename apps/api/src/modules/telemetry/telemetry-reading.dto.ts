@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMinSize, IsArray, IsIn, IsNotEmpty, IsOptional, IsString, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsNotEmpty, IsOptional, IsString, ValidateNested } from "class-validator";
 import { canonicalPoints, qualityFlags } from "@greecon/shared";
 
 export class TelemetryReadingDto {
@@ -77,4 +77,17 @@ export class TelemetryMessageDto {
   @IsString()
   @IsNotEmpty()
   correlationId!: string;
+}
+
+/** How many messages one request may carry. A box sends everything one round of reading produced in
+ * a single request, and catches up after an outage a hundred at a time. */
+export const MAX_MESSAGES_PER_BATCH = 100;
+
+export class TelemetryBatchDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_MESSAGES_PER_BATCH)
+  @ValidateNested({ each: true })
+  @Type(() => TelemetryMessageDto)
+  messages!: TelemetryMessageDto[];
 }

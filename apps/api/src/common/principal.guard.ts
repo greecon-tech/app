@@ -123,14 +123,16 @@ function isAllowedWhilePasswordIsTemporary(request: RequestWithPrincipal): boole
   return ALLOWED_WHILE_PASSWORD_IS_TEMPORARY.some((route) => route.method === request.method && route.path === request.path);
 }
 
+/** Sending readings, one message or many. */
 function isEdgeIngestRequest(request: RequestWithPrincipal): boolean {
-  return request.method === "POST" && request.path === "/telemetry/ingest";
+  return request.method === "POST" && (request.path === "/telemetry/ingest" || request.path === "/telemetry/ingest-batch");
 }
 
 /** What a box may call with its own credential: send readings, ask what to read, say how it is, and
  * fetch its own software. Nothing that reads or changes a customer's data. */
 const EDGE_ROUTES: ReadonlyArray<{ method: string; path: string }> = [
   { method: "POST", path: "/telemetry/ingest" },
+  { method: "POST", path: "/telemetry/ingest-batch" },
   { method: "GET", path: "/edge/config" },
   { method: "POST", path: "/edge/heartbeat" },
   { method: "GET", path: "/edge/bundle" },

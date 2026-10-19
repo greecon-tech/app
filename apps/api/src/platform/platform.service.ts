@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { generateTemporaryPassword } from "../common/generate-password";
@@ -366,6 +366,23 @@ export interface EdgeSyncInput {
   startedAtUtc: string;
   completedAtUtc?: string;
 }
+
+/** What a call to ingest may be told to do beyond the readings themselves. */
+export interface IngestOptions {
+  /** False keeps the readings out of history (the demo feed saves its own, sparser, history). */
+  persistRaw?: boolean;
+  /** Keep at most one reading a point this often in history. Unset keeps every reading. */
+  rawHistoryEveryMs?: number;
+}
+
+export interface IngestBatchResult {
+  accepted: boolean;
+  ingested: number;
+  errors: string[];
+}
+
+/** A box reads every ten seconds; history keeps a reading a minute. */
+export const RAW_HISTORY_EVERY_MS = 60_000;
 
 // How often every site's states are re-derived against the clock, so a gateway that has gone quiet is
 // noticed within about a minute even though nothing is arriving to trigger a refresh.
@@ -2343,7 +2360,49 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   /** `persistRaw: false` keeps the readings out of the raw history table while still using them for
    * everything live: the latest values, the states, the alerts and the energy totals. Only the
    * simulated demo uses it, so a demo that updates every few seconds does not fill a database. */
-  async ingestTelemetry(message: TelemetryMessage, principal: Principal, options: { persistRaw?: boolean } = {}) {
+  async ingestTelemetry(message: TelemetryMessage, principal: Principal, options: IngestOptions = {}) {
+    const outcome = await this.applyTelemetry(message, principal, options);
+    if (outcome.accepted) await this.afterTelemetry(principal.tenantId, [message.siteId]);
+    return outcome;
+  }
+
+  /** Readings from a box, many messages at once. Each message is judged on its own: one that is wrong
+   * is reported as refused and the rest are taken, so a single bad reading can never hold up a site's
+   * data. States and alerts are brought up to date once per site afterwards, not once per message. */
+  async ingestTelemetryBatch(messages: TelemetryMessage[], principal: Principal): Promise<IngestBatchResult[]> {
+    const results: IngestBatchResult[] = [];
+    const sites = new Set<string>();
+    for (const message of messages) {
+      try {
+        const outcome = await this.applyTelemetry(message, principal, { rawHistoryEveryMs: RAW_HISTORY_EVERY_MS });
+        if (outcome.accepted) {
+          sites.add(message.siteId);
+          results.push({ accepted: true, ingested: outcome.ingested, errors: [] });
+        } else {
+          results.push({ accepted: false, ingested: 0, errors: outcome.errors });
+        }
+      } catch (error) {
+        // A refusal (unknown device, wrong account) is this message's own; anything else is the
+        // platform's trouble and fails the request, so the box keeps what it sent and tries again.
+        if (error instanceof HttpException && error.getStatus() < 500) {
+          results.push({ accepted: false, ingested: 0, errors: [error.message] });
+        } else {
+          throw error;
+        }
+      }
+    }
+    await this.afterTelemetry(principal.tenantId, [...sites]);
+    return results;
+  }
+
+  private async afterTelemetry(tenantId: string, siteIds: string[]): Promise<void> {
+    for (const siteId of siteIds) {
+      this.refreshDerivedStates(tenantId, siteId);
+      await this.reconcileSiteAlerts(tenantId, siteId, Date.now());
+    }
+  }
+
+  private async applyTelemetry(message: TelemetryMessage, principal: Principal, options: IngestOptions): Promise<{ accepted: true; ingested: number; errors: [] } | { accepted: false; errors: string[] }> {
     if (principal.tenantId !== message.tenantId) {
       throw new ForbiddenException("Telemetry tenant does not match request context.");
     }
@@ -2383,18 +2442,36 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     if (this.db.isConfigured() && options.persistRaw !== false) {
       for (const item of normalized) {
+        if (options.rawHistoryEveryMs !== undefined && !this.worthKeepingInHistory(item, options.rawHistoryEveryMs)) continue;
         await this.persistTelemetryReading(item);
       }
     }
-
-    this.refreshDerivedStates(principal.tenantId, message.siteId);
-    await this.reconcileSiteAlerts(principal.tenantId, message.siteId, Date.now());
 
     return {
       accepted: true,
       ingested: normalized.length,
       errors: []
     };
+  }
+
+  /** The last reading kept in history for each point, so a box that reads every ten seconds does not
+   * write a row every ten seconds. The latest value and the energy totals use every reading; history is
+   * for looking back, and one a minute is plenty for that. What is always kept: the first reading, a
+   * reading that is not simply fine, a switch that changed, and anything a minute or more from the last. */
+  private readonly lastInHistory = new Map<string, { ms: number; value: number | boolean | string }>();
+
+  private worthKeepingInHistory(item: TelemetryReading, everyMs: number): boolean {
+    const ms = Date.parse(item.timestampUtc);
+    const previous = this.lastInHistory.get(item.pointId);
+    const remember = () => {
+      if (!previous || ms > previous.ms) this.lastInHistory.set(item.pointId, { ms, value: item.value });
+    };
+
+    if (!previous || !Number.isFinite(ms) || item.quality !== "OK" || (typeof item.value !== "number" && item.value !== previous.value) || Math.abs(ms - previous.ms) >= everyMs) {
+      remember();
+      return true;
+    }
+    return false;
   }
 
   listDerivedStates(principal: Principal, siteId?: string): DerivedState[] {
@@ -3113,10 +3190,13 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return true;
   }
 
+  // A box delivers at least once: a reply lost on the way back makes it send the same reading again.
+  // A reading for a point and an instant that is already in history is not added a second time.
   private async persistTelemetryReading(item: TelemetryReading): Promise<void> {
     await this.db.query(
       `INSERT INTO telemetry_readings (timestamp_utc, tenant_id, site_id, asset_id, device_id, point_id, canonical_name, value_numeric, value_text, value_bool, unit, quality, source, ingestion_timestamp_utc)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+       WHERE NOT EXISTS (SELECT 1 FROM telemetry_readings WHERE point_id = $6 AND timestamp_utc = $1)`,
       [
         item.timestampUtc,
         item.tenantId,

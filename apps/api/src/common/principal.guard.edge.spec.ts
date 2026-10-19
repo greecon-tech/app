@@ -40,6 +40,7 @@ describe("PrincipalGuard and the box at a site", () => {
 
   const credentialed = [
     { method: "POST", path: "/telemetry/ingest" },
+    { method: "POST", path: "/telemetry/ingest-batch" },
     { method: "GET", path: "/edge/config" },
     { method: "POST", path: "/edge/heartbeat" },
     { method: "GET", path: "/edge/bundle" },
@@ -61,7 +62,7 @@ describe("PrincipalGuard and the box at a site", () => {
   });
 
   it("turns a box with an unknown credential away from the routes that need one", async () => {
-    for (const route of credentialed.filter((candidate) => candidate.path === "/edge/config" || candidate.path === "/edge/heartbeat" || candidate.path === "/telemetry/ingest")) {
+    for (const route of credentialed.filter((candidate) => !candidate.path.startsWith("/edge/bundle"))) {
       await expect(new PrincipalGuard(database([])).canActivate(contextFor({ "x-edge-device-token": "wrong" }, route)), `${route.method} ${route.path}`).rejects.toThrow(UnauthorizedException);
     }
   });
@@ -85,6 +86,7 @@ describe("PrincipalGuard and the box at a site", () => {
     process.env.EDGE_INGEST_TENANT_ID = "legacy-tenant";
     const guard = new PrincipalGuard(database([]));
     await expect(guard.canActivate(contextFor({ "x-edge-device-token": "shared" }, { method: "POST", path: "/telemetry/ingest" }))).resolves.toBe(true);
+    await expect(guard.canActivate(contextFor({ "x-edge-device-token": "shared" }, { method: "POST", path: "/telemetry/ingest-batch" }))).resolves.toBe(true);
     // The configuration and the heartbeat are refused outright; the software route reaches its own check.
     await expect(guard.canActivate(contextFor({ "x-edge-device-token": "shared" }, { method: "GET", path: "/edge/config" }))).rejects.toThrow(UnauthorizedException);
     await expect(guard.canActivate(contextFor({ "x-edge-device-token": "shared" }, { method: "POST", path: "/edge/heartbeat" }))).rejects.toThrow(UnauthorizedException);

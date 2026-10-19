@@ -26,9 +26,13 @@ async function bootstrap(): Promise<void> {
   // before anything reads the database (PlatformService hydrates from it when the module starts).
   await prepareDatabase(process.env, (message) => (message.startsWith("SECURITY") ? logger.warn(message) : logger.log(message)));
 
+  // The default request body limit (100 kB) is smaller than a hundred readings sent at once.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bufferLogs: true
+    bufferLogs: true,
+    bodyParser: false
   });
+  app.useBodyParser("json", { limit: "1mb" });
+  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
 
   // Behind a reverse proxy (Railway, a load balancer) every connection arrives from the proxy, so
   // without this every caller looks like one address and shares one rate-limit bucket. Opt-in and
