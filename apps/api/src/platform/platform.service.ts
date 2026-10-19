@@ -1070,7 +1070,38 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.scope(this.users, principal.tenantId);
   }
 
+  /** Greecon staff open a customer's account to set it up. The customer's own audit trail says so, with
+   * the staff member's address, before anything is done in it. The session this leads to can configure
+   * sites and equipment as an administrator can, and cannot change who may sign in (see assertNotSupport). */
+  async beginSupportSession(tenantId: string, principal: Principal): Promise<{ tenant: Tenant; staffName: string }> {
+    if (!principal.isPlatformAdmin || principal.support) {
+      throw new ForbiddenException("This action requires Greecon platform-administrator access.");
+    }
+    const tenant = this.tenants.find((candidate) => candidate.id === tenantId);
+    if (!tenant) throw new NotFoundException("Client not found.");
+    if (tenant.status !== "active") throw new ConflictException("This client's account is not active, so it cannot be opened for setup.");
+
+    const staff = this.users.find((user) => user.id === principal.userId);
+    await this.recordAudit({
+      tenantId: tenant.id,
+      userId: principal.userId,
+      eventType: "support.session_started",
+      entityType: "support_session",
+      reason: `Greecon staff (${principal.email}) opened this account to set it up.`
+    });
+    return { tenant, staffName: staff?.name ?? principal.email };
+  }
+
+  /** A person from Greecon in a customer's account to set it up may configure what is measured, not who
+   * can sign in: that is the customer's. */
+  private assertNotSupport(principal: Principal): void {
+    if (principal.support) {
+      throw new ForbiddenException("Greecon staff setting up an account cannot add people to it, change their roles or reset their passwords. The account's owner does that.");
+    }
+  }
+
   async createUser(input: CreateUserInput, principal: Principal): Promise<{ user: User; temporaryPassword: string }> {
+    this.assertNotSupport(principal);
     if (!hasPermission(principal.role, "user:manage")) {
       throw new ForbiddenException("Action blocked by access policy.");
     }
@@ -1127,6 +1158,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   // generates a fresh temporary password on the user's behalf and passes it along out of band,
   // same one-time-disclosure handling as createUser.
   async resetUserPassword(userId: string, principal: Principal): Promise<{ user: User; temporaryPassword: string }> {
+    this.assertNotSupport(principal);
     if (!hasPermission(principal.role, "user:manage")) {
       throw new ForbiddenException("Action blocked by access policy.");
     }
@@ -1152,6 +1184,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   async updateUser(userId: string, input: UpdateUserInput, principal: Principal): Promise<User> {
+    this.assertNotSupport(principal);
     if (!hasPermission(principal.role, "user:manage")) {
       throw new ForbiddenException("Action blocked by access policy.");
     }
@@ -3008,8 +3041,18 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return exportRecord;
   }
 
-  listAudit(principal: Principal, siteId?: string): AuditEvent[] {
-    return this.scope(this.auditEvents, principal.tenantId).filter((event) => !siteId || event.siteId === siteId);
+  /** The audit trail with who did each thing, in words: a person of this account by name, Greecon staff as
+   * such with their address (they act in an account they are not a user of), anything else as the system. */
+  listAudit(principal: Principal, siteId?: string): Array<AuditEvent & { actor: string }> {
+    return this.scope(this.auditEvents, principal.tenantId)
+      .filter((event) => !siteId || event.siteId === siteId)
+      .map((event) => ({ ...event, actor: this.actorOf(event.userId, principal.tenantId) }));
+  }
+
+  private actorOf(userId: string, tenantId: string): string {
+    const user = this.users.find((candidate) => candidate.id === userId);
+    if (!user) return "System";
+    return user.tenantId === tenantId ? user.name : `Greecon staff (${user.email})`;
   }
 
   async recordEdgeSync(input: EdgeSyncInput, principal: Principal) {

@@ -1,10 +1,10 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it } from "vitest";
 import { GatewayHeartbeat, PointSource } from "@greecon/shared";
 import { Principal } from "../common/principal";
 import { DatabaseService } from "../database/database.service";
 import { PlatformService } from "./platform.service";
-import { onboardClient } from "./test-support";
+import { DEMO_OWNER, PLATFORM_ADMIN, onboardClient } from "./test-support";
 
 // How equipment is described to the platform so that the box can be told what to read: a device's
 // address, a reading's register, the box itself and what it reports. All of it is typed by a person at
@@ -327,6 +327,62 @@ describe("describing equipment to the platform", () => {
       expect(platform.siteSetupRecord(siteId, owner).templateKey).toBe("hotel");
       await platform.setSetupConfirmation(siteId, "limits", { atUtc: new Date().toISOString(), by: "x" }, owner);
       expect(platform.siteSetupRecord(siteId, owner).templateKey).toBe("hotel");
+    });
+  });
+
+  describe("Greecon staff opening a customer's account to set it up", () => {
+    it("is recorded in the customer's own audit trail before anything is done, with the staff member's address", async () => {
+      const { tenant } = await platform.beginSupportSession(owner.tenantId, PLATFORM_ADMIN);
+      expect(tenant.id).toBe(owner.tenantId);
+      const opened = platform.listAudit(owner).find((event) => event.eventType === "support.session_started");
+      expect(opened?.reason).toBe("Greecon staff (eridon.manuka@greecon.earth) opened this account to set it up.");
+      expect(opened?.actor).toBe("Greecon staff (eridon.manuka@greecon.earth)");
+    });
+
+    it("is for Greecon's platform administrators only, and not for someone already in a customer's account", async () => {
+      await expect(platform.beginSupportSession(owner.tenantId, owner)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(platform.beginSupportSession(owner.tenantId, { ...PLATFORM_ADMIN, support: true })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(platform.beginSupportSession("00000000-0000-4000-8000-000000000000", PLATFORM_ADMIN)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("is not possible for an account that is suspended", async () => {
+      await platform.updateTenantStatus(owner.tenantId, "suspended", PLATFORM_ADMIN);
+      await expect(platform.beginSupportSession(owner.tenantId, PLATFORM_ADMIN)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    // What the session is: the staff member's own identity, as an administrator, in the customer's account.
+    const inSupport = (): Principal => ({ tenantId: owner.tenantId, userId: PLATFORM_ADMIN.userId, role: "admin", email: PLATFORM_ADMIN.email, isPlatformAdmin: false, support: true });
+
+    it("can set the account up as an administrator does, and what it does is under the staff member's name", async () => {
+      const staff = inSupport();
+      const site = await platform.createSite({ name: "Set up by staff", type: "farm", locationName: "x" }, staff);
+      await platform.createDevice({ siteId: site.id, name: "Meter", deviceType: "meter", protocol: "modbus", driverType: "modbus-tcp" }, staff);
+      const created = platform.listAudit(owner, site.id).find((event) => event.eventType === "site.created");
+      expect(created?.actor).toBe("Greecon staff (eridon.manuka@greecon.earth)");
+    });
+
+    it("cannot add people to the account, change who they are, or reset their passwords", async () => {
+      const staff = inSupport();
+      const ownerUser = platform.listUsers(owner)[0];
+      await expect(platform.createUser({ name: "New", email: "new@client-farm.example", role: "viewer" }, staff)).rejects.toThrow(/cannot add people/);
+      await expect(platform.updateUser(ownerUser?.id as string, { role: "viewer" }, staff)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(platform.resetUserPassword(ownerUser?.id as string, staff)).rejects.toBeInstanceOf(ForbiddenException);
+      // The account's owner still can.
+      await expect(platform.createUser({ name: "New", email: "new@client-farm.example", role: "viewer" }, owner)).resolves.toBeDefined();
+    });
+  });
+
+  describe("who did it, in the audit trail", () => {
+    it("says a person of the account by name, Greecon staff as such, and anything else as the system", async () => {
+      const mine = await platform.createSite({ name: "Mine", type: "farm", locationName: "x" }, owner);
+      const staffMade = await platform.createSite({ name: "Theirs", type: "farm", locationName: "x" }, { ...owner, userId: DEMO_OWNER.userId, email: DEMO_OWNER.email, support: true });
+      const gateway = await platform.provisionGateway({ siteId: mine.id, name: "Box" }, owner);
+      await platform.completeGatewayEnrolment(gateway.id, owner.tenantId, undefined);
+
+      const actors = new Map(platform.listAudit(owner).map((event) => [event.eventType + event.entityId, event.actor]));
+      expect(actors.get(`site.created${mine.id}`)).toBe("Client Owner");
+      expect(actors.get(`site.created${staffMade.id}`)).toBe("Greecon staff (eridon.manuka@greecon.earth)");
+      expect(actors.get(`gateway.enrolled${gateway.id}`)).toBe("System");
     });
   });
 

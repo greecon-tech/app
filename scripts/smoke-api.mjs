@@ -177,6 +177,24 @@ try {
   const oldCredential = await call("GET", "/edge/config", { box: secret });
   check(oldCredential.status === 401, "the old credential stops working at once");
   check((await call("GET", "/edge/config", { box: replaced.json.secret })).status === 200, "the new credential works");
+
+  step("Greecon's project manager opens the customer's account to set it up");
+  const staff = admin.user;
+  const opened = await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: admin.token });
+  check(opened.status === 201 && opened.json?.user?.support === true && opened.json?.customer === `Smoke Hotel ${suffix}`, "a platform administrator can open a customer's account");
+  const support = opened.json?.token;
+  check((await call("GET", "/sites", { token: support })).status === 200, "the session works in the customer's account");
+  check((await call("GET", `/sites/${siteId}/setup`, { token: support })).status === 200, "and sees the site's setup");
+  check((await call("GET", "/platform-admin/tenants", { token: support })).status === 403, "but not Greecon's own console");
+  const noPeople = await call("POST", "/users", { token: support, body: { name: "New", email: `new-${suffix}@smoke.example`, role: "viewer" } });
+  check(noPeople.status === 403 && /cannot add people/.test(noPeople.text), "it cannot add people to the account");
+  const made = await call("POST", "/sites/from-template", { token: support, body: { templateKey: "blank", name: "Set up by staff", locationName: "x" } });
+  check(made.status === 201, "it can set up a site");
+  const audit = (await call("GET", "/audit", { token: owner })).json ?? [];
+  check(audit.some((event) => event.eventType === "support.session_started" && event.actor === `Greecon staff (${staff.email})`), "the customer's audit trail says Greecon staff opened the account");
+  check(audit.some((event) => event.eventType === "site.created" && event.actor === `Greecon staff (${staff.email})`), "and that the site was made by them");
+  check((await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: owner })).status === 403, "a customer's owner cannot open anyone's account");
+  check((await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: support })).status === 403, "nor can a support session open another");
 } catch (error) {
   console.error(`\nThe smoke test could not finish: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);

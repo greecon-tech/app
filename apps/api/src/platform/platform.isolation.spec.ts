@@ -227,6 +227,7 @@ describe("tenant isolation across the service", () => {
       ["siteProfile", () => platform.siteProfile(a.site, b)],
       ["updateSiteProfile", () => platform.updateSiteProfile(a.site, { importPricePerKwh: 99 }, b)],
       ["siteValue", () => platform.siteValue(a.site, "month", b)],
+      ["beginSupportSession", () => platform.beginSupportSession(DEMO_TENANT_ID, b)],
       ["siteSetupRecord", () => platform.siteSetupRecord(a.site, b)],
       ["recordSiteTemplate", () => platform.recordSiteTemplate(a.site, "hotel", b)],
       ["setSetupConfirmation", () => platform.setSetupConfirmation(a.site, "direction", { atUtc: new Date().toISOString(), by: "b@x.example" }, b)],
@@ -332,12 +333,12 @@ describe("tenant isolation across the service", () => {
       "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask", "createReportExport",
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
       "siteProfile", "updateSiteProfile", "siteValue", "valueSummary",
-      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway",
+      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway", "beginSupportSession",
       // The batch route and the shared implementation behind both ingest routes.
       "ingestTelemetryBatch", "applyTelemetry"
     ]);
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
-    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser"]);
+    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport"]);
 
     const takingAPrincipal = Object.getOwnPropertyNames(PlatformService.prototype).filter((name) => {
       const method = (PlatformService.prototype as unknown as Record<string, unknown>)[name];

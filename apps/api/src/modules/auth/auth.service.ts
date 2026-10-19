@@ -18,6 +18,17 @@ interface UserCredentialRow {
   tenant_status: string;
 }
 
+/** What Greecon staff are given to set a customer's account up: a session in that account, as an
+ * administrator, that cannot be used for anything in Greecon's own console, and that ends by itself. */
+export const SUPPORT_SESSION_HOURS = 4;
+
+export interface SupportSession {
+  token: string;
+  user: LoginResult["user"] & { support: true };
+  customer: string;
+  expiresInSeconds: number;
+}
+
 export interface LoginResult {
   token: string;
   user: {
@@ -35,6 +46,21 @@ export interface LoginResult {
 @Injectable()
 export class AuthService {
   constructor(private readonly db: DatabaseService) {}
+
+  /** The session for a staff member working inside one customer's account. It carries the staff member's
+   * own identity, so that everything done is recorded under their name; it is for the customer's account
+   * only (not a platform administrator's, so Greecon's console is closed to it); and it is short. */
+  issueSupportSession(input: { tenantId: string; customer: string; staffUserId: string; staffName: string; staffEmail: string }): SupportSession {
+    const secret = jwtSecret();
+    if (!secret) throw new UnauthorizedException("JWT_SECRET is not configured on this deployment.");
+    const claims: JwtClaims = { sub: input.staffUserId, tenantId: input.tenantId, role: "admin", email: input.staffEmail, isPlatformAdmin: false, support: true };
+    return {
+      token: jwt.sign(claims, secret, { expiresIn: `${SUPPORT_SESSION_HOURS}h` }),
+      user: { id: input.staffUserId, tenantId: input.tenantId, email: input.staffEmail, name: input.staffName, role: "admin", isPlatformAdmin: false, mustChangePassword: false, support: true },
+      customer: input.customer,
+      expiresInSeconds: SUPPORT_SESSION_HOURS * 3600
+    };
+  }
 
   async login(email: string, password: string): Promise<LoginResult> {
     // Real login needs a real, persisted user + password hash to check — there's no in-memory

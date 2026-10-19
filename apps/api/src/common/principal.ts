@@ -23,6 +23,9 @@ export interface Principal {
   isPlatformAdmin: boolean;
   /** Set when the caller is a box at a site, not a person: the gateway whose credential it presented. */
   gatewayId?: string;
+  /** Set when Greecon staff have opened a customer's account to set it up (a support session): the
+   * person is Greecon's, the account is the customer's, and who may sign in to it is not theirs to change. */
+  support?: boolean;
 }
 
 export interface JwtClaims {
@@ -33,6 +36,8 @@ export interface JwtClaims {
   isPlatformAdmin?: boolean;
   /** Set while the account still has a temporary password: the session may only be used to choose a new one. */
   mcp?: boolean;
+  /** Set on the session Greecon staff are given to set a customer's account up. */
+  support?: boolean;
 }
 
 export function jwtSecret(): string | undefined {
@@ -53,7 +58,8 @@ export function principalFromClaims(claims: JwtClaims): Principal {
     userId: claims.sub,
     role,
     email: claims.email,
-    isPlatformAdmin: claims.isPlatformAdmin === true
+    isPlatformAdmin: claims.isPlatformAdmin === true,
+    ...(claims.support === true ? { support: true } : {})
   };
 }
 

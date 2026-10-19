@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from
 import { PlatformAdminGuard } from "../../common/platform-admin.guard";
 import { RequestWithPrincipal } from "../../common/principal";
 import { PlatformService } from "../../platform/platform.service";
+import { AuthService } from "../auth/auth.service";
 import { CreateTenantDto } from "./create-tenant.dto";
 import { UpdateTenantStatusDto } from "./update-tenant-status.dto";
 
@@ -11,7 +12,10 @@ import { UpdateTenantStatusDto } from "./update-tenant-status.dto";
 @Controller("platform-admin")
 @UseGuards(PlatformAdminGuard)
 export class PlatformAdminController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly auth: AuthService
+  ) {}
 
   @Get("tenants")
   listTenants(
@@ -30,6 +34,14 @@ export class PlatformAdminController {
   @Post("tenants")
   createTenant(@Body() body: CreateTenantDto, @Req() request: RequestWithPrincipal) {
     return this.platform.createTenant(body, request.principal);
+  }
+
+  // Greecon's project manager opens a customer's account to set it up. The customer's audit trail records
+  // that they did, and everything done in it afterwards is under their own name.
+  @Post("tenants/:tenantId/support-session")
+  async startSupportSession(@Param("tenantId") tenantId: string, @Req() request: RequestWithPrincipal) {
+    const { tenant, staffName } = await this.platform.beginSupportSession(tenantId, request.principal);
+    return this.auth.issueSupportSession({ tenantId: tenant.id, customer: tenant.name, staffUserId: request.principal.userId, staffName, staffEmail: request.principal.email });
   }
 
   @Patch("tenants/:tenantId/status")
