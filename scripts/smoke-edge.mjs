@@ -10,53 +10,16 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { API, call, check, failed, login, onboard, step, until } from "./lib/smoke-helpers.mjs";
+import { startMeter } from "./pretend-meter.mjs";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
   console.error("Set ADMIN_EMAIL and ADMIN_PASSWORD to the bootstrap administrator.");
   process.exit(2);
-}
-
-/** A Modbus TCP meter: holds one signed power as a float in input registers 52-53 of unit 1. */
-function startMeter(watts) {
-  const registers = new Map();
-  const view = new DataView(new ArrayBuffer(4));
-  view.setFloat32(0, watts);
-  registers.set(52, view.getUint16(0));
-  registers.set(53, view.getUint16(2));
-  let requests = 0;
-  const server = createServer((socket) => {
-    let pending = Buffer.alloc(0);
-    socket.on("error", () => undefined);
-    socket.on("data", (chunk) => {
-      pending = Buffer.concat([pending, chunk]);
-      while (pending.length >= 6 && pending.length >= 6 + pending.readUInt16BE(4)) {
-        const frame = pending.subarray(0, 6 + pending.readUInt16BE(4));
-        pending = pending.subarray(frame.length);
-        requests += 1;
-        const unit = frame.readUInt8(6);
-        const code = frame.readUInt8(7);
-        if (unit !== 1) continue;
-        const start = frame.readUInt16BE(8);
-        const count = frame.readUInt16BE(10);
-        const header = Buffer.alloc(7);
-        frame.copy(header, 0, 0, 2);
-        const values = Array.from({ length: count }, (_, index) => registers.get(start + index));
-        const pdu = values.some((value) => value === undefined)
-          ? Buffer.from([code | 0x80, 2])
-          : Buffer.concat([Buffer.from([code, count * 2]), ...values.map((value) => Buffer.from([value >> 8, value & 0xff]))]);
-        header.writeUInt16BE(pdu.length + 1, 4);
-        header.writeUInt8(unit, 6);
-        socket.write(Buffer.concat([header, pdu]));
-      }
-    });
-  });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ port: server.address().port, requests: () => requests, close: () => server.close() })));
 }
 
 const run = (command, args, options = {}) => spawnSync(command, args, { encoding: "utf8", ...options });
@@ -109,7 +72,7 @@ try {
   check(repair.status === 0 && /already has its credential/.test(repair.stdout), "running it again without a code repairs the installation and keeps the box's credential");
 
   step("The box is told what to read, and reads it");
-  meter = await startMeter(4213.5);
+  meter = await startMeter({ watts: 4213.5 });
   const devices = (await call("GET", `/devices?siteId=${siteId}`, { token: owner })).json;
   const grid = devices.find((device) => device.name === "Grid meter");
   const set = await call("PATCH", `/devices/${grid.id}`, { token: owner, body: { connection: { kind: "modbus_tcp", host: "127.0.0.1", port: meter.port, unitId: 1 } } });
