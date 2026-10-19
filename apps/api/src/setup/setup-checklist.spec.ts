@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Device, EdgeGateway, Point, SiteProfile, profileByKey, templateByKey } from "@greecon/shared";
-import { Confirmation, LatestForSetup, SetupInput, computeSetup } from "./setup-checklist";
+import { Confirmation, LatestForSetup, SetupInput, SetupNotifications, computeSetup } from "./setup-checklist";
 
 const NOW = Date.parse("2026-10-19T10:00:00Z");
 const TENANT = "t-1";
@@ -104,6 +104,75 @@ describe("a site with no equipment at all", () => {
     expect(addresses?.detail).toBe("No equipment has been added to this site yet.");
     expect(view.readyToCommission).toBe(false);
     expect(step(view, "commissioned")?.status).toBe("waiting");
+  });
+});
+
+describe("someone is told", () => {
+  const on = { emailOn: true, smsOn: true, contacts: 2, byEmail: 2, bySms: 1 };
+  const withNotifications = (notifications: SetupNotifications, confirmations: SetupInput["confirmations"] = {}) => computeSetup(input({ notifications, confirmations }));
+  const told = (notifications: SetupNotifications, confirmations?: SetupInput["confirmations"]) => step(withNotifications(notifications, confirmations), "told");
+
+  it("is not a step at all where the platform has no notifications", () => {
+    expect(step(computeSetup(input()), "told")).toBeUndefined();
+  });
+
+  it("sits between the readings and the checks a person makes at the site", () => {
+    const keys = withNotifications(on).steps.map((candidate) => candidate.key);
+    expect(keys.indexOf("told")).toBe(keys.indexOf("readings") + 1);
+    expect(keys.indexOf("told")).toBeLessThan(keys.indexOf("direction"));
+  });
+
+  it("needs attention, and cannot be confirmed, while the platform cannot send anything", () => {
+    const result = told({ ...on, emailOn: false, smsOn: false });
+    expect(result).toMatchObject({ status: "attention", manual: true, canConfirm: false });
+    expect(result?.detail).toBe("This Greecon platform is not set up to send messages, so no alert would reach anyone.");
+    expect(result?.nextAction).toContain("Tell Greecon support");
+  });
+
+  it("asks for people when nobody is on the list", () => {
+    const result = told({ ...on, contacts: 0, byEmail: 0, bySms: 0 });
+    expect(result).toMatchObject({ status: "todo", canConfirm: false });
+    expect(result?.detail).toBe("Nobody is set to be told. Alerts show in Greecon, but nobody is sent a message.");
+  });
+
+  it("needs attention when nobody on the list can be reached the way the platform sends", () => {
+    expect(told({ emailOn: true, smsOn: false, contacts: 1, byEmail: 0, bySms: 1 })).toMatchObject({ status: "attention", canConfirm: false });
+    expect(told({ emailOn: true, smsOn: false, contacts: 1, byEmail: 0, bySms: 1 })?.detail).toContain("Nobody on the list has an email address");
+    expect(told({ emailOn: false, smsOn: true, contacts: 1, byEmail: 1, bySms: 0 })?.detail).toContain("Nobody on the list has a phone number");
+  });
+
+  it("asks for a test message before anyone can say it arrived", () => {
+    const result = told(on);
+    expect(result).toMatchObject({ status: "todo", canConfirm: false });
+    expect(result?.detail).toBe("2 people are on the list, and no test message has been sent yet.");
+    expect(told({ ...on, contacts: 1 })?.detail).toBe("One person is on the list, and no test message has been sent yet.");
+  });
+
+  it("can be confirmed by a person once a test message has gone, and says the platform cannot tell it was read", () => {
+    const result = told({ ...on, lastTestAtMs: NOW - 3 * 60_000 });
+    expect(result).toMatchObject({ status: "todo", canConfirm: true, manual: true });
+    expect(result?.detail).toBe("A test message was sent 3 minutes ago. Greecon cannot tell whether it was read.");
+    expect(result?.nextAction).toContain("in the inbox and not in spam");
+  });
+
+  it("is done when a person confirmed it, with who and when", () => {
+    const result = told({ ...on, lastTestAtMs: NOW - 60_000 }, { told: { atUtc: secondsAgo(30), by: "pm@greecon.earth (Greecon staff)", note: "Besa read it" } });
+    expect(result).toMatchObject({ status: "done", confirmedBy: "pm@greecon.earth (Greecon staff)", note: "Besa read it" });
+  });
+
+  it("stops being done if the list is emptied or the platform loses its way of sending", () => {
+    const confirmed = { told: done() };
+    expect(told({ ...on, contacts: 0, byEmail: 0, bySms: 0, lastTestAtMs: NOW }, confirmed)?.status).toBe("todo");
+    expect(told({ ...on, emailOn: false, smsOn: false, lastTestAtMs: NOW }, confirmed)?.status).toBe("attention");
+  });
+
+  it("holds commissioning back until it is done", () => {
+    const base = working();
+    const before = computeSetup({ ...base, notifications: { ...on, lastTestAtMs: NOW }, confirmations: { direction: done(), limits: done() } });
+    expect(before.readyToCommission).toBe(false);
+    expect(step(before, "commissioned")?.status).toBe("waiting");
+    const after = computeSetup({ ...base, notifications: { ...on, lastTestAtMs: NOW }, confirmations: { told: done(), direction: done(), limits: done() } });
+    expect(after.readyToCommission).toBe(true);
   });
 });
 

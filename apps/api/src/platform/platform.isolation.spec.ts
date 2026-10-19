@@ -338,7 +338,8 @@ describe("tenant isolation across the service", () => {
       "ingestTelemetryBatch", "applyTelemetry"
     ]);
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
-    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport"]);
+    // recordNotificationSettingsChange only writes one audit line, into the caller's own tenant's trail.
+    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport", "recordNotificationSettingsChange"]);
 
     const takingAPrincipal = Object.getOwnPropertyNames(PlatformService.prototype).filter((name) => {
       const method = (PlatformService.prototype as unknown as Record<string, unknown>)[name];

@@ -62,6 +62,8 @@ export interface SetupStep {
   optional?: boolean;
   /** A person confirms this one by hand: the platform cannot see it. */
   manual?: boolean;
+  /** For a step confirmed by hand: false while something that must come first is missing. */
+  canConfirm?: boolean;
   confirmedAtUtc?: string;
   confirmedBy?: string;
   note?: string;
@@ -86,7 +88,7 @@ export interface SetupView {
 export const ALERT_LIMIT_KEYS: readonly string[] = ["critical_low", "warning_low", "irrigate_below", "dry_run_lpm"];
 
 /** The steps a person confirms by hand. */
-export const manualSetupSteps = ["direction", "limits", "commissioned"] as const;
+export const manualSetupSteps = ["told", "direction", "limits", "commissioned"] as const;
 export type ManualSetupStep = (typeof manualSetupSteps)[number];
 
 export function isManualSetupStep(key: string): key is ManualSetupStep {
@@ -130,6 +132,8 @@ export interface HandoverView {
   commissionedAtUtc?: string;
   commissionedBy?: string;
   people: Array<{ name: string; email: string; role: UserRole }>;
+  /** The people who are told when something needs a person, in the order they are told. */
+  told: Array<{ name: string; email?: string; phone?: string }>;
   support: { email: string };
 }
 

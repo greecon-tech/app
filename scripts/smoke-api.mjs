@@ -155,6 +155,29 @@ try {
   check(grid?.address === "192.168.1.50:502, unit 1" || /192\.168\.1\.50:502, unit \d/.test(grid?.address ?? ""), "the handover gives the device's address");
   check(handover.json?.devices?.some((d) => d.readings.some((r) => r.latestValue === 4.2)), "the handover shows the latest reading");
 
+  step("Who is told when something needs a person");
+  const state = await call("GET", "/notifications/status", { token: owner });
+  check(state.status === 200 && state.json?.email?.configured === false && state.json?.sms?.configured === false, "this platform says plainly that it can send nothing");
+  check(state.json?.words?.[0]?.startsWith("Alert messages are off on this Greecon platform."), "in words a person can read");
+  const badList = await call("PUT", "/notifications/contacts", { token: owner, body: { contacts: [{ name: "Besa", email: "not an address" }] } });
+  check(badList.status === 400 && /not an email address/.test(badList.text), "a mistyped address is refused in words");
+  const list = await call("PUT", "/notifications/contacts", { token: owner, body: { contacts: [{ name: "Besa Krasniqi", email: `besa-${suffix}@smoke.example`, phone: "+355 69 123 4567" }] } });
+  check(list.status === 200 && list.json?.[0]?.phone === "+355691234567" && typeof list.json?.[0]?.id === "string", "the list is saved, the number in international form");
+  const contactId = list.json?.[0]?.id;
+  const settings = await call("PUT", "/notifications/settings", { token: owner, body: { quietFrom: "23:00", quietTo: "06:30" } });
+  check(settings.status === 200 && settings.json?.quietFrom === "23:00" && settings.json?.timezone === "Europe/Tirane", "quiet hours can be set, the rest staying as it was");
+  check((await call("PUT", "/notifications/settings", { token: owner, body: { digestAt: "7am" } })).status === 400, "a time that is not a time is refused");
+  const test = await call("POST", `/notifications/contacts/${contactId}/test`, { token: owner });
+  check(test.status === 201 && test.json?.length === 2 && test.json.every((entry) => entry.status === "failed" && /not set up on this Greecon platform/.test(entry.error)), "a test message says it was not sent, and why");
+  const notifyLog = await call("GET", "/notifications/log", { token: owner });
+  check(notifyLog.status === 200 && notifyLog.json?.length === 2 && notifyLog.json.every((entry) => !entry.destination.includes("besa-")), "the log shows each attempt, the address hidden in part");
+  const toldSetup = await call("GET", `/sites/${siteId}/setup`, { token: owner });
+  const toldStep = toldSetup.json?.steps?.find((candidate) => candidate.key === "told");
+  check(toldStep?.status === "attention" && toldStep?.canConfirm === false, "the checklist holds the site back, because nothing can be sent");
+  const tooEarly = await call("PUT", `/sites/${siteId}/setup/steps/told`, { token: owner, body: {} });
+  check(tooEarly.status === 409, "and refuses to confirm that people are told");
+  check(handover.json?.told?.length === 0 || Array.isArray(handover.json?.told), "the handover has a list of who is told");
+
   step("Another customer cannot reach any of it");
   const other = await onboard(admin.token, `Smoke Other ${suffix}`, `other-${suffix}@smoke.example`);
   for (const [method, path, body] of [
@@ -163,11 +186,17 @@ try {
     ["PUT", `/sites/${siteId}/setup/steps/direction`, {}],
     ["POST", "/gateways/provision", { siteId, name: "Intruder" }],
     ["POST", `/gateways/${gatewayId}/enrolment`],
-    ["POST", "/devices/from-profile", { siteId, profileKey: "eastron-sdm630-grid" }]
+    ["POST", "/devices/from-profile", { siteId, profileKey: "eastron-sdm630-grid" }],
+    ["POST", `/notifications/contacts/${contactId}/test`]
   ]) {
     const result = await call(method, path, { token: other.session, body });
     check(result.status === 403 || result.status === 404, `${method} ${path} is refused for another customer (${result.status})`);
   }
+
+  const theirList = await call("GET", "/notifications/contacts", { token: other.session });
+  check(theirList.status === 200 && theirList.json?.length === 0, "another customer's list of people is their own, and empty");
+  const theirLog = await call("GET", "/notifications/log", { token: other.session });
+  check(theirLog.status === 200 && theirLog.json?.length === 0, "and so is its log");
 
   step("A replacement box");
   const newCode = await call("POST", `/gateways/${gatewayId}/enrolment`, { token: owner });

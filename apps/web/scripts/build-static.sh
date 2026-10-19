@@ -37,6 +37,8 @@
 #     step), which call Server Actions. The twin shows the same checklist read only.
 #   sites/[siteId]/handover/page.tsx — no Server Action, but a dynamic route needs generateStaticParams
 #     in a static export and must not have it in the live build (same reason as sites/[siteId]/page.tsx).
+#   settings/people/page.tsx — imports the forms that save who is told and send test messages (Server
+#     Actions). The twin explains the rules and says the demo sends nobody a message.
 set -e
 # Disables pathname expansion for the rest of the script: one of the paths below literally
 # contains "[siteId]", which the shell would otherwise try to glob-match as a one-character
@@ -61,6 +63,7 @@ src/app/reports/page.tsx
 src/app/maintenance/page.tsx
 src/app/sites/[siteId]/setup/page.tsx
 src/app/sites/[siteId]/handover/page.tsx
+src/app/settings/people/page.tsx
 src/components/Shell.tsx
 "
 

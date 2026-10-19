@@ -36,6 +36,17 @@ export interface Confirmation {
   note?: string;
 }
 
+/** What the checklist needs to know about telling people: which ways the platform can send, who is on the list,
+ * and when a test message last went through. Absent where the platform has no notifications (some tests). */
+export interface SetupNotifications {
+  emailOn: boolean;
+  smsOn: boolean;
+  contacts: number;
+  byEmail: number;
+  bySms: number;
+  lastTestAtMs?: number;
+}
+
 export interface SetupInput {
   nowMs: number;
   site: { id: string; name: string };
@@ -46,6 +57,7 @@ export interface SetupInput {
   points: readonly Point[];
   latest: readonly LatestForSetup[];
   confirmations: Readonly<Record<string, Confirmation | undefined>>;
+  notifications?: SetupNotifications;
 }
 
 /** The box's clock is wrong by more than this: readings are stamped with it, so it matters. */
@@ -265,7 +277,10 @@ export function computeSetup(input: SetupInput): SetupView {
     });
   }
 
-  // 7. Direction of the grid meter (a person checks) -----------------------
+  // 7. Someone is told (the platform sees the list and the test; a person confirms it arrived) --------
+  if (input.notifications) steps.push(toldStep(input.notifications, confirmation("told"), nowMs));
+
+  // 8. Direction of the grid meter (a person checks) -----------------------
   const hasGrid = input.points.some((point) => point.canonicalName === "energy.grid.import.kw") && input.points.some((point) => point.canonicalName === "energy.grid.export.kw");
   if (hasGrid) {
     steps.push(manualStep("direction", "Grid meter direction checked", confirmation("direction"), {
@@ -274,7 +289,7 @@ export function computeSetup(input: SetupInput): SetupView {
     }));
   }
 
-  // 8. The alert limits (a person agrees them with the customer) -----------
+  // 9. The alert limits (a person agrees them with the customer) -----------
   const limitPoints = input.points.filter((point) => limitsFor(point.canonicalName).some((definition) => ALERT_LIMIT_KEYS.includes(definition.key)));
   if (limitPoints.length > 0) {
     const step = manualStep("limits", "Alert limits agreed with the customer", confirmation("limits"), {
@@ -294,7 +309,7 @@ export function computeSetup(input: SetupInput): SetupView {
     steps.push(step);
   }
 
-  // 9. Commissioning (a person confirms the numbers match the real world) ---
+  // 10. Commissioning (a person confirms the numbers match the real world) ---
   const blocking = steps.filter((step) => !step.optional && step.status !== "done");
   const readyToCommission = blocking.length === 0;
   const commissioning = confirmation("commissioned");
@@ -307,7 +322,8 @@ export function computeSetup(input: SetupInput): SetupView {
       status: "todo",
       detail: "Everything above is in place.",
       nextAction: "On site, compare what Greecon shows with what you can see: the meter's own display, the tank, the pressure gauge. When they agree, confirm here.",
-      manual: true
+      manual: true,
+      canConfirm: true
     });
   } else {
     steps.push({
@@ -316,7 +332,8 @@ export function computeSetup(input: SetupInput): SetupView {
       status: "waiting",
       detail: `${plural(blocking.length, "step")} above must be done first.`,
       nextAction: "Finish the steps above.",
-      manual: true
+      manual: true,
+      canConfirm: false
     });
   }
 
@@ -337,5 +354,60 @@ function manualStep(key: string, title: string, confirmed: Confirmation | undefi
   if (confirmed) {
     return { key, title, status: "done", detail: "Checked on site.", manual: true, confirmedAtUtc: confirmed.atUtc, confirmedBy: confirmed.by, note: confirmed.note };
   }
-  return { key, title, status: "todo", detail: words.todo, nextAction: words.next, manual: true };
+  return { key, title, status: "todo", detail: words.todo, nextAction: words.next, manual: true, canConfirm: true };
+}
+
+/** Telling people has three parts the platform can see (a way to send, someone on the list, a test that the
+ * provider accepted) and one it cannot: that the person read it. The last is confirmed by hand, once the first
+ * three are in place, because a message accepted by a provider can still land in a spam folder. */
+function toldStep(notifications: SetupNotifications, confirmed: Confirmation | undefined, nowMs: number): SetupStep {
+  const base = { key: "told", title: "Someone is told when the site needs attention", manual: true } as const;
+  const reachable = (notifications.emailOn && notifications.byEmail > 0) || (notifications.smsOn && notifications.bySms > 0);
+
+  if (!notifications.emailOn && !notifications.smsOn) {
+    return {
+      ...base,
+      status: "attention",
+      canConfirm: false,
+      detail: "This Greecon platform is not set up to send messages, so no alert would reach anyone.",
+      nextAction: "Tell Greecon support: alert messages need the email service switched on before a site can be commissioned."
+    };
+  }
+  if (notifications.contacts === 0) {
+    return {
+      ...base,
+      status: "todo",
+      canConfirm: false,
+      detail: "Nobody is set to be told. Alerts show in Greecon, but nobody is sent a message.",
+      nextAction: "Open Who is told and add the people who should hear first, in the order they should be told. Then send each of them a test message."
+    };
+  }
+  if (!reachable) {
+    return {
+      ...base,
+      status: "attention",
+      canConfirm: false,
+      detail: notifications.emailOn ? "Nobody on the list has an email address, and email is the way alerts reach people." : "Nobody on the list has a phone number, and text is the only way messages can go from this platform.",
+      nextAction: "Open Who is told and add an address or number for each person."
+    };
+  }
+  if (confirmed) {
+    return { ...base, status: "done", detail: "A test message reached the person on the list.", canConfirm: true, confirmedAtUtc: confirmed.atUtc, confirmedBy: confirmed.by, note: confirmed.note };
+  }
+  if (notifications.lastTestAtMs === undefined) {
+    return {
+      ...base,
+      status: "todo",
+      canConfirm: false,
+      detail: `${notifications.contacts === 1 ? "One person is" : `${notifications.contacts} people are`} on the list, and no test message has been sent yet.`,
+      nextAction: "Open Who is told and send a test message to each person. Then ask them whether it arrived."
+    };
+  }
+  return {
+    ...base,
+    status: "todo",
+    canConfirm: true,
+    detail: `A test message was sent ${describeAge(Math.max(0, (nowMs - notifications.lastTestAtMs) / 1000))} ago. Greecon cannot tell whether it was read.`,
+    nextAction: "Ask the person whether the test message arrived, in the inbox and not in spam, and on their phone. When they say yes, confirm here."
+  };
 }

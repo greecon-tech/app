@@ -17,6 +17,7 @@ import { GatewaysModule } from "./modules/gateways/gateways.module";
 import { HealthModule } from "./modules/health/health.module";
 import { IncidentsModule } from "./modules/incidents/incidents.module";
 import { MaintenanceModule } from "./modules/maintenance/maintenance.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PlatformAdminModule } from "./modules/platform-admin/platform-admin.module";
 import { PointsModule } from "./modules/points/points.module";
 import { ReportsModule } from "./modules/reports/reports.module";
@@ -66,6 +67,7 @@ import { PlatformModule } from "./platform/platform.module";
     AlertsModule,
     IncidentsModule,
     MaintenanceModule,
+    NotificationsModule,
     ReportsModule,
     ValueModule,
     AccessRequestsModule,

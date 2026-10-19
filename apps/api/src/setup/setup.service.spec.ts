@@ -491,6 +491,62 @@ describe("setting a site up", () => {
     });
   });
 
+  describe("telling people, as part of setting a site up", () => {
+    const people = [
+      { id: "c-1", name: "Besa Krasniqi", email: "besa@hotel.example", phone: "+355691111111" },
+      { id: "c-2", name: "Plumber", phone: "+355693333333" }
+    ];
+    const summary = { emailOn: true, smsOn: true, contacts: 2, byEmail: 1, bySms: 2 as number, lastTestAtMs: undefined as number | undefined };
+    let told: SetupService;
+
+    beforeEach(() => {
+      summary.lastTestAtMs = undefined;
+      told = new SetupService(platform, enrolments, bundleWith("0.2.0+new"), { summary: () => ({ ...summary }), contacts: () => people });
+    });
+
+    const toldStep = (view: { steps: Array<{ key: string }> }) => view.steps.find((step) => step.key === "told") as { status: string; canConfirm?: boolean };
+
+    it("adds the step to a site's list, between the readings and the checks a person makes", async () => {
+      const { site } = await told.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
+      const keys = told.setupView(site.id, owner).steps.map((step) => step.key);
+      expect(keys).toEqual(["prices", "box", "addresses", "mapping", "answering", "readings", "told", "direction", "limits", "commissioned"]);
+    });
+
+    it("refuses to confirm it before a test message has been sent, and says what to do", async () => {
+      const { site } = await told.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
+      expect(toldStep(told.setupView(site.id, owner)).canConfirm).toBe(false);
+      await expect(told.confirmStep(site.id, "told", undefined, owner)).rejects.toThrow(/This cannot be confirmed yet\. Open Who is told and send a test message/);
+    });
+
+    it("accepts the confirmation once a test message has gone, and records who", async () => {
+      const { site } = await told.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
+      summary.lastTestAtMs = Date.now() - 60_000;
+      const view = await told.confirmStep(site.id, "told", "Besa read it on her phone", owner);
+      expect(view.steps.find((step) => step.key === "told")).toMatchObject({ status: "done", confirmedBy: owner.email, note: "Besa read it on her phone" });
+    });
+
+    it("can be taken back like any other step, and takes the commissioning back with it", async () => {
+      const { site } = await told.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
+      summary.lastTestAtMs = Date.now();
+      await told.confirmStep(site.id, "told", undefined, owner);
+      const view = await told.reopenStep(site.id, "told", owner);
+      expect(toldStep(view).status).toBe("todo");
+    });
+
+    it("puts the people who are told on the handover sheet, in order", async () => {
+      const { site } = await told.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
+      expect(told.handover(site.id, owner).told).toEqual([
+        { name: "Besa Krasniqi", email: "besa@hotel.example", phone: "+355691111111" },
+        { name: "Plumber", email: undefined, phone: "+355693333333" }
+      ]);
+    });
+
+    it("has an empty list on the handover where the platform has no notifications", async () => {
+      const { site } = await hotel();
+      expect(setup.handover(site.id, owner).told).toEqual([]);
+    });
+  });
+
   describe("the handover sheet", () => {
     it("lists what was installed where, how it is read, the limits in force and who checked what", async () => {
       const { site } = await hotel({ currency: "EUR" });

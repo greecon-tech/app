@@ -53,6 +53,7 @@ export default async function SetupPage({ params }: { params: Promise<{ siteId: 
     addresses: <AddressesPanel siteId={siteId} detail={detail} />,
     mapping: <MappingPanel siteId={siteId} detail={detail} />,
     answering: <AnsweringHelp />,
+    told: <ToldPanel siteId={siteId} step={stepOf(setup, "told")} />,
     direction: <ConfirmStepForm siteId={siteId} step={stepOf(setup, "direction")} />,
     limits: <LimitsPanel siteId={siteId} detail={detail} step={stepOf(setup, "limits")} />,
     commissioned: <CommissionPanel siteId={siteId} step={stepOf(setup, "commissioned")} />
@@ -216,6 +217,23 @@ function MappingPanel({ siteId, detail }: { siteId: string; detail: SiteDetail }
           );
         })}
       <p className="muted">Meters Greecon knows have their registers filled in. For anything else, use the device&apos;s datasheet.</p>
+    </div>
+  );
+}
+
+function ToldPanel({ siteId, step }: { siteId: string; step: SetupStep }) {
+  return (
+    <div className="setup-panel">
+      <p>
+        Alerts reach people by email and, for Act now, by text message. The list is the account&apos;s own and is kept under Who is told; it is the same
+        list for every site of this customer.
+      </p>
+      <p className="no-print">
+        <Link className="button-primary" href="/settings/people">
+          Open Who is told
+        </Link>
+      </p>
+      <ConfirmStepForm siteId={siteId} step={step} />
     </div>
   );
 }

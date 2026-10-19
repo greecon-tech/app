@@ -81,6 +81,9 @@ import { generateGatewaySecret, hashGatewaySecret } from "../common/gateway-secr
 import { DatabaseService } from "../database/database.service";
 import { buildEdgeConfig } from "../setup/edge-config";
 import type { Confirmation } from "../setup/setup-checklist";
+import type { DigestFacts } from "../notifications/messages";
+import type { AlertView } from "../notifications/notifications.service";
+import type { AlertEvent } from "../notifications/plan";
 
 /** A latest reading as the Overview presents it: the value, where it came from, and how old it is. */
 export interface OverviewReading {
@@ -2845,6 +2848,56 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.scope(this.alerts, principal.tenantId).filter((alert) => !siteId || alert.siteId === siteId);
   }
 
+  // ---- What the notifications service reads (system use: nothing here is reachable from a route) ----
+
+  private alertListener: ((events: AlertEvent[]) => void) | undefined;
+
+  /** Told when an alert opens, gets worse, comes back, is acknowledged or clears, so that people can be told. One
+   * listener at a time; it must not wait or throw, and if it does the platform carries on regardless. */
+  setAlertListener(listener: ((events: AlertEvent[]) => void) | undefined): void {
+    this.alertListener = listener;
+  }
+
+  private announce(events: AlertEvent[]): void {
+    if (events.length === 0 || !this.alertListener) return;
+    try {
+      this.alertListener(events);
+    } catch (error) {
+      this.logger.warn(`Could not pass on an alert change: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private siteNameOf(tenantId: string, siteId: string): string {
+    return this.sites.find((site) => site.id === siteId && site.tenantId === tenantId)?.name ?? "a site";
+  }
+
+  alertById(tenantId: string, alertId: string): AlertView | undefined {
+    const alert = this.alerts.find((candidate) => candidate.id === alertId && candidate.tenantId === tenantId);
+    return alert ? { ...alert } : undefined;
+  }
+
+  openAlertsAcrossTenants(): Array<{ alert: AlertView; siteName: string }> {
+    return this.alerts.filter((alert) => alert.status === "open").map((alert) => ({ alert: { ...alert }, siteName: this.siteNameOf(alert.tenantId, alert.siteId) }));
+  }
+
+  /** Who is told, or when, was changed: the account's own audit trail says so, and by whom. */
+  async recordNotificationSettingsChange(principal: Principal, eventType: string, reason: string): Promise<void> {
+    await this.recordAudit({ tenantId: principal.tenantId, userId: principal.userId, eventType, entityType: "notification_settings", reason });
+  }
+
+  tenantNameOf(tenantId: string): string {
+    return this.tenants.find((tenant) => tenant.id === tenantId)?.name ?? "";
+  }
+
+  /** The morning message's facts: each of the account's sites, how it is, and what is wrong. */
+  digestOf(tenantId: string, nowMs: number): DigestFacts {
+    const sites = this.sites.filter((site) => site.tenantId === tenantId).map((site) => this.assessSite(site, nowMs));
+    return {
+      customer: this.tenantNameOf(tenantId),
+      sites: sites.map((site) => ({ name: site.name, state: site.health.state, reasons: site.health.reasons.map((reason) => reason.message), lastReadingAtUtc: site.lastReadingAtUtc }))
+    };
+  }
+
   async acknowledgeAlert(alertId: string, principal: Principal): Promise<AlertRecord> {
     const alert = this.alerts.find((candidate) => candidate.id === alertId && candidate.tenantId === principal.tenantId);
     if (!alert) throw new NotFoundException("Alert not found.");
@@ -2855,6 +2908,18 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (this.db.isConfigured()) {
       await this.db.query(`UPDATE alerts SET status=$1, acknowledged_at=now() WHERE id=$2 AND tenant_id=$3`, [alert.status, alert.id, principal.tenantId]);
     }
+
+    const acknowledger = this.users.find((user) => user.id === principal.userId);
+    this.announce([
+      {
+        type: "acknowledged",
+        atMs: Date.parse(alert.acknowledgedAtUtc as string),
+        alert: { ...alert },
+        siteName: this.siteNameOf(alert.tenantId, alert.siteId),
+        by: acknowledger?.name ?? principal.email,
+        byEmail: (acknowledger?.email ?? principal.email).toLowerCase()
+      }
+    ]);
 
     await this.recordAudit({
       tenantId: principal.tenantId,
@@ -3484,10 +3549,16 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const at = new Date(nowMs).toISOString();
     const writes: Array<() => Promise<unknown>> = [];
 
+    const events: AlertEvent[] = [];
+    const siteName = this.siteNameOf(tenantId, siteId);
     for (const change of changes) {
       const alert = this.applyAlertChange(change, tenantId, siteId, at);
-      if (alert) writes.push(() => (change.type === "open" ? this.insertAlert(alert) : this.updateAlertRow(alert)));
+      if (!alert) continue;
+      writes.push(() => (change.type === "open" ? this.insertAlert(alert) : this.updateAlertRow(alert)));
+      const type = change.type === "open" ? "opened" : change.type === "escalate" ? "escalated" : change.type === "reopen" ? "reopened" : change.type === "resolve" ? "resolved" : undefined;
+      if (type) events.push({ type, atMs: nowMs, alert: { ...alert }, siteName });
     }
+    this.announce(events);
 
     if (!this.db.isConfigured()) return;
     for (const write of writes) {

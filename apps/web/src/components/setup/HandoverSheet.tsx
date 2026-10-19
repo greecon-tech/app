@@ -149,6 +149,21 @@ export function HandoverSheet({ view }: { view: HandoverView }) {
       </section>
 
       <section>
+        <h2>Who is told when something needs attention</h2>
+        <DataTable
+          wide={false}
+          rows={view.told.map((person, index) => ({ ...person, order: index === 0 ? "First" : `Then, if nobody has answered (${index + 1})` }))}
+          emptyLabel="Nobody is set to be told. Alerts show in Greecon only."
+          columns={[
+            { key: "order", label: "Order" },
+            { key: "name", label: "Name" },
+            { key: "email", label: "Email", render: (row) => row.email ?? "—" },
+            { key: "phone", label: "Phone", render: (row) => row.phone ?? "—" }
+          ]}
+        />
+      </section>
+
+      <section>
         <h2>People with access</h2>
         <DataTable
           wide={false}

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import {
   CurrencyCode,
   EdgeConfig,
@@ -11,6 +11,7 @@ import {
   HandoverView,
   HeartbeatReply,
   ModbusConnection,
+  NotificationContact,
   Point,
   SetupView,
   Site,
@@ -31,9 +32,16 @@ import { PlatformService } from "../platform/platform.service";
 import { EdgeBundleService } from "./edge-bundle";
 import { ENROLMENT_VALID_FOR_MS, generateEnrolmentCode, hashEnrolmentCode, normaliseEnrolmentCode } from "./enrolment-code";
 import { EnrolmentStore } from "./enrolment-store";
-import { LatestForSetup, computeSetup } from "./setup-checklist";
+import { NotificationsService } from "../notifications/notifications.service";
+import { LatestForSetup, SetupNotifications, computeSetup } from "./setup-checklist";
 
 export const ENROLMENT_STORE = "ENROLMENT_STORE";
+
+/** What setting a site up asks of the notifications: how things stand, and who is on the list. */
+export interface SetupNotificationsSource {
+  summary(tenantId: string): SetupNotifications;
+  contacts(tenantId: string): NotificationContact[];
+}
 
 export interface CreateSiteFromTemplateInput {
   templateKey: string;
@@ -66,7 +74,8 @@ export class SetupService {
   constructor(
     private readonly platform: PlatformService,
     @Inject(ENROLMENT_STORE) private readonly enrolments: EnrolmentStore,
-    private readonly bundle: EdgeBundleService
+    private readonly bundle: EdgeBundleService,
+    @Optional() @Inject(NotificationsService) private readonly notifications?: SetupNotificationsSource
   ) {}
 
   // ---- A site from a template ----------------------------------------------------------------
@@ -267,7 +276,8 @@ export class SetupService {
       devices: detail.devices,
       points: detail.points,
       latest,
-      confirmations: record.confirmations
+      confirmations: record.confirmations,
+      ...(this.notifications ? { notifications: this.notifications.summary(principal.tenantId) } : {})
     });
   }
 
@@ -282,6 +292,7 @@ export class SetupService {
     if (key === "commissioned" && !view.readyToCommission) {
       throw new ConflictException("The steps above are not all done yet, so the site cannot be commissioned.");
     }
+    if (step.canConfirm === false) throw new ConflictException(`This cannot be confirmed yet. ${step.nextAction ?? step.detail}`);
     const tidy = note?.replace(/\s+/g, " ").trim().slice(0, 300);
     await this.platform.setSetupConfirmation(siteId, key, { atUtc: new Date(nowMs).toISOString(), by: principal.support ? `${principal.email} (Greecon staff)` : principal.email, ...(tidy ? { note: tidy } : {}) }, principal);
     return this.setupView(siteId, principal, nowMs);
@@ -357,6 +368,7 @@ export class SetupService {
       commissioned: setup.commissioned,
       commissionedAtUtc: setup.commissionedAtUtc,
       commissionedBy: setup.commissionedBy,
+      told: (this.notifications?.contacts(principal.tenantId) ?? []).map((contact) => ({ name: contact.name, email: contact.email, phone: contact.phone })),
       people: this.platform
         .listUsers(principal)
         .filter((user) => user.status === "active")

@@ -1,7 +1,8 @@
-import { DEMO_TENANT_ID, GREECON_COMPANY, GREECON_DOMAIN } from "@greecon/shared";
+import { DEMO_TENANT_ID, GREECON_COMPANY, GREECON_DOMAIN, GREECON_PUBLIC_EMAILS } from "@greecon/shared";
 import { ChangePasswordForm } from "../../components/ChangePasswordForm";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
+import { apiGet } from "../../lib/api";
 import { getSession } from "../../lib/session";
 import { cycleWidgetSizeAction, loadWidgetPreferences, moveWidgetAction, toggleWidgetVisibilityAction } from "./actions";
 
@@ -11,7 +12,9 @@ import { cycleWidgetSizeAction, loadWidgetPreferences, moveWidgetAction, toggleW
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [widgets, session] = await Promise.all([loadWidgetPreferences(), getSession()]);
+  const [widgets, session, tenants] = await Promise.all([loadWidgetPreferences(), getSession(), apiGet<Array<{ name: string; domain: string }>>("/tenants")]);
+  // The organisation this account belongs to: the customer's own, not Greecon's.
+  const tenant = tenants[0];
   // The demo tenant's logins are shared by everyone viewing the live demo — letting one visitor
   // change the password would lock out every other visitor using those same published
   // credentials. The API refuses this too (apps/api/src/modules/auth/auth.service.ts); this just
@@ -24,16 +27,16 @@ export default async function SettingsPage() {
         <div className="panel stack">
           <label>
             Organization
-            <input defaultValue={GREECON_COMPANY} />
+            <input value={tenant?.name ?? GREECON_COMPANY} readOnly />
           </label>
           <label>
-            Public domain
-            <input defaultValue={GREECON_DOMAIN} />
+            Identifier
+            <input value={tenant?.domain ?? GREECON_DOMAIN} readOnly />
           </label>
-          <label>
-            Public email
-            <input defaultValue="info@greecon.earth" />
-          </label>
+          <p className="muted">
+            To change the organization&apos;s name, or for anything about the account, write to <strong>{GREECON_PUBLIC_EMAILS[0]}</strong>. Who is told when
+            something needs attention is under <a href="/settings/people">Who is told</a>.
+          </p>
         </div>
       </Section>
       <div id="dashboard" />

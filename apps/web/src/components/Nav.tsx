@@ -68,6 +68,7 @@ const SECTIONS: ReadonlyArray<{ tabs: ReadonlyArray<{ href: string; label: strin
 
 const ACCOUNT: ReadonlyArray<Omit<Entry, "icon">> = [
   { href: "/settings", label: "Settings", requires: "settings:manage" },
+  { href: "/settings/people", label: "Who is told", requires: "settings:manage" },
   { href: "/admin", label: "Admin", requires: "user:manage" },
   { href: "/audit", label: "Audit log", requires: "audit:read" },
   { href: "/platform", label: "Clients", platformOnly: true }
@@ -92,6 +93,7 @@ export function Nav({ role, isPlatformAdmin = false }: { role: UserRole; isPlatf
   const pathname = usePathname();
   const account = ACCOUNT.filter((item) => (!item.requires || hasPermission(role, item.requires)) && (!item.platformOnly || isPlatformAdmin));
   const accountOpen = account.some((item) => isWithin(pathname, item.href));
+  const current = account.filter((item) => isWithin(pathname, item.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
     <>
@@ -114,7 +116,7 @@ export function Nav({ role, isPlatformAdmin = false }: { role: UserRole; isPlatf
           <summary>Account</summary>
           <nav aria-label="Account">
             {account.map((item) => (
-              <Link href={item.href} key={item.href} aria-current={isWithin(pathname, item.href) ? "page" : undefined}>
+              <Link href={item.href} key={item.href} aria-current={item.href === current ? "page" : undefined}>
                 {item.label}
               </Link>
             ))}

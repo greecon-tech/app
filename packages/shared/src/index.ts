@@ -56,6 +56,7 @@ export * from "./edge";
 export * from "./device-profiles";
 export * from "./site-templates";
 export * from "./setup";
+export * from "./notifications";
 
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;
 export type SeverityLevel = (typeof severityLevels)[number];

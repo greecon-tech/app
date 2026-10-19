@@ -723,7 +723,8 @@ main {
 .status-ok,
 .status-stable,
 .status-done,
-.status-online {
+.status-online,
+.status-on {
   background: var(--ok-bg);
   color: var(--ok-fg);
 }
@@ -742,7 +743,8 @@ main {
 .status-uncertain,
 .status-bad-data,
 .status-needs-attention,
-.status-late {
+.status-late,
+.status-off {
   background: var(--warning-bg);
   color: var(--warning-fg);
 }
@@ -780,7 +782,8 @@ main {
 .status-uncertain::before,
 .status-bad-data::before,
 .status-needs-attention::before,
-.status-late::before {
+.status-late::before,
+.status-off::before {
   border-radius: 0;
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
@@ -2209,5 +2212,41 @@ input[type="checkbox"] {
 
   .status {
     border: 1px solid currentColor;
+  }
+}
+
+/* Who is told ------------------------------------------------------------------------------------------ */
+.people-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-rules {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+}
+
+.people-rules dt {
+  font-weight: 600;
+}
+
+.people-rules dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 700px) {
+  .people-rules {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .people-rules dd {
+    margin-bottom: var(--space-3);
   }
 }

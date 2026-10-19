@@ -55,9 +55,9 @@ export function ConfirmStepForm({ siteId, step }: { siteId: string; step: SetupS
     <form onSubmit={confirm} className="setup-inline-form">
       <label className="setup-inline-form__wide">
         What you saw (optional)
-        <input value={note} onChange={(event) => setNote(event.target.value)} placeholder={commissioning ? "e.g. Meter display and Greecon agree within 2%" : "e.g. Import rose with the kettle on"} maxLength={300} />
+        <input value={note} onChange={(event) => setNote(event.target.value)} placeholder={commissioning ? "e.g. Meter display and Greecon agree within 2%" : step.key === "told" ? "e.g. Besa read the test message on her phone" : "e.g. Import rose with the kettle on"} maxLength={300} />
       </label>
-      <button type="submit" disabled={isPending || step.status === "waiting"}>
+      <button type="submit" disabled={isPending || step.canConfirm === false}>
         {isPending ? "Saving…" : commissioning ? "Commission this site" : "I checked this"}
       </button>
       {error ? (
