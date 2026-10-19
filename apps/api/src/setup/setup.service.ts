@@ -226,8 +226,18 @@ export class SetupService {
       configVersion: this.platform.edgeConfigFor(gatewayId, principal.tenantId).version,
       clockSkewSeconds: gateway.clockSkewSeconds ?? 0,
       latestAgentVersion: latest ?? heartbeat.agentVersion,
-      updateAvailable: latest !== undefined && latest !== heartbeat.agentVersion
+      // EDGE_AUTO_UPDATE=false holds every box at the version it has, for when an update must wait.
+      updateAvailable: latest !== undefined && latest !== heartbeat.agentVersion && process.env.EDGE_AUTO_UPDATE?.trim().toLowerCase() !== "false"
     };
+  }
+
+  /** The box's software goes to a box that has a credential (it is updating itself) or presents a code
+   * that has not been used yet (it is being installed). It goes to nobody else. */
+  async assertMayFetchSoftware(principal: Principal, code: string | undefined, nowMs: number = Date.now()): Promise<void> {
+    if (principal.gatewayId) return;
+    const body = normaliseEnrolmentCode(code);
+    if (body && (await this.enrolments.peek(hashEnrolmentCode(body), nowMs))) return;
+    throw new UnauthorizedException("The software is for a box with a credential, or with a code that has not been used.");
   }
 
   private gatewayOf(principal: Principal): string {

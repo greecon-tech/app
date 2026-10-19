@@ -57,3 +57,12 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The whole job over HTTP against the built API on a real database: onboard a customer, make a site,
+      # install a box with the installer the platform serves, run it against a pretend meter, and see the
+      # readings and the checklist follow. Unit tests cannot see a missing provider or a route the guard
+      # turns away; this can.
+      - name: Smoke test
+        run: node scripts/run-smoke.mjs
+        env:
+          SMOKE_DATABASE_ADMIN_URL: postgres://postgres:greecon@localhost:5432/postgres

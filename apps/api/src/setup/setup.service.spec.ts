@@ -300,6 +300,19 @@ describe("setting a site up", () => {
       expect(second.updateAvailable).toBe(false);
     });
 
+    it("holds every box where it is when EDGE_AUTO_UPDATE is false", async () => {
+      const { box } = await enrolledBox();
+      const saved = process.env.EDGE_AUTO_UPDATE;
+      process.env.EDGE_AUTO_UPDATE = "false";
+      try {
+        const reply = await setup.heartbeat(box, heartbeat());
+        expect(reply).toMatchObject({ latestAgentVersion: "0.2.0+new", updateAvailable: false });
+      } finally {
+        if (saved === undefined) delete process.env.EDGE_AUTO_UPDATE;
+        else process.env.EDGE_AUTO_UPDATE = saved;
+      }
+    });
+
     it("does not call for an update when no software has been built", async () => {
       const bare = new SetupService(platform, enrolments, bundleWith(undefined));
       const { box } = await enrolledBox();
@@ -362,6 +375,36 @@ describe("setting a site up", () => {
 
       view = setup.setupView(site.id, owner);
       expect(view.steps.find((step) => step.key === "readings")?.status).toBe("done");
+    });
+  });
+
+  describe("who may fetch the box's software", () => {
+    it("is a box with a credential, or a box with a code that has not been used", async () => {
+      const { site } = await hotel();
+      const { gatewayId, enrolment } = await setup.provisionBox({ siteId: site.id, name: "Plant room" }, owner, API);
+      const publicCaller = { ...owner, tenantId: "public", gatewayId: undefined };
+
+      await expect(setup.assertMayFetchSoftware(publicCaller, enrolment.code)).resolves.toBeUndefined();
+      await expect(setup.assertMayFetchSoftware(publicCaller, enrolment.code.toLowerCase())).resolves.toBeUndefined();
+      await expect(setup.assertMayFetchSoftware(edgeDeviceIngestPrincipal(owner.tenantId, gatewayId), undefined)).resolves.toBeUndefined();
+
+      // Looking at the software does not use the code up.
+      await expect(setup.enrol(enrolment.code, API)).resolves.toBeDefined();
+      // But once it has been used it is no longer a way to fetch it.
+      await expect(setup.assertMayFetchSoftware(publicCaller, enrolment.code)).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it("is nobody else: not a stranger, not a code that was never issued, not an expired one, not a person's session", async () => {
+      const { site } = await hotel();
+      const { gatewayId } = await setup.provisionBox({ siteId: site.id, name: "Plant room" }, owner, API);
+      const publicCaller = { ...owner, tenantId: "public", gatewayId: undefined };
+      const expired = await setup.issueEnrolment(gatewayId, owner, API);
+
+      await expect(setup.assertMayFetchSoftware(publicCaller, undefined)).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(setup.assertMayFetchSoftware(publicCaller, "hello")).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(setup.assertMayFetchSoftware(publicCaller, "GRC-AAAA-BBBB-CCCC")).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(setup.assertMayFetchSoftware(publicCaller, expired.code, Date.now() + 8 * 24 * 3_600_000)).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(setup.assertMayFetchSoftware(owner, undefined)).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
 

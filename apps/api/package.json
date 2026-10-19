@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json && rm -rf dist/database/migrations && mkdir -p dist/database/migrations && cp src/database/migrations/*.sql dist/database/migrations/",
+    "build": "tsc -p tsconfig.json && rm -rf dist/database/migrations && mkdir -p dist/database/migrations && cp src/database/migrations/*.sql dist/database/migrations/ && cp src/setup/edge-install.sh dist/setup/edge-install.sh",
     "start": "node dist/main.js",
     "start:dev": "ts-node src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

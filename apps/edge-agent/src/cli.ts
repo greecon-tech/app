@@ -69,7 +69,7 @@ async function run(env: Record<string, string | undefined>): Promise<number> {
     throw error;
   }
 
-  const runtime = new EdgeRuntime({ identity, stateDir: stateDirectory(env), log });
+  const runtime = new EdgeRuntime({ identity, stateDir: stateDirectory(env), log, updateHome: env.GREECON_EDGE_HOME });
   const bridge = env.MQTT_URL ? startMqttBridge(env.MQTT_URL, identity, runtime.outbox, log) : undefined;
   runtime.start();
 

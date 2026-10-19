@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -232,4 +232,63 @@ describe("the box, start to finish", () => {
     expect(modbus.connections()).toBe(0);
     expect(log[log.length - 1]).toBe("info: Greecon edge stopped.");
   }, 15_000);
+
+  describe("taking an update", () => {
+    const NEW = "9.9.9+newer";
+    let home: string;
+
+    beforeEach(() => {
+      home = join(stateDir, "edge-home");
+      mkdirSync(join(home, "releases", "0.0.0+source"), { recursive: true });
+      symlinkSync(join(home, "releases", "0.0.0+source"), join(home, "current"));
+      platform.bundle = { version: NEW, bytes: Buffer.from(`console.log(${JSON.stringify(NEW)});\n`) };
+      platform.updateAvailable = true;
+      platform.latestAgentVersion = NEW;
+    });
+
+    it("switches to the version the platform announces and restarts, once the box has settled", async () => {
+      let restarts = 0;
+      let later = 0;
+      const runtime = newRuntime({ updateHome: home, restart: () => void (restarts += 1), updateClock: () => Date.now() + later });
+      await runtime.runHeartbeat();
+      expect(restarts).toBe(0);
+
+      later = 11 * 60_000;
+      await runtime.runHeartbeat();
+      expect(restarts).toBe(1);
+      expect(readlinkSync(join(home, "current"))).toBe(join(home, "releases", NEW));
+      expect(readFileSync(join(stateDir, "probation", "version"), "utf8")).toBe(NEW);
+      expect(log.some((line) => line.includes(`Updated from 0.0.0+source to ${NEW}. Restarting.`))).toBe(true);
+    });
+
+    it("does not update a box that was not installed by the installer", async () => {
+      let restarts = 0;
+      const runtime = newRuntime({ restart: () => void (restarts += 1), updateClock: () => Date.now() + 11 * 60_000 });
+      await runtime.runHeartbeat();
+      expect(restarts).toBe(0);
+      expect(readlinkSync(join(home, "current"))).toBe(join(home, "releases", "0.0.0+source"));
+    });
+
+    it("is not stopped from reading and reporting by an update that fails", async () => {
+      platform.bundle = { version: NEW, bytes: Buffer.from("process.exit(1);") };
+      let later = 0;
+      const runtime = newRuntime({ updateHome: home, restart: () => undefined, updateClock: () => Date.now() + later });
+      later = 11 * 60_000;
+      await runtime.runHeartbeat();
+      expect(readlinkSync(join(home, "current"))).toBe(join(home, "releases", "0.0.0+source"));
+      expect(platform.messages.length).toBeGreaterThan(0);
+      expect(log.some((line) => line.startsWith("warn: Could not update to version"))).toBe(true);
+    });
+
+    it("lets a new version that has reported in prove itself, which ends its probation", async () => {
+      mkdirSync(join(stateDir, "probation"), { recursive: true });
+      writeFileSync(join(stateDir, "probation", "version"), "0.0.0+source");
+      platform.updateAvailable = false;
+      const runtime = newRuntime({ updateHome: home });
+      await runtime.runHeartbeat();
+      expect(existsSync(join(stateDir, "probation"))).toBe(false);
+      expect(log).toContain("info: Version 0.0.0+source is running well.");
+    });
+  });
 });
+

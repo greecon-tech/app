@@ -8,3 +8,6 @@ logs/
 .env
 .env.*
 !.env.example
+
+# Built by scripts/build-edge-bundle.mjs and served by the API
+apps/api/edge-bundle/

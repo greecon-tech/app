@@ -10,7 +10,8 @@
 // The API must be running with a fresh database and BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD
 // set to the same administrator, NODE_ENV=production and JWT_SECRET set.
 
-const API = (process.env.API_URL ?? "http://127.0.0.1:4010").replace(/\/+$/, "");
+import { API, call, check, failed, login, onboard, step } from "./lib/smoke-helpers.mjs";
+
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
@@ -19,54 +20,9 @@ if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
 }
 
 let failures = 0;
-const check = (condition, message) => {
-  if (!condition) {
-    failures += 1;
-    console.error(`  FAIL  ${message}`);
-  } else {
-    console.log(`  ok    ${message}`);
-  }
+const flag = () => {
+  failures = failed();
 };
-
-async function call(method, path, { token, box, body, headers = {} } = {}) {
-  const response = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-      ...(token ? { "x-greecon-session": token } : {}),
-      ...(box ? { "x-edge-device-token": box } : {}),
-      ...headers
-    },
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
-  const text = await response.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = undefined;
-  }
-  return { status: response.status, json, text };
-}
-
-const step = (title) => console.log(`\n${title}`);
-
-async function login(email, password) {
-  const result = await call("POST", "/auth/login", { body: { email, password } });
-  if (result.status !== 201 && result.status !== 200) throw new Error(`Login failed for ${email}: ${result.status} ${result.text}`);
-  return result.json;
-}
-
-async function onboard(adminToken, name, ownerEmail) {
-  const created = await call("POST", "/platform-admin/tenants", { token: adminToken, body: { name, ownerName: "Owner", ownerEmail } });
-  if (created.status !== 201) throw new Error(`Could not onboard ${name}: ${created.status} ${created.text}`);
-  const temporary = created.json.temporaryPassword;
-  const first = await login(ownerEmail, temporary);
-  const ownPassword = `Own-password-${Math.random().toString(36).slice(2, 10)}-1`;
-  const changed = await call("POST", "/auth/change-password", { token: first.token, body: { currentPassword: temporary, newPassword: ownPassword } });
-  if (changed.status !== 201 && changed.status !== 200) throw new Error(`Could not change password: ${changed.status} ${changed.text}`);
-  return { first, session: (await login(ownerEmail, ownPassword)).token, tenantId: created.json.tenant.id };
-}
 
 try {
   step("The API is up");
@@ -222,9 +178,10 @@ try {
   check(oldCredential.status === 401, "the old credential stops working at once");
   check((await call("GET", "/edge/config", { box: replaced.json.secret })).status === 200, "the new credential works");
 } catch (error) {
-  failures += 1;
   console.error(`\nThe smoke test could not finish: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
 }
 
+flag();
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

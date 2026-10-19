@@ -8,6 +8,7 @@ import { OfflineBuffer } from "./offline-buffer";
 import { Outbox } from "./outbox";
 import { PlatformClient, PlatformError } from "./platform-client";
 import { readJsonFile, writeJsonFile } from "./state-files";
+import { Updater } from "./updater";
 import { AGENT_VERSION } from "./version";
 
 // The box's whole job, in one process: read the devices it has been told about, send what it reads, say
@@ -34,6 +35,12 @@ export interface RuntimeOptions {
   requestTimeoutMs?: number;
   /** A device is read every this long unless the platform says otherwise. */
   defaultPollIntervalMs?: number;
+  /** Where the installer keeps releases (GREECON_EDGE_HOME). Without it the box does not update itself. */
+  updateHome?: string;
+  /** What ends this process after an update so the service starts the new version. */
+  restart?: () => void;
+  /** The clock the updater uses; replaced in tests to get past the time a new box waits before updating. */
+  updateClock?: () => number;
 }
 
 /** What `greecon-edge status` shows, and what the installer waits on. */
@@ -60,6 +67,7 @@ export class EdgeRuntime {
   private readonly platform: PlatformClient;
   private readonly reader: RegisterReader;
   private readonly poller: DevicePoller;
+  private readonly updater: Updater;
   private readonly now: () => number;
   private readonly startedMs: number;
   private readonly statusPath: string;
@@ -83,6 +91,16 @@ export class EdgeRuntime {
     this.platform = new PlatformClient(options.identity, options.fetchImpl, options.requestTimeoutMs);
     this.reader = options.reader ?? new ModbusTcpReader();
     this.poller = new DevicePoller(this.reader, options.log, this.now);
+    this.updater = new Updater({
+      home: options.updateHome,
+      stateDir: options.stateDir,
+      identity: options.identity,
+      currentVersion: AGENT_VERSION,
+      log: options.log,
+      fetchImpl: options.fetchImpl,
+      now: options.updateClock ?? this.now,
+      restart: options.restart ?? (() => setTimeout(() => process.kill(process.pid, "SIGTERM"), 500))
+    });
 
     let outbox: Outbox | undefined;
     const buffer = new OfflineBuffer<TelemetryMessage>({
@@ -209,6 +227,8 @@ export class EdgeRuntime {
         this.options.log.warn(`This box's clock is ${Math.abs(reply.clockSkewSeconds)} seconds ${reply.clockSkewSeconds > 0 ? "fast" : "slow"}. Readings are stamped with it: check the box's network time.`);
       }
       this.writeStatus();
+      // A new version that has just started has now proved it can reach the platform.
+      this.updater.proved();
 
       if (reply.configVersion !== this.config?.version) {
         const changed = await this.refreshConfig();
@@ -219,6 +239,7 @@ export class EdgeRuntime {
           await this.beatOnce();
         }
       }
+      if (reply.updateAvailable) await this.updater.consider(reply);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.heartbeat = { ...this.heartbeat, lastError: reason };
