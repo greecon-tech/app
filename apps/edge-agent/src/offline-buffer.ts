@@ -23,6 +23,14 @@ export class DeliveryError extends Error {
   }
 }
 
+/** What a batch dispatch reports: what it could not deliver (a temporary failure stopped it), in order,
+ * and how many it delivered and how many the API refused for good. */
+export interface BatchOutcome<T> {
+  remaining: T[];
+  delivered: number;
+  dropped: number;
+}
+
 export interface OfflineBufferOptions {
   /** Most items held. When full, the OLDEST is dropped: after a long outage the recent state of a
    * site is worth more than an hour-old reading. Memory (and the state file) stay bounded. */
@@ -47,6 +55,8 @@ const DEFAULT_MAX_ITEMS = 50_000;
 export class OfflineBuffer<T> {
   private items: T[] = [];
   private inFlight = 0;
+  /** The oldest item among those being sent right now, so the oldest waiting is known during a send too. */
+  private flightHead: T | undefined;
   private flushing = false;
   private fileLines = 0;
   private readonly maxItems: number;
@@ -85,6 +95,11 @@ export class OfflineBuffer<T> {
     return [...this.items];
   }
 
+  /** The oldest item still waiting, if any, including one being sent right now. */
+  oldest(): T | undefined {
+    return this.flightHead ?? this.items[0];
+  }
+
   async flush(dispatch: (item: T) => Promise<void>): Promise<BufferFlushResult> {
     if (this.flushing) return { sent: 0, retained: this.size(), dropped: 0 };
     this.flushing = true;
@@ -95,11 +110,13 @@ export class OfflineBuffer<T> {
     // behind the ones still waiting.
     const batch = this.items.splice(0, this.items.length);
     this.inFlight = batch.length;
+    this.flightHead = batch[0];
     const waiting: T[] = [];
 
     try {
       for (let index = 0; index < batch.length; index += 1) {
         const item = batch[index] as T;
+        this.flightHead = item;
         try {
           await dispatch(item);
           sent += 1;
@@ -117,6 +134,52 @@ export class OfflineBuffer<T> {
     } finally {
       this.items = [...waiting, ...this.items];
       this.inFlight = 0;
+      this.flightHead = undefined;
+      this.flushing = false;
+      if (sent > 0 || dropped > 0) this.rewriteFile();
+    }
+
+    return { sent, retained: this.size(), dropped };
+  }
+
+  /** Sends everything waiting, oldest first, a batch at a time. Same guarantees as flush(): one at a
+   * time, in order, stopping at the first temporary failure, and the file is rewritten once at the end
+   * rather than after every batch, so draining a long backlog is not a long run of disk writes. */
+  async flushInBatches(dispatch: (items: T[]) => Promise<BatchOutcome<T>>, batchSize: number): Promise<BufferFlushResult> {
+    if (this.flushing) return { sent: 0, retained: this.size(), dropped: 0 };
+    this.flushing = true;
+
+    let sent = 0;
+    let dropped = 0;
+    const all = this.items.splice(0, this.items.length);
+    this.inFlight = all.length;
+    this.flightHead = all[0];
+    let waiting: T[] = [];
+
+    try {
+      for (let start = 0; start < all.length; start += batchSize) {
+        const batch = all.slice(start, start + batchSize);
+        let outcome: BatchOutcome<T>;
+        try {
+          outcome = await dispatch(batch);
+        } catch {
+          // The dispatcher is not meant to throw; if it does, nothing is known about this batch, so all of it stays.
+          outcome = { remaining: batch, delivered: 0, dropped: 0 };
+        }
+        sent += outcome.delivered;
+        dropped += outcome.dropped;
+        if (outcome.remaining.length > 0) {
+          waiting = [...outcome.remaining, ...all.slice(start + batchSize)];
+          break;
+        }
+        // What is still to send, so the backlog is seen to shrink while a long one is being drained.
+        this.inFlight = Math.max(0, all.length - (start + batch.length));
+        this.flightHead = all[start + batch.length];
+      }
+    } finally {
+      this.items = [...waiting, ...this.items];
+      this.inFlight = 0;
+      this.flightHead = undefined;
       this.flushing = false;
       if (sent > 0 || dropped > 0) this.rewriteFile();
     }
