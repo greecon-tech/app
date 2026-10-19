@@ -109,7 +109,7 @@ export class ExportsService {
           const result = await db.query<RawRow>(
             `SELECT timestamp_utc, point_id, device_id, canonical_name, value_numeric, value_bool, value_text, unit, quality
              FROM telemetry_readings WHERE tenant_id = $1 AND site_id = $2 AND timestamp_utc >= $3 AND timestamp_utc < $4
-             ORDER BY timestamp_utc, point_id`,
+             ORDER BY timestamp_utc, canonical_name, point_id`,
             [tenantId, siteId, new Date(start), new Date(end)]
           );
           let out = "";
@@ -129,7 +129,7 @@ export class ExportsService {
              FROM telemetry_readings
              WHERE tenant_id = $1 AND site_id = $2 AND timestamp_utc >= $3 AND timestamp_utc < $4 AND (value_numeric IS NOT NULL OR value_bool IS NOT NULL)
              GROUP BY 1, point_id, device_id, canonical_name
-             ORDER BY 1, point_id`,
+             ORDER BY 1, canonical_name, point_id`,
             [tenantId, siteId, new Date(start), new Date(end)]
           );
           let out = "";
