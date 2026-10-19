@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { StaffMember } from "@greecon/shared";
 import { apiErrorMessage, apiMutate } from "../../lib/api";
 import { ORIGIN_TOKEN_COOKIE, ORIGIN_USER_COOKIE, SESSION_TOKEN_COOKIE, SESSION_USER_COOKIE, SessionUser } from "../../lib/session";
 
@@ -46,6 +47,35 @@ export async function createTenantAction(
     return { tenant: result.tenant, owner: result.owner, temporaryPassword: result.temporaryPassword };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to onboard client." };
+  }
+}
+
+export async function addTeamMemberAction(name: string, email: string): Promise<{ error?: string; member?: StaffMember; temporaryPassword?: string }> {
+  try {
+    const result = await apiMutate<{ member: StaffMember; temporaryPassword: string }>("/platform-admin/staff", "POST", { name: name.trim(), email: email.trim() });
+    revalidatePath("/platform");
+    return result;
+  } catch (error) {
+    return { error: apiErrorMessage(error, "The person could not be added.") };
+  }
+}
+
+export async function setTeamMemberStatusAction(userId: string, status: "active" | "disabled"): Promise<{ error?: string }> {
+  try {
+    await apiMutate(`/platform-admin/staff/${userId}`, "PATCH", { status });
+    revalidatePath("/platform");
+    return {};
+  } catch (error) {
+    return { error: apiErrorMessage(error, "The change could not be made.") };
+  }
+}
+
+export async function resetTeamMemberPasswordAction(userId: string): Promise<{ error?: string; temporaryPassword?: string }> {
+  try {
+    const result = await apiMutate<{ temporaryPassword: string }>(`/platform-admin/staff/${userId}/reset-password`, "POST");
+    return { temporaryPassword: result.temporaryPassword };
+  } catch (error) {
+    return { error: apiErrorMessage(error, "The password could not be reset.") };
   }
 }
 

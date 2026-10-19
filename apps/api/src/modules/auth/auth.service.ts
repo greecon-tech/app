@@ -3,6 +3,7 @@ import * as bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { DEMO_TENANT_ID, UserRole, userRoles } from "@greecon/shared";
 import { DatabaseService } from "../../database/database.service";
+import { forgetUser } from "../../common/active-users";
 import { problemWithNewPassword } from "../../common/password-policy";
 import { JwtClaims, jwtSecret } from "../../common/principal";
 
@@ -161,6 +162,8 @@ export class AuthService {
     if (problem) throw new BadRequestException(problem);
 
     const newHash = await bcrypt.hash(newPassword, 10);
-    await this.db.query("UPDATE users SET password_hash = $1, must_change_password = false WHERE id = $2", [newHash, userId]);
+    // Every session opened before now, on this password or the old one, ends: the person signs in again.
+    await this.db.query("UPDATE users SET password_hash = $1, must_change_password = false, sessions_valid_after = now() WHERE id = $2", [newHash, userId]);
+    forgetUser(userId);
   }
 }

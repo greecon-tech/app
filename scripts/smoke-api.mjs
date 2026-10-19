@@ -243,6 +243,42 @@ try {
   check(audit.some((event) => event.eventType === "site.created" && event.actor === `Greecon staff (${staff.email})`), "and that the site was made by them");
   check((await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: owner })).status === 403, "a customer's owner cannot open anyone's account");
   check((await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: support })).status === 403, "nor can a support session open another");
+
+  step("Greecon's own team: the owner gives the project manager a login of their own");
+  const pmEmail = `pm-${suffix}@greecon.earth`;
+  const added = await call("POST", "/platform-admin/staff", { token: admin.token, body: { name: "Arta Project", email: pmEmail } });
+  check(added.status === 201 && typeof added.json?.temporaryPassword === "string", "the owner adds a project manager and is given a temporary password, once");
+  const pmFirst = await login(pmEmail, added.json.temporaryPassword);
+  check(pmFirst.user.isPlatformAdmin === true && pmFirst.user.mustChangePassword === true, "who signs in as Greecon staff, to choose a password of their own");
+  const pmPassword = `Own-password-${suffix}-PM-1`;
+  // A person takes a moment to choose a password. A session is dated to the second, and one opened in the very
+  // second a password changes is kept, so that signing in straight after a reset is never refused.
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const pmChanged = await call("POST", "/auth/change-password", { token: pmFirst.token, body: { currentPassword: added.json.temporaryPassword, newPassword: pmPassword } });
+  check(pmChanged.status === 201 || pmChanged.status === 200, "and does");
+  check((await call("GET", "/auth/session", { token: pmFirst.token })).status === 401, "the session the temporary password opened ends the moment the new password is chosen");
+  const pm = await login(pmEmail, pmPassword);
+  const team = await call("GET", "/platform-admin/staff", { token: pm.token });
+  check(team.status === 200 && team.json.length >= 2 && team.json.some((member) => member.email === pmEmail && member.isYou === true), "the project manager sees the team, and which one is them");
+  check((await call("POST", "/platform-admin/staff", { token: pm.token, body: { name: "More", email: `more-${suffix}@greecon.earth` } })).status === 403, "but cannot add anyone to it");
+  check((await call("POST", "/platform-admin/staff", { token: admin.token, body: { name: "Again", email: pmEmail.toUpperCase() } })).status === 409, "an address already in use cannot be used again, however it is spelled");
+  const onboardedAgain = await call("POST", "/platform-admin/tenants", { token: admin.token, body: { name: `Clash ${suffix}`, ownerName: "Owner", ownerEmail: `Owner-${suffix}@Smoke.example` } });
+  check(onboardedAgain.status === 409, "nor can a customer's owner share an address with someone already signed up");
+  const pmOpened = await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: pm.token });
+  check(pmOpened.status === 201, "the project manager opens the customer's account");
+  check((await call("GET", `/sites/${siteId}/setup`, { token: pmOpened.json.token })).status === 200, "and works in it");
+  const pmAudit = (await call("GET", "/audit", { token: owner })).json ?? [];
+  check(pmAudit.some((event) => event.eventType === "support.session_started" && event.actor === `Greecon staff (${pmEmail})`), "the customer's audit trail names the project manager, not the owner of Greecon");
+
+  const off = await call("PATCH", `/platform-admin/staff/${pm.user.id}`, { token: admin.token, body: { status: "disabled" } });
+  check(off.status === 200 && off.json?.status === "disabled", "the owner turns the project manager off");
+  check((await call("GET", "/platform-admin/staff", { token: pm.token })).status === 401, "their open session ends on its next request, not hours later");
+  check((await call("GET", `/sites/${siteId}/setup`, { token: pmOpened.json.token })).status === 401, "and so does the customer's account they had open");
+  check((await call("POST", "/auth/login", { body: { email: pmEmail, password: pmPassword } })).status === 401, "and they cannot sign in again");
+  const on = await call("PATCH", `/platform-admin/staff/${pm.user.id}`, { token: admin.token, body: { status: "active" } });
+  check(on.status === 200, "turned back on, they can sign in again");
+  check((await call("POST", "/auth/login", { body: { email: pmEmail, password: pmPassword } })).status < 300, "with the password they chose");
+  check((await call("PATCH", `/platform-admin/staff/${admin.user.id}`, { token: admin.token, body: { status: "disabled" } })).status === 403, "the owner cannot turn themselves off");
 } catch (error) {
   console.error(`\nThe smoke test could not finish: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);

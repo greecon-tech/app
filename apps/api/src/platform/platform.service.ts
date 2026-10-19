@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
+import { forgetUser } from "../common/active-users";
 import { generateTemporaryPassword } from "../common/generate-password";
 import { computeSiteValue } from "../value/compute-value";
 import { createEnergyLedger } from "../value/create-ledger";
@@ -37,6 +38,7 @@ import {
   Site,
   SiteProfile,
   SiteValue,
+  StaffMember,
   StateKey,
   StatusLabel,
   TelemetryMessage,
@@ -393,6 +395,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   private ledgerTimer?: ReturnType<typeof setInterval>;
   private siteProfiles: SiteProfile[] = [];
   private siteSetup: SiteSetupRecord[] = [];
+  /** The people who work for Greecon and may open a customer's account. They sit in Greecon's own account. */
+  private staffIds = new Set<string>();
 
   constructor(
     private readonly db: DatabaseService,
@@ -475,6 +479,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
        ORDER BY u.created_at ASC`
     );
     if (userRows.rows.length > 0) this.users = userRows.rows.map((row) => mapUserRow(row));
+    this.staffIds = new Set((await this.db.query<{ id: string }>("SELECT id FROM users WHERE is_platform_admin = true")).rows.map((row) => row.id));
 
     // Sites/assets/devices/points hydrate first, in that dependency order, since commands below
     // looks up canonical point names via this.points — it must see the real hydrated points, not
@@ -994,6 +999,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (requestedDomain && this.tenants.some((existing) => existing.domain.toLowerCase() === requestedDomain)) {
       throw new ConflictException("A client with this domain already exists.");
     }
+    this.assertEmailIsFree(input.ownerEmail);
     const domain = requestedDomain || this.clientDomainFor(input.name);
 
     const tenant: Tenant = {
@@ -1087,6 +1093,123 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return { tenant, staffName: staff?.name ?? principal.email };
   }
 
+  // ---- Greecon's own team ------------------------------------------------------------------------------
+  // A project manager needs a login of their own to open customers' accounts: the founder's cannot be
+  // shared, and a person must show under their own name in a customer's trail. Anyone on the team can see
+  // who is on it; only the owner of Greecon's account adds or removes people, so a team member cannot
+  // make more team members.
+
+  private assertTeamMember(principal: Principal): void {
+    if (!principal.isPlatformAdmin || principal.support) {
+      throw new ForbiddenException("This action requires Greecon platform-administrator access.");
+    }
+  }
+
+  private assertTeamOwner(principal: Principal): void {
+    this.assertTeamMember(principal);
+    if (!hasPermission(principal.role, "tenant:manage")) {
+      throw new ForbiddenException("Only the owner of Greecon's own account can add people to the team, remove them or reset their passwords.");
+    }
+  }
+
+  private requireStaff(userId: string): User {
+    const user = this.users.find((candidate) => candidate.id === userId && this.staffIds.has(candidate.id));
+    if (!user) throw new NotFoundException("There is no such person on the Greecon team.");
+    return user;
+  }
+
+  /** One account to an email address: signing in looks the account up by it. Said once for every way an account is made. */
+  private assertEmailIsFree(email: string): void {
+    const wanted = email.trim().toLowerCase();
+    if (this.users.some((existing) => existing.email.toLowerCase() === wanted)) {
+      throw new ConflictException("Someone already has an account with this email address. Each person signs in with one address, so use another address, or add this person's sites to the client they already belong to.");
+    }
+  }
+
+  listStaff(principal: Principal): StaffMember[] {
+    this.assertTeamMember(principal);
+    return this.users
+      .filter((user) => this.staffIds.has(user.id))
+      .map((user) => ({ id: user.id, name: user.name, email: user.email, status: user.status, isYou: user.id === principal.userId }));
+  }
+
+  async addStaffMember(input: { name: string; email: string }, principal: Principal): Promise<{ member: StaffMember; temporaryPassword: string }> {
+    this.assertTeamOwner(principal);
+    if (!this.db.isConfigured()) throw new ConflictException("Team members need a database: this deployment has none.");
+    const email = input.email.trim().toLowerCase();
+    this.assertEmailIsFree(email);
+
+    // Shown once, never stored: the person is given it directly and must choose their own at first sign-in.
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    const user: User = { id: randomUUID(), tenantId: principal.tenantId, email, name: input.name.trim(), role: "admin", status: "active" };
+
+    await this.db.query(
+      `INSERT INTO users (id, tenant_id, email, name, status, password_hash, must_change_password, is_platform_admin) VALUES ($1,$2,$3,$4,$5,$6,true,true)`,
+      [user.id, user.tenantId, user.email, user.name, user.status, passwordHash]
+    );
+    await this.db.query(`INSERT INTO memberships (id, tenant_id, user_id, role) VALUES ($1,$2,$3,$4)`, [randomUUID(), user.tenantId, user.id, user.role]);
+    this.users.push(user);
+    this.staffIds.add(user.id);
+
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: "staff.added",
+      entityType: "user",
+      entityId: user.id,
+      afterMetadata: { email: user.email },
+      reason: `${user.name} (${user.email}) added to the Greecon team by ${principal.email}.`
+    });
+    return { member: { id: user.id, name: user.name, email: user.email, status: user.status, isYou: false }, temporaryPassword };
+  }
+
+  async setStaffStatus(userId: string, status: User["status"], principal: Principal): Promise<StaffMember> {
+    this.assertTeamOwner(principal);
+    const user = this.requireStaff(userId);
+    if (user.id === principal.userId) throw new ForbiddenException("You cannot turn off your own access.");
+
+    if (this.db.isConfigured()) {
+      await this.db.query(`UPDATE users SET status = $1, sessions_valid_after = now(), updated_at = now() WHERE id = $2`, [status, user.id]);
+    }
+    user.status = status;
+    forgetUser(user.id);
+
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: "staff.updated",
+      entityType: "user",
+      entityId: user.id,
+      afterMetadata: { status },
+      reason: `${user.email} ${status === "disabled" ? "turned off" : "turned back on"} on the Greecon team by ${principal.email}.`
+    });
+    return { id: user.id, name: user.name, email: user.email, status: user.status, isYou: false };
+  }
+
+  async resetStaffPassword(userId: string, principal: Principal): Promise<{ member: StaffMember; temporaryPassword: string }> {
+    this.assertTeamOwner(principal);
+    const user = this.requireStaff(userId);
+    if (user.id === principal.userId) throw new ForbiddenException("Choose your own new password in Settings.");
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    if (this.db.isConfigured()) {
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = now(), updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
+    }
+    forgetUser(user.id);
+
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: "staff.password_reset",
+      entityType: "user",
+      entityId: user.id,
+      reason: `Password reset for ${user.email} on the Greecon team by ${principal.email}.`
+    });
+    return { member: { id: user.id, name: user.name, email: user.email, status: user.status, isYou: false }, temporaryPassword };
+  }
+
   /** A person from Greecon in a customer's account to set it up may configure what is measured, not who
    * can sign in: that is the customer's. */
   private assertNotSupport(principal: Principal): void {
@@ -1102,9 +1225,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
 
     const email = input.email.trim().toLowerCase();
-    if (this.users.some((existing) => existing.tenantId === principal.tenantId && existing.email.toLowerCase() === email)) {
-      throw new ConflictException("A user with this email already exists in this tenant.");
-    }
+    this.assertEmailIsFree(email);
 
     // The temporary password is returned once, here, and never stored or logged anywhere else.
     // Whoever creates the account passes it to the new user out of band, and the new user must
@@ -1163,8 +1284,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = now(), updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
     }
+    // Whoever had the old password must not stay signed in on the strength of it.
+    forgetUser(user.id);
 
     await this.recordAudit({
       tenantId: principal.tenantId,
@@ -1206,6 +1329,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     user.role = nextRole;
     user.status = nextStatus;
+    // Turning someone off ends their session on its next request, not when the token would have run out.
+    forgetUser(user.id);
 
     await this.recordAudit({
       tenantId: principal.tenantId,

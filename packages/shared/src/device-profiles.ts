@@ -34,9 +34,19 @@ type MeterRole = "grid" | "solar" | "load";
 // the SDM230 and 52 (0x0034, 30053) on the SDM630. The meters speak Modbus RTU over RS-485: a
 // converter to Ethernet in "Modbus RTU to TCP" mode puts them on the network, each meter keeping its
 // own unit ID.
-const MODELS: Record<MeterModel, { name: string; powerAddress: number; phases: string }> = {
-  sdm230: { name: "Eastron SDM230", powerAddress: 12, phases: "single-phase" },
-  sdm630: { name: "Eastron SDM630", powerAddress: 52, phases: "three-phase" }
+const MODELS: Record<MeterModel, { name: string; powerAddress: number; phases: string; serial: string }> = {
+  sdm230: {
+    name: "Eastron SDM230",
+    powerAddress: 12,
+    phases: "single-phase",
+    serial: "Its serial speed depends on the version (the V1.6 manual says 2400 baud as delivered), with no parity and one stop bit: read it from the meter's own display (the Baud Rate page) and give the converter the same."
+  },
+  sdm630: {
+    name: "Eastron SDM630",
+    powerAddress: 52,
+    phases: "three-phase",
+    serial: "Its serial settings are 9600 baud, 8 data bits, no parity and one stop bit as delivered; read them from the meter's own display and give the converter the same."
+  }
 };
 
 const power = (address: number, part: PointSource["part"]): PointSource => ({
@@ -50,7 +60,7 @@ const power = (address: number, part: PointSource["part"]): PointSource => ({
 });
 
 function meterProfile(model: MeterModel, role: MeterRole): DeviceProfile {
-  const { name, powerAddress, phases } = MODELS[model];
+  const { name, powerAddress, phases, serial } = MODELS[model];
   const common = {
     maker: "Eastron",
     defaultPort: 502,
@@ -68,7 +78,7 @@ function meterProfile(model: MeterModel, role: MeterRole): DeviceProfile {
       notes: [
         "Fit it where the supply enters the site, with the current clamps on the incoming phases, arrow towards the site.",
         "Check the direction: switch on a known load with the sun down. Grid import must go up. If Grid export goes up instead, the clamps are reversed.",
-        "The meter's Modbus address is 1 unless it was changed; its serial settings are usually 9600 baud, 8 data bits, no parity, 1 stop bit."
+        `The meter's Modbus address is 1 unless it was changed. ${serial} Every meter on one cable must use the same speed and parity, and its own address.`
       ],
       points: [reading("energy.grid.import.kw", "Grid import", "positive"), reading("energy.grid.export.kw", "Grid export", "negative")]
     };

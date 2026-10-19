@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { UserRole, userRoles } from "@greecon/shared";
 import { getSession } from "./session";
 
@@ -29,6 +30,9 @@ export async function apiGet<T>(path: string, role: DemoRole = DEMO_ROLE): Promi
   });
 
   if (!response.ok) {
+    // A session the API no longer accepts (the person was turned off, chose a new password, or the signing
+    // secret was changed) is a signed-out person, not a fault: say so on the sign-in page.
+    if (response.status === 401 && !isStaticExport()) redirect("/login?ended=1");
     const detail = await response.text().catch(() => "");
     throw new Error(`Greecon API request failed: ${role} ${path} -> ${response.status} ${detail.slice(0, 300)}`);
   }

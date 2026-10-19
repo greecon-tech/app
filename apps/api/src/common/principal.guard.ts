@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import jwt from "jsonwebtoken";
+import { sessionIsStillGood } from "./active-users";
 import { hashGatewaySecret } from "./gateway-secret";
 import {
   edgeDeviceIngestPrincipal,
@@ -36,6 +37,11 @@ export class PrincipalGuard implements CanActivate {
         claims = jwt.verify(token, secret) as JwtClaims;
       } catch {
         throw new UnauthorizedException("Session is invalid or has expired.");
+      }
+      // A token outlives the decision to turn the person off or to change their password, so ask whether
+      // it still counts (docs/07-security-and-rbac.md). Without a database there are no accounts to ask.
+      if (this.db.isConfigured() && !(await sessionIsStillGood(this.db, claims.sub, claims.iat))) {
+        throw new UnauthorizedException("This session has ended. Sign in again.");
       }
       // A session opened with a temporary password can do exactly one thing: choose a new password.
       if (claims.mcp === true && !isAllowedWhilePasswordIsTemporary(request)) {

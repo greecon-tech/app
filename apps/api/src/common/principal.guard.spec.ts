@@ -1,6 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import jwt from "jsonwebtoken";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetAllUsers } from "./active-users";
 import { PrincipalGuard } from "./principal.guard";
 import { JwtClaims, RequestWithPrincipal } from "./principal";
 import { DatabaseService } from "../database/database.service";
@@ -24,6 +25,37 @@ function fakeDatabase(configured: boolean, rows: Array<{ tenant_id: string }> = 
     query: vi.fn().mockResolvedValue({ rows })
   } as unknown as DatabaseService;
 }
+
+describe("PrincipalGuard and sessions that outlive the person's access", () => {
+  const ACCOUNT = "22222222-bbbb-4bbb-8bbb-222222222222";
+  const original = process.env.JWT_SECRET;
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = "test-secret";
+    forgetAllUsers();
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = original;
+  });
+
+  const sessionFor = (sub: string) => jwt.sign({ sub, tenantId: "tenant-1", role: "owner", email: "owner@client.example" } satisfies JwtClaims, "test-secret");
+
+  it("lets a session through for an account that is still active", async () => {
+    const guard = new PrincipalGuard({ isConfigured: () => true, query: vi.fn().mockResolvedValue({ rows: [{ status: "active", cut_off: null }] }) } as unknown as DatabaseService);
+    await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": sessionFor(ACCOUNT) }))).resolves.toBe(true);
+  });
+
+  it("turns away a valid, unexpired token once the person has been turned off", async () => {
+    const guard = new PrincipalGuard({ isConfigured: () => true, query: vi.fn().mockResolvedValue({ rows: [{ status: "disabled", cut_off: null }] }) } as unknown as DatabaseService);
+    await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": sessionFor(ACCOUNT) }))).rejects.toThrow(/session has ended/);
+  });
+
+  it("turns away a token signed with the right secret for an account that does not exist", async () => {
+    const guard = new PrincipalGuard({ isConfigured: () => true, query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as DatabaseService);
+    await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": sessionFor(ACCOUNT) }))).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
 
 describe("PrincipalGuard", () => {
   const originalSecret = process.env.JWT_SECRET;

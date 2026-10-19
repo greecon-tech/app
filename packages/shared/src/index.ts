@@ -440,6 +440,16 @@ export interface User {
   status: "active" | "disabled";
 }
 
+/** A person from Greecon who may open customers' accounts to set them up (the Clients console). */
+export interface StaffMember {
+  id: string;
+  name: string;
+  email: string;
+  status: "active" | "disabled";
+  /** True for the person asking, so the list can say "you" and not offer to turn them off. */
+  isYou: boolean;
+}
+
 /** Mirrors packages/gaia-core's SafetyLimits field-for-field, duplicated rather than imported so
  * this package doesn't take a dependency on gaia-core. Every field is optional: an unset field
  * falls back to gaia-core's defaultSafetyLimits (see PlatformService.createCommand). */

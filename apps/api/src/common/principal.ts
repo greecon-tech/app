@@ -38,6 +38,8 @@ export interface JwtClaims {
   mcp?: boolean;
   /** Set on the session Greecon staff are given to set a customer's account up. */
   support?: boolean;
+  /** When the token was issued, in seconds. Added by the signing library. */
+  iat?: number;
 }
 
 export function jwtSecret(): string | undefined {

@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { AccessRequest, requestedSiteTypeLabels } from "@greecon/shared";
+import { AccessRequest, requestedSiteTypeLabels, StaffMember } from "@greecon/shared";
 import { Ago } from "../../components/Ago";
 import { DataTable } from "../../components/DataTable";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
 import { OpenForSetupButton } from "../../components/OpenForSetupButton";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
+import { TeamMembers } from "../../components/TeamMembers";
 import { requirePlatformAdmin } from "../../lib/access";
 import { apiGet } from "../../lib/api";
 import { getSession } from "../../lib/session";
@@ -48,9 +49,10 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
   const query = new URLSearchParams({ page: String(page), pageSize: "25" });
   if (search) query.set("q", search);
 
-  const [{ tenants, total, pageSize }, requests] = await Promise.all([
+  const [{ tenants, total, pageSize }, requests, team] = await Promise.all([
     apiGet<TenantsResponse>(`/platform-admin/tenants?${query.toString()}`),
-    apiGet<AccessRequest[]>("/platform-admin/access-requests")
+    apiGet<AccessRequest[]>("/platform-admin/access-requests"),
+    apiGet<StaffMember[]>("/platform-admin/staff")
   ]);
   const lastPage = Math.max(Math.ceil(total / pageSize), 1);
   const open = requests.filter((request) => request.status === "new" || request.status === "contacted");
@@ -180,6 +182,9 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
             </Link>
           </div>
         ) : null}
+      </Section>
+      <Section title="Greecon team" aside={<span className="muted">{team.length} {team.length === 1 ? "person" : "people"}</span>}>
+        <TeamMembers members={team} canChange={session?.user.role === "owner"} />
       </Section>
     </Shell>
   );

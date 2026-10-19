@@ -1003,6 +1003,12 @@ tbody tr:hover {
   font-size: 0.85rem;
 }
 
+/* Greecon's own team, in the Clients console: the list, then the form that adds to it. */
+.team {
+  display: grid;
+  gap: 14px;
+}
+
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

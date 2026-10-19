@@ -3,7 +3,9 @@ import { PlatformAdminGuard } from "../../common/platform-admin.guard";
 import { RequestWithPrincipal } from "../../common/principal";
 import { PlatformService } from "../../platform/platform.service";
 import { AuthService } from "../auth/auth.service";
+import { AddStaffDto } from "./add-staff.dto";
 import { CreateTenantDto } from "./create-tenant.dto";
+import { UpdateStaffStatusDto } from "./update-staff-status.dto";
 import { UpdateTenantStatusDto } from "./update-tenant-status.dto";
 
 // Manages Greecon's clients (tenants) themselves — separate from the per-tenant Admin page
@@ -42,6 +44,28 @@ export class PlatformAdminController {
   async startSupportSession(@Param("tenantId") tenantId: string, @Req() request: RequestWithPrincipal) {
     const { tenant, staffName } = await this.platform.beginSupportSession(tenantId, request.principal);
     return this.auth.issueSupportSession({ tenantId: tenant.id, customer: tenant.name, staffUserId: request.principal.userId, staffName, staffEmail: request.principal.email });
+  }
+
+  // Greecon's own team: the people who may open customers' accounts. Anyone on it can see who else is;
+  // only the owner of Greecon's account adds, turns off or resets (the service says so in words).
+  @Get("staff")
+  listStaff(@Req() request: RequestWithPrincipal) {
+    return this.platform.listStaff(request.principal);
+  }
+
+  @Post("staff")
+  addStaffMember(@Body() body: AddStaffDto, @Req() request: RequestWithPrincipal) {
+    return this.platform.addStaffMember(body, request.principal);
+  }
+
+  @Patch("staff/:userId")
+  setStaffStatus(@Param("userId") userId: string, @Body() body: UpdateStaffStatusDto, @Req() request: RequestWithPrincipal) {
+    return this.platform.setStaffStatus(userId, body.status, request.principal);
+  }
+
+  @Post("staff/:userId/reset-password")
+  resetStaffPassword(@Param("userId") userId: string, @Req() request: RequestWithPrincipal) {
+    return this.platform.resetStaffPassword(userId, request.principal);
   }
 
   @Patch("tenants/:tenantId/status")

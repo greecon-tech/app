@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { LoginForm } from "../../components/LoginForm";
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ changed?: string }> }) {
-  const changed = (await searchParams).changed === "1";
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ changed?: string; ended?: string }> }) {
+  const params = await searchParams;
+  const changed = params.changed === "1";
+  const ended = params.ended === "1";
   return (
     <main className="login-page">
       <section className="login-panel" aria-label="Secure access">
@@ -15,6 +17,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         {changed ? (
           <p className="form-success" role="status">
             Your new password is saved. Sign in with it.
+          </p>
+        ) : null}
+        {ended ? (
+          <p className="login-error" role="status">
+            Your session has ended, because you were signed out or your access changed. Sign in again. If that does not work, ask the account&apos;s owner.
           </p>
         ) : null}
         <LoginForm />
