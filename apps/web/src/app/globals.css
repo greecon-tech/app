@@ -721,14 +721,17 @@ main {
 }
 
 .status-ok,
-.status-stable {
+.status-stable,
+.status-done,
+.status-online {
   background: var(--ok-bg);
   color: var(--ok-fg);
 }
 
 .status-watch,
 .status-manual-override,
-.status-simulated {
+.status-simulated,
+.status-waiting {
   background: var(--watch-bg);
   color: var(--watch-fg);
 }
@@ -737,7 +740,9 @@ main {
 .status-attention-needed,
 .status-check-today,
 .status-uncertain,
-.status-bad-data {
+.status-bad-data,
+.status-needs-attention,
+.status-late {
   background: var(--warning-bg);
   color: var(--warning-fg);
 }
@@ -753,14 +758,18 @@ main {
 .status-offline,
 .status-out-of-date,
 .status-info,
-.status-for-your-information {
+.status-for-your-information,
+.status-to-do,
+.status-not-connected-yet {
   background: var(--unknown-bg);
   color: var(--unknown-fg);
 }
 
 .status-unknown,
 .status-offline,
-.status-out-of-date {
+.status-out-of-date,
+.status-to-do,
+.status-not-connected-yet {
   border: 1px dashed currentColor;
 }
 
@@ -769,7 +778,9 @@ main {
 .status-attention-needed::before,
 .status-check-today::before,
 .status-uncertain::before,
-.status-bad-data::before {
+.status-bad-data::before,
+.status-needs-attention::before,
+.status-late::before {
   border-radius: 0;
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
@@ -783,13 +794,16 @@ main {
 
 .status-unknown::before,
 .status-offline::before,
-.status-out-of-date::before {
+.status-out-of-date::before,
+.status-to-do::before,
+.status-not-connected-yet::before {
   background: transparent;
   border: 2px solid currentColor;
 }
 
 .status-simulated::before,
-.status-manual-override::before {
+.status-manual-override::before,
+.status-waiting::before {
   background: transparent;
   border: 2px solid currentColor;
   border-radius: 2px;
@@ -1783,4 +1797,417 @@ tbody tr:hover {
   background: var(--bg);
   color: var(--text);
   resize: vertical;
+}
+
+/* Setting a site up ------------------------------------------------------------------------------
+   One list of plain steps. Each says what is true now and what to do next; the one to do next is open.
+   Status is a word and a shape first, colour second. */
+.limits__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.setup-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.setup-next a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 400;
+}
+
+input[type="checkbox"] {
+  width: 1.15rem;
+  min-height: 0;
+  height: 1.15rem;
+  padding: 0;
+  accent-color: var(--accent-strong);
+}
+
+.setup-progress {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.setup-progress progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--accent-strong);
+}
+
+.setup-progress__words {
+  margin: 0;
+  font-weight: 600;
+}
+
+.setup-next {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--accent-strong);
+  border-left-width: 6px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+.setup-next p {
+  margin: 0;
+}
+
+.setup-steps {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-step {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.setup-step > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+
+.setup-step > summary::-webkit-details-marker {
+  display: none;
+}
+
+.setup-step__number {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.setup-step__title {
+  display: block;
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+
+.setup-step__detail {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.setup-step__body {
+  display: grid;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-4);
+}
+
+.setup-step__body p {
+  margin: 0;
+}
+
+.setup-items {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.setup-item__detail {
+  display: block;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.setup-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.setup-panel h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.setup-device {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.setup-device__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.setup-device__head strong {
+  font-weight: 600;
+}
+
+.setup-point {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--line);
+}
+
+.setup-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.setup-inline-form label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.setup-inline-form input {
+  width: auto;
+  min-width: 11em;
+}
+
+.setup-inline-form input[size] {
+  min-width: 0;
+  width: 6em;
+}
+
+.setup-inline-form .setup-inline-form__wide {
+  flex: 1 1 18em;
+}
+
+.setup-inline-form .setup-inline-form__wide input {
+  width: 100%;
+}
+
+.setup-guidance {
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--watch-fg);
+  background: var(--watch-bg);
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+}
+
+.setup-guidance p {
+  margin: 0;
+}
+
+.setup-guidance p + p {
+  margin-top: var(--space-2);
+}
+
+.setup-confirmed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.setup-confirmed p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.install-command {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.install-command__line {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--night);
+  color: var(--cream);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.install-command button {
+  justify-self: start;
+}
+
+.template-choice {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.template-choice p {
+  margin: 0;
+}
+
+.template-choice ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* A Greecon staff member inside a customer's account. Impossible to miss, impossible to confuse
+   with the customer's own session. */
+.support-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 40px;
+  border-bottom: 2px solid var(--warning-fg);
+  background: var(--warning-bg);
+  color: var(--text);
+}
+
+.support-banner p {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .support-banner {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .setup-step > summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .setup-step > summary .status {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* The handover sheet: what the customer is given when the site is commissioned. On screen it is a page;
+   printed, it is only the sheet. */
+.handover {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 900px;
+}
+
+.handover h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 1.15rem;
+}
+
+.handover section {
+  display: grid;
+  gap: var(--space-2);
+  break-inside: avoid;
+}
+
+.handover dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.handover dt {
+  color: var(--muted);
+}
+
+.handover dd {
+  margin: 0;
+}
+
+.handover__sign {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+  margin-top: var(--space-6);
+}
+
+.handover__sign div {
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--text);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+@media print {
+  .sidebar,
+  .topbar,
+  .section-tabs,
+  .support-banner,
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  main {
+    padding: 0;
+  }
+
+  .handover {
+    max-width: none;
+  }
+
+  .table-wrap {
+    overflow: visible;
+  }
+
+  .status {
+    border: 1px solid currentColor;
+  }
 }

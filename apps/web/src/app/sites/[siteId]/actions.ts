@@ -58,29 +58,11 @@ export async function deleteDeviceAction(siteId: string, deviceId: string): Prom
   }
 }
 
-interface CreatedGateway {
-  id: string;
-  name: string;
-}
-
-export async function createGatewayAction(siteId: string, name: string): Promise<{ error?: string; gateway?: CreatedGateway; secret?: string }> {
-  if (!name.trim()) {
-    return { error: "Name is required." };
-  }
-
-  try {
-    const result = await apiMutate<{ gateway: CreatedGateway; secret: string }>("/gateways", "POST", { siteId, name });
-    revalidatePath(`/sites/${siteId}`);
-    return { gateway: result.gateway, secret: result.secret };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to add gateway." };
-  }
-}
-
 export async function deleteGatewayAction(siteId: string, gatewayId: string): Promise<{ error?: string }> {
   try {
     await apiMutate(`/gateways/${gatewayId}`, "DELETE");
     revalidatePath(`/sites/${siteId}`);
+    revalidatePath(`/sites/${siteId}/setup`);
     return {};
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to delete gateway." };

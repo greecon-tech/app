@@ -96,6 +96,17 @@ function working(extra: Partial<SetupInput> = {}): SetupInput {
 
 const done = (by = "pm@greecon.earth"): Confirmation => ({ atUtc: secondsAgo(60), by });
 
+describe("a site with no equipment at all", () => {
+  it("asks for the equipment first and cannot be commissioned", () => {
+    const view = computeSetup(input({ devices: [], points: [], gateways: [gateway()] }));
+    const addresses = step(view, "addresses");
+    expect(addresses?.status).toBe("todo");
+    expect(addresses?.detail).toBe("No equipment has been added to this site yet.");
+    expect(view.readyToCommission).toBe(false);
+    expect(step(view, "commissioned")?.status).toBe("waiting");
+  });
+});
+
 describe("a brand-new site made from the hotel template", () => {
   it("starts with everything to do, and commissioning held back", () => {
     const view = computeSetup(input());
@@ -123,10 +134,19 @@ describe("a brand-new site made from the hotel template", () => {
     expect(mapping?.items?.filter((item) => item.status === "done")).toHaveLength(3);
   });
 
-  it("has no steps about answering or arriving yet, because nothing can be read yet", () => {
+  it("lists answering and arriving from the start, as waiting, so the list does not grow while it is worked down", () => {
     const view = computeSetup(input());
-    expect(step(view, "answering")).toBeUndefined();
-    expect(step(view, "readings")).toBeUndefined();
+    expect(step(view, "answering")?.status).toBe("waiting");
+    expect(step(view, "answering")?.items?.every((item) => item.detail === "Needs its address and its registers first.")).toBe(true);
+    expect(step(view, "answering")?.nextAction).toBe("Finish the addresses and registers above first.");
+    expect(step(view, "readings")?.status).toBe("waiting");
+    expect(step(view, "readings")?.nextAction).toBe("Finish the addresses and registers above first.");
+    expect(view.steps.map((candidate) => candidate.key)).toEqual(["prices", "box", "addresses", "mapping", "answering", "readings", "direction", "limits", "commissioned"]);
+  });
+
+  it("keeps the same steps all the way to done", () => {
+    const keys = (view: ReturnType<typeof computeSetup>) => view.steps.map((candidate) => candidate.key);
+    expect(keys(computeSetup(working()))).toEqual(keys(computeSetup(input())));
   });
 
   it("asks for the direction check and the limits, as the site has a grid meter and a tank", () => {
@@ -298,7 +318,7 @@ describe("prices", () => {
 describe("a site with nothing on it yet", () => {
   it("still says what to do first", () => {
     const view = computeSetup(input({ devices: [], points: [] }));
-    expect(view.steps.map((candidate) => candidate.key)).toEqual(["box", "commissioned"]);
+    expect(view.steps.map((candidate) => candidate.key)).toEqual(["box", "addresses", "commissioned"]);
     expect(step(view, "box")?.status).toBe("todo");
   });
 });

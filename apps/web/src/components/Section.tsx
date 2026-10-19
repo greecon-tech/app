@@ -1,8 +1,8 @@
 import { ReactNode } from "react";
 
-export function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
+export function Section({ title, children, aside, id }: { title: string; children: ReactNode; aside?: ReactNode; id?: string }) {
   return (
-    <section className="section">
+    <section className="section" id={id}>
       <div className="section__header">
         <h2>{title}</h2>
         {aside ? <div>{aside}</div> : null}

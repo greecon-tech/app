@@ -1,4 +1,5 @@
 import {
+  ALERT_LIMIT_KEYS,
   Device,
   EdgeGateway,
   Point,
@@ -49,9 +50,6 @@ export interface SetupInput {
 
 /** The box's clock is wrong by more than this: readings are stamped with it, so it matters. */
 const CLOCK_SKEW_LIMIT_SECONDS = 120;
-
-/** The reading limits whose standard values decide when people are alerted. */
-const ALERT_LIMIT_KEYS = ["critical_low", "warning_low", "irrigate_below", "dry_run_lpm"];
 
 function rollup(items: readonly SetupStepItem[]): SetupStepStatus {
   if (items.some((item) => item.status === "attention")) return "attention";
@@ -155,7 +153,16 @@ export function computeSetup(input: SetupInput): SetupView {
   }
 
   // 3. Where each device is on the network ---------------------------------
-  if (modbusDevices.length > 0) {
+  if (input.devices.length === 0) {
+    // A site made from the blank template: without equipment there is nothing to read, and it must not look ready.
+    steps.push({
+      key: "addresses",
+      title: "Where each device is on the network",
+      status: "todo",
+      detail: "No equipment has been added to this site yet.",
+      nextAction: "Add the equipment the site has. Pick it from the list if Greecon knows it; the box needs each device's IP address, port and unit number."
+    });
+  } else if (modbusDevices.length > 0) {
     const items: SetupStepItem[] = modbusDevices.map((device) =>
       device.connection
         ? { label: device.name, status: "done", detail: describeConnection(device.connection) }
@@ -194,11 +201,14 @@ export function computeSetup(input: SetupInput): SetupView {
   }
 
   // 5. Is each device answering the box ------------------------------------
+  // Listed from the start, as waiting, so the list a person works down does not grow while they work.
   const gatewayOnline = input.gateways.some((gateway) => gatewayContact(gateway.lastSeenUtc, nowMs) === "online");
   const driverStatus = new Map(input.gateways.flatMap((gateway) => (gateway.drivers ?? []).map((driver) => [driver.deviceId, driver] as const)));
   const readDevices = modbusDevices.filter((device) => device.connection && modbusPoints.some((point) => point.deviceId === device.id && point.source));
-  if (readDevices.length > 0) {
-    const items: SetupStepItem[] = readDevices.map((device) => {
+  const isRead = (deviceId: string): boolean => readDevices.some((device) => device.id === deviceId);
+  if (modbusDevices.length > 0) {
+    const items: SetupStepItem[] = modbusDevices.map((device) => {
+      if (!isRead(device.id)) return { label: device.name, status: "waiting", detail: "Needs its address and its registers first." };
       const driver = driverStatus.get(device.id);
       if (!gatewayOnline) return { label: device.name, status: "waiting", detail: "Waiting for the box to be online." };
       if (!driver) return { label: device.name, status: "waiting", detail: "The box has not reported on this device yet. It picks up changes within a minute." };
@@ -206,44 +216,53 @@ export function computeSetup(input: SetupInput): SetupView {
       return { label: device.name, status: "attention", detail: driver.lastError ?? "Not answering." };
     });
     const status = rollup(items);
+    const notReady = modbusDevices.filter((device) => !isRead(device.id)).length;
     steps.push({
       key: "answering",
       title: "Every device answers the box",
       status,
-      detail: status === "done" ? "Every device is answering." : status === "attention" ? "At least one device is not answering the box." : "Waiting for the box to try each device.",
+      detail: status === "done" ? "Every device is answering." : status === "attention" ? "At least one device is not answering the box." : notReady > 0 ? "Waiting for the addresses and registers above." : "Waiting for the box to try each device.",
       ...(status === "done"
         ? {}
         : status === "attention"
           ? { nextAction: "Check the address, the unit number and the cable of the device named below. A wrong unit number and a wrong address look the same from here." }
-          : { nextAction: "Wait a minute. If this does not change, check that the box is online." }),
+          : { nextAction: notReady > 0 ? "Finish the addresses and registers above first." : "Wait a minute. If this does not change, check that the box is online." }),
       items
     });
   }
 
   // 6. Are readings arriving, and could they be real ----------------------
-  {
-    const configured = modbusPoints.filter((point) => point.source && readDevices.some((device) => device.id === point.deviceId));
-    if (configured.length > 0) {
-      const items: SetupStepItem[] = configured.map((point) => {
-        const reading = latestByPoint.get(point.id);
-        if (!reading) return { label: point.label, status: "waiting", detail: "No reading yet." };
-        if (reading.freshness === "out_of_date") {
-          return { label: point.label, status: "attention", detail: `Last reading ${describeAge(reading.ageSeconds ?? 0)} ago. It has stopped arriving.` };
-        }
-        const problem = typeof reading.value === "number" ? plausibilityProblem(point.canonicalName, reading.value) : undefined;
-        if (problem) return { label: point.label, status: "attention", detail: problem };
-        return { label: point.label, status: "done", detail: `${shown(reading.value)} ${reading.unit}, ${describeAge(reading.ageSeconds ?? 0)} ago.` };
-      });
-      const status = rollup(items);
-      steps.push({
-        key: "readings",
-        title: "Readings arrive and look right",
-        status,
-        detail: status === "done" ? "Every reading is arriving and could be real." : status === "attention" ? "At least one reading is missing or does not look right." : "Waiting for the first readings.",
-        ...(status === "done" ? {} : { nextAction: status === "attention" ? "Read the line below. A value that cannot be real is usually a wrong register, a wrong scale or a wiring fault." : "Wait a minute for the next round of readings." }),
-        items
-      });
-    }
+  if (modbusPoints.length > 0) {
+    const items: SetupStepItem[] = modbusPoints.map((point) => {
+      if (!point.source || !isRead(point.deviceId)) return { label: point.label, status: "waiting", detail: "Needs its address and its register first." };
+      const reading = latestByPoint.get(point.id);
+      if (!reading) return { label: point.label, status: "waiting", detail: "No reading yet." };
+      if (reading.freshness === "out_of_date") {
+        return { label: point.label, status: "attention", detail: `Last reading ${describeAge(reading.ageSeconds ?? 0)} ago. It has stopped arriving.` };
+      }
+      const problem = typeof reading.value === "number" ? plausibilityProblem(point.canonicalName, reading.value) : undefined;
+      if (problem) return { label: point.label, status: "attention", detail: problem };
+      return { label: point.label, status: "done", detail: `${shown(reading.value)} ${reading.unit}, ${describeAge(reading.ageSeconds ?? 0)} ago.` };
+    });
+    const status = rollup(items);
+    const notReady = modbusPoints.filter((point) => !point.source || !isRead(point.deviceId)).length;
+    steps.push({
+      key: "readings",
+      title: "Readings arrive and look right",
+      status,
+      detail: status === "done" ? "Every reading is arriving and could be real." : status === "attention" ? "At least one reading is missing or does not look right." : "Waiting for the first readings.",
+      ...(status === "done"
+        ? {}
+        : {
+            nextAction:
+              status === "attention"
+                ? "Read the line below. A value that cannot be real is usually a wrong register, a wrong scale or a wiring fault."
+                : notReady > 0
+                  ? "Finish the addresses and registers above first."
+                  : "Wait a minute for the next round of readings."
+          }),
+      items
+    });
   }
 
   // 7. Direction of the grid meter (a person checks) -----------------------

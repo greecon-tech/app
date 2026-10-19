@@ -3,6 +3,7 @@ import { AccessRequest, requestedSiteTypeLabels } from "@greecon/shared";
 import { Ago } from "../../components/Ago";
 import { DataTable } from "../../components/DataTable";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
+import { OpenForSetupButton } from "../../components/OpenForSetupButton";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
 import { requirePlatformAdmin } from "../../lib/access";
@@ -148,6 +149,11 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
             { key: "domain", label: "Domain" },
             { key: "userCount", label: "Users" },
             { key: "siteCount", label: "Sites" },
+            {
+              key: "id",
+              label: "Setup",
+              render: (tenant) => <OpenForSetupButton tenantId={tenant.id} name={tenant.name} disabled={tenant.status !== "active"} />
+            },
             {
               key: "status",
               label: "Status",

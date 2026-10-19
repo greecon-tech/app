@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { siteTypes } from "@greecon/shared";
 import { deleteSiteAction, updateSiteAction } from "../app/admin/actions";
@@ -54,6 +55,9 @@ export function EditableSiteRow({ site, canManage }: { site: Site; canManage: bo
         {canManage ? (
           <td>
             <div className="rule-actions">
+              <Link className="button-ghost" href={`/sites/${site.id}/setup`}>
+                Set up
+              </Link>
               <button type="button" className="button-ghost" onClick={() => setEditing(true)}>
                 Edit
               </button>

@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { CanonicalPointName, EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth, SiteProfile, SiteValue, valuePoints } from "@greecon/shared";
+import { CanonicalPointName, EdgeGateway, EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth, SiteProfile, SiteValue, valuePoints } from "@greecon/shared";
 import { Ago } from "../../../components/Ago";
 import { EnergyFlow } from "../../../components/EnergyFlow";
 import { HealthReasons } from "../../../components/HealthHeadline";
 import { LiveRefresh } from "../../../components/LiveRefresh";
 import { CreateAssetForm } from "../../../components/CreateAssetForm";
 import { CreateDeviceForm } from "../../../components/CreateDeviceForm";
-import { CreateGatewayForm } from "../../../components/CreateGatewayForm";
 import { CreatePointForm } from "../../../components/CreatePointForm";
 import { PointLimitsForm } from "../../../components/PointLimitsForm";
 import { DataTable } from "../../../components/DataTable";
@@ -23,9 +22,10 @@ import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
 import { groupByCanonicalName } from "../../../lib/telemetry-history";
 import { priorityWord, titleCase } from "../../../lib/health";
+import { CONTACT_WORDS } from "../../../lib/setup";
 import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
 import { Metric } from "../../../lib/types";
-import { deleteAssetAction, deleteDeviceAction, deleteGatewayAction, deletePointAction } from "./actions";
+import { deleteAssetAction, deleteDeviceAction, deletePointAction } from "./actions";
 
 interface SiteDetail {
   site: { id: string; name: string; type: string; locationName: string; status: string; edgeStatus: string };
@@ -35,7 +35,7 @@ interface SiteDetail {
   assets: Array<{ id: string; name: string; type: string; status: string }>;
   devices: Array<{ id: string; name: string; deviceType: string; protocol: string; health: string; lastSeenUtc?: string; positionX?: number; positionY?: number; placementNote?: string }>;
   points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: CanonicalPointName; capability: string; thresholdConfig?: Record<string, number> }>;
-  gateways: Array<{ id: string; name: string; status: string; secureIdentityStatus: string }>;
+  gateways: EdgeGateway[];
   latestTelemetry: Array<ReadingView & { pointId: string }>;
   rules: Array<{ id: string; name: string; priority: string; executionMode: string; approvalState: string }>;
   alerts: Array<{ id: string; severity: string; title: string; status: string }>;
@@ -139,7 +139,7 @@ export default async function SiteDetailPage({ params, searchParams }: { params:
           </div>
         )}
       </Section>
-      <Section title="Equipment">
+      <Section title="Equipment" id="equipment">
         <SensorMap devices={detail.devices} points={detail.points} readings={detail.latestTelemetry} />
         {canManageAssets ? (
           <div className="stack">
@@ -168,10 +168,10 @@ export default async function SiteDetailPage({ params, searchParams }: { params:
         ) : null}
         {canManageDevices ? (
           <div className="stack">
-            <h3>Gateways</h3>
+            <h3>Boxes</h3>
             <p className="muted">
-              A gateway is the industrial PC physically at this site that sends real readings to the platform. Each one gets its own real
-              credential here — no Railway or hosting configuration needed.
+              A box is the small computer at the site that reads the equipment and sends the readings here. Boxes are installed and replaced on the{" "}
+              <Link href={`/sites/${site.id}/setup`}>setup page</Link>, which gives the command to run on each one.
             </p>
             {detail.gateways.length > 0 ? (
               <DataTable
@@ -179,21 +179,17 @@ export default async function SiteDetailPage({ params, searchParams }: { params:
                 rows={detail.gateways}
                 columns={[
                   { key: "name", label: "Name" },
-                  { key: "secureIdentityStatus", label: "Credential" },
-                  {
-                    key: "id",
-                    label: "",
-                    render: (row) => (
-                      <DeleteButton
-                        action={deleteGatewayAction.bind(null, site.id, row.id)}
-                        confirmMessage={`Delete gateway "${row.name}"? Any device pointed at it keeps working but loses that association, and this credential stops working immediately.`}
-                      />
-                    )
-                  }
+                  { key: "contact", label: "Now", render: (row) => <StatusBadge status={CONTACT_WORDS[row.contact ?? "never"]} /> },
+                  { key: "lastSeenUtc", label: "Last heard from", render: (row) => (row.lastSeenUtc ? <Ago iso={row.lastSeenUtc} /> : "never") },
+                  { key: "softwareVersion", label: "Version", render: (row) => row.softwareVersion ?? "—" }
                 ]}
               />
             ) : null}
-            <CreateGatewayForm siteId={site.id} />
+            <p>
+              <Link className="button-primary" href={`/sites/${site.id}/setup`}>
+                Open the setup checklist
+              </Link>
+            </p>
             <h3>Devices</h3>
             <p className="muted">A device is the physical piece of equipment — a sensor, controller, or gateway.</p>
             {detail.devices.length > 0 ? (

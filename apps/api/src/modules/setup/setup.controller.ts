@@ -36,8 +36,9 @@ export class SetupController {
     return this.setup.reopenStep(siteId, stepKey, request.principal);
   }
 
+  // Lists the account's people, which only those who may manage users may see: the same two roles that manage sites.
   @Get("sites/:siteId/handover")
-  @RequirePermissions("site:read")
+  @RequirePermissions("site:manage")
   handover(@Param("siteId") siteId: string, @Req() request: RequestWithPrincipal) {
     return this.setup.handover(siteId, request.principal);
   }

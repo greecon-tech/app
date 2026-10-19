@@ -65,10 +65,10 @@ describe("setting a site up", () => {
       expect(platform.siteProfile(site.id, owner)).toMatchObject({ timezone: "Europe/Tirane", currency: "ALL" });
     });
 
-    it("makes an empty site from the empty template, with just the box to add", async () => {
+    it("makes an empty site from the empty template, with the box and the equipment still to add", async () => {
       const { site, setup: view } = await setup.createSiteFromTemplate({ templateKey: "blank", name: "Blank", locationName: "x" }, owner);
       expect(platform.listDevices(owner, site.id)).toEqual([]);
-      expect(view.steps.map((step) => step.key)).toEqual(["box", "commissioned"]);
+      expect(view.steps.map((step) => step.key)).toEqual(["box", "addresses", "commissioned"]);
     });
 
     it("refuses a template that does not exist, and creates nothing", async () => {
@@ -434,6 +434,13 @@ describe("setting a site up", () => {
         confirmedAtUtc: "2026-10-19T10:00:00.000Z",
         note: "Import rose with the kettle on"
       });
+    });
+
+    it("says when it was Greecon staff, in a support session, who confirmed", async () => {
+      const { site } = await hotel();
+      const staff: Principal = { ...owner, email: "pm@greecon.earth", support: true };
+      const view = await setup.confirmStep(site.id, "direction", undefined, staff);
+      expect(view.steps.find((step) => step.key === "direction")?.confirmedBy).toBe("pm@greecon.earth (Greecon staff)");
     });
 
     it("keeps a note to 300 characters", async () => {

@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 import { GREECON_COMPANY, GREECON_DOMAIN, userRoles } from "@greecon/shared";
 import { DEMO_ROLE } from "../lib/api";
 import { logoutAction } from "../app/login/actions";
+import { leaveSetupAction } from "../app/platform/actions";
 import { getSession } from "../lib/session";
 import { Nav, SectionTabs } from "./Nav";
 
@@ -32,6 +33,19 @@ export async function Shell({ children, title, subtitle }: { children: ReactNode
         </div>
       </aside>
       <div className="workspace">
+        {session?.user.support ? (
+          <div className="support-banner" role="status">
+            <p>
+              You are in <strong>{session.user.customer ?? "a customer's account"}</strong> as Greecon staff, setting it up. What you do here is recorded under your name in their audit
+              trail. You cannot add people to the account or change their passwords.
+            </p>
+            <form action={leaveSetupAction}>
+              <button type="submit" className="button-ghost">
+                Back to the Greecon console
+              </button>
+            </form>
+          </div>
+        ) : null}
         <header className="topbar">
           <div>
             <p className="eyebrow">Greecon Platform</p>

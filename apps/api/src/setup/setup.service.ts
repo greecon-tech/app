@@ -283,7 +283,7 @@ export class SetupService {
       throw new ConflictException("The steps above are not all done yet, so the site cannot be commissioned.");
     }
     const tidy = note?.replace(/\s+/g, " ").trim().slice(0, 300);
-    await this.platform.setSetupConfirmation(siteId, key, { atUtc: new Date(nowMs).toISOString(), by: principal.email, ...(tidy ? { note: tidy } : {}) }, principal);
+    await this.platform.setSetupConfirmation(siteId, key, { atUtc: new Date(nowMs).toISOString(), by: principal.support ? `${principal.email} (Greecon staff)` : principal.email, ...(tidy ? { note: tidy } : {}) }, principal);
     return this.setupView(siteId, principal, nowMs);
   }
 
