@@ -1,0 +1,4 @@
+# How to tell Greecon about a security problem (RFC 9116). Plain words are fine; no special format needed.
+Contact: mailto:info@greecon.earth
+Expires: 2027-09-30T00:00:00.000Z
+Preferred-Languages: en

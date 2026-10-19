@@ -46,10 +46,51 @@ describe("trustedProxyHops", () => {
 
 describe("checkRuntimeConfig", () => {
   const strong = "x".repeat(40);
-  const production = { NODE_ENV: "production", DATABASE_URL: "postgres://db", JWT_SECRET: strong, TRUST_PROXY: "1", PUBLIC_API_URL: "https://api.greecon.earth" };
+  const production = {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgres://db",
+    JWT_SECRET: strong,
+    TRUST_PROXY: "1",
+    PUBLIC_API_URL: "https://api.greecon.earth",
+    PUBLIC_WEB_URL: "https://app.greecon.earth",
+    RESEND_API_KEY: "re_x",
+    TWILIO_ACCOUNT_SID: "AC1",
+    TWILIO_AUTH_TOKEN: "t",
+    TWILIO_FROM: "+15005550006",
+    SALES_NOTIFY_EMAIL: "info@greecon.earth"
+  };
 
   it("accepts a properly configured production deployment", () => {
     expect(checkRuntimeConfig(production)).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("says, at every start, when alert messages cannot be sent at all", () => {
+    const { RESEND_API_KEY: _a, TWILIO_ACCOUNT_SID: _b, TWILIO_AUTH_TOKEN: _c, TWILIO_FROM: _d, ...without } = production;
+    const report = checkRuntimeConfig(without);
+    expect(report.errors).toEqual([]);
+    expect(report.warnings).toEqual([
+      "Alert messages are OFF: neither email (RESEND_API_KEY) nor text messages (TWILIO_*) are set up, so alerts show in Greecon and nobody is sent a message. A site cannot be commissioned until one is."
+    ]);
+  });
+
+  it("says when only text messages are set up, because Check today and the morning message are email", () => {
+    const { RESEND_API_KEY: _omitted, ...withoutEmail } = production;
+    expect(checkRuntimeConfig(withoutEmail).warnings).toEqual(["Email (RESEND_API_KEY) is not set up. Only Act now reaches people, by text; Check today and the morning message are not sent."]);
+  });
+
+  it("reports a half-set messaging provider as the problem it is", () => {
+    const report = checkRuntimeConfig({ ...production, TWILIO_AUTH_TOKEN: undefined, ALERT_FROM_EMAIL: "not an address" });
+    expect(report.warnings).toEqual([
+      "ALERT_FROM_EMAIL is not an email address, so email is off.",
+      "Text messages need both TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN, so text messages are off.",
+      "Alert messages are OFF: neither email (RESEND_API_KEY) nor text messages (TWILIO_*) are set up, so alerts show in Greecon and nobody is sent a message. A site cannot be commissioned until one is."
+    ]);
+  });
+
+  it("asks for the web address, so messages can link back, and for who hears of a request for access", () => {
+    const report = checkRuntimeConfig({ ...production, PUBLIC_WEB_URL: undefined, SALES_NOTIFY_EMAIL: "  " });
+    expect(report.warnings.join("\n")).toMatch(/PUBLIC_WEB_URL is not set/);
+    expect(report.warnings.join("\n")).toMatch(/SALES_NOTIFY_EMAIL is not set/);
   });
 
   it("stops a production deployment that has a database but no signing secret", () => {

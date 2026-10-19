@@ -1,6 +1,7 @@
 // Small, pure readers for deployment settings that change what the API exposes or how it
 // identifies callers. Kept apart from main.ts so each rule can be unit-tested without booting Nest.
 
+import { createChannels } from "../notifications/channels";
 import { configuredPublicApiUrl } from "./public-url";
 
 type Env = Record<string, string | undefined>;
@@ -81,6 +82,24 @@ export function checkRuntimeConfig(env: Env): ConfigReport {
       );
     } else if (!publicUrl.startsWith("https://")) {
       warnings.push("PUBLIC_API_URL is not https. A box sends its credential and its readings to this address; use an https address.");
+    }
+  }
+
+  // Telling people is what a customer is paying for when something goes wrong, so a deployment that cannot do it
+  // says so at every start, not only in the logs of the first alert that nobody received.
+  if (production && env.DATABASE_URL) {
+    const channels = createChannels(env);
+    warnings.push(...channels.problems);
+    if (!channels.email && !channels.sms) {
+      warnings.push("Alert messages are OFF: neither email (RESEND_API_KEY) nor text messages (TWILIO_*) are set up, so alerts show in Greecon and nobody is sent a message. A site cannot be commissioned until one is.");
+    } else if (!channels.email) {
+      warnings.push("Email (RESEND_API_KEY) is not set up. Only Act now reaches people, by text; Check today and the morning message are not sent.");
+    }
+    if (!env.PUBLIC_WEB_URL?.trim()) {
+      warnings.push("PUBLIC_WEB_URL is not set, so the messages have no link back to Greecon. Set it to the web app's public address, for example https://app.greecon.earth.");
+    }
+    if ((env.SALES_NOTIFY_EMAIL ?? "").trim() === "") {
+      warnings.push("SALES_NOTIFY_EMAIL is not set, so a new request for access waits in the inbox until someone looks. Set it to the address that should hear of each one.");
     }
   }
 
