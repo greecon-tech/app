@@ -162,6 +162,8 @@ export interface DigestSite {
 export interface DigestFacts {
   customer: string;
   sites: DigestSite[];
+  /** Whole sentences that go after the sites, for what is true of the account but not of one site. */
+  notes?: string[];
 }
 
 function siteLine(site: DigestSite, nowMs: number): string {
@@ -195,6 +197,7 @@ export function digestEmail(facts: DigestFacts, nowMs: number, timezone: string,
       headline,
       "",
       ...facts.sites.map((site) => siteLine(site, nowMs)),
+      ...(facts.notes && facts.notes.length > 0 ? ["", ...facts.notes] : []),
       ...(link ? ["", `Open Greecon: ${link}`] : []),
       "",
       `You get this message each morning at ${at} (${timezone}) for ${facts.customer}. It can be turned off under Who is told in Greecon.`

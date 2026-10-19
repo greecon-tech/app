@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { AccessRequest, requestedSiteTypeLabels, StaffMember } from "@greecon/shared";
+import { AccessRequest, FleetRow, requestedSiteTypeLabels, StaffMember } from "@greecon/shared";
 import { Ago } from "../../components/Ago";
 import { DataTable } from "../../components/DataTable";
+import { FleetTable } from "../../components/FleetTable";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
 import { OpenForSetupButton } from "../../components/OpenForSetupButton";
 import { Section } from "../../components/Section";
@@ -49,10 +50,11 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
   const query = new URLSearchParams({ page: String(page), pageSize: "25" });
   if (search) query.set("q", search);
 
-  const [{ tenants, total, pageSize }, requests, team] = await Promise.all([
+  const [{ tenants, total, pageSize }, requests, team, fleet] = await Promise.all([
     apiGet<TenantsResponse>(`/platform-admin/tenants?${query.toString()}`),
     apiGet<AccessRequest[]>("/platform-admin/access-requests"),
-    apiGet<StaffMember[]>("/platform-admin/staff")
+    apiGet<StaffMember[]>("/platform-admin/staff"),
+    apiGet<FleetRow[]>("/platform-admin/fleet")
   ]);
   const lastPage = Math.max(Math.ceil(total / pageSize), 1);
   const open = requests.filter((request) => request.status === "new" || request.status === "contacted");
@@ -124,6 +126,9 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
             ]}
           />
         )}
+      </Section>
+      <Section title="Sites across clients" aside={<span className="muted">Worst first. Look here each morning.</span>}>
+        <FleetTable rows={fleet} nowMs={Date.now()} />
       </Section>
       <section id="onboard" className="section">
         <div className="section__header">

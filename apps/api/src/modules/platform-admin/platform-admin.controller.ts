@@ -46,6 +46,12 @@ export class PlatformAdminController {
     return this.auth.issueSupportSession({ tenantId: tenant.id, customer: tenant.name, staffUserId: request.principal.userId, staffName, staffEmail: request.principal.email });
   }
 
+  // Every customer's sites at once, worst first: what Greecon's team looks at each morning.
+  @Get("fleet")
+  fleet(@Req() request: RequestWithPrincipal) {
+    return this.platform.fleet(request.principal);
+  }
+
   // Greecon's own team: the people who may open customers' accounts. Anyone on it can see who else is;
   // only the owner of Greecon's account adds, turns off or resets (the service says so in words).
   @Get("staff")

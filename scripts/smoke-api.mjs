@@ -264,6 +264,11 @@ try {
   check((await call("POST", "/platform-admin/staff", { token: admin.token, body: { name: "Again", email: pmEmail.toUpperCase() } })).status === 409, "an address already in use cannot be used again, however it is spelled");
   const onboardedAgain = await call("POST", "/platform-admin/tenants", { token: admin.token, body: { name: `Clash ${suffix}`, ownerName: "Owner", ownerEmail: `Owner-${suffix}@Smoke.example` } });
   check(onboardedAgain.status === 409, "nor can a customer's owner share an address with someone already signed up");
+  const fleet = await call("GET", "/platform-admin/fleet", { token: pm.token });
+  const fleetRow = fleet.json?.find?.((entry) => entry.client === `Smoke Hotel ${suffix}` && entry.site === "Hotel Adriatik");
+  check(fleet.status === 200 && fleetRow !== undefined, "the project manager sees every customer's sites in one list");
+  check(fleetRow?.box?.status === "never" && fleetRow?.commissionedAtUtc === undefined, "where the replacement box, installed but not yet heard from, says so, and the site is still being set up");
+  check((await call("GET", "/platform-admin/fleet", { token: owner })).status === 403, "a customer cannot see that list");
   const pmOpened = await call("POST", `/platform-admin/tenants/${customer.tenantId}/support-session`, { token: pm.token });
   check(pmOpened.status === 201, "the project manager opens the customer's account");
   check((await call("GET", `/sites/${siteId}/setup`, { token: pmOpened.json.token })).status === 200, "and works in it");

@@ -25,7 +25,11 @@ import {
   EdgeGateway,
   EdgeSyncMessage,
   EnergyFlowView,
+  FleetBox,
+  FleetBoxStatus,
+  FleetRow,
   FlowReading,
+  GREECON_DOMAIN,
   GatewayHeartbeat,
   ModbusConnection,
   Point,
@@ -47,10 +51,14 @@ import {
   User,
   UserRole,
   deriveEnergyFlow,
+  alertPriority,
+  describeAge,
   describeConnection,
   describeSource,
   gatewayContact,
   hasPermission,
+  orderFleet,
+  worseState,
   validateConnection,
   validatePointLimits,
   validatePointSource,
@@ -119,6 +127,25 @@ function newestTimestamp(readings: ReadonlyArray<TelemetryReading>): string | un
     (latest, item) => (latest === undefined || Date.parse(item.timestampUtc) > Date.parse(latest) ? item.timestampUtc : latest),
     undefined
   );
+}
+
+/** What a box that has gone quiet means, in a sentence. Nothing when it is reporting. */
+function boxSilenceWords(box: FleetBox, nowMs: number): string | undefined {
+  const age = box.lastSeenUtc ? describeAge(Math.max(0, (nowMs - Date.parse(box.lastSeenUtc)) / 1000)) : undefined;
+  switch (box.status) {
+    case "offline":
+      return `The box has not reported for ${age}: it is offline. Check its power and its network.`;
+    case "late":
+      return `The box last reported ${age} ago.`;
+    case "never":
+      return "The box has been installed but has never reported.";
+    case "waiting":
+      return "The box has not been installed yet.";
+    case "none":
+      return "No box has been added to this site.";
+    default:
+      return undefined;
+  }
 }
 
 const OVERVIEW_STATUS: Record<HealthState, string> = {
@@ -1208,6 +1235,98 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       reason: `Password reset for ${user.email} on the Greecon team by ${principal.email}.`
     });
     return { member: { id: user.id, name: user.name, email: user.email, status: user.status, isYou: false }, temporaryPassword };
+  }
+
+  // ---- Every customer's sites at once -------------------------------------------------------------------------
+
+  /** Where every customer's sites stand, worst first: for Greecon's team to look at each morning and whenever a
+   * customer calls. The demo account is simulated and Greecon's own has no sites, so neither is in it. */
+  fleet(principal: Principal, nowMs: number = Date.now()): FleetRow[] {
+    this.assertTeamMember(principal);
+    return this.fleetRows(nowMs);
+  }
+
+  private fleetRows(nowMs: number): FleetRow[] {
+    const rows: FleetRow[] = [];
+    for (const tenant of this.tenants) {
+      if (tenant.id === DEMO_TENANT_ID || tenant.domain === GREECON_DOMAIN || tenant.status !== "active") continue;
+      for (const stored of this.sites.filter((site) => site.tenantId === tenant.id)) {
+        const site = this.assessSite(stored, nowMs);
+        const box = this.fleetBoxOf(tenant.id, stored.id, nowMs);
+        const commissioned = this.siteSetup.find((record) => record.tenantId === tenant.id && record.siteId === stored.id)?.confirmations.commissioned;
+        const alerts = this.alerts.filter((alert) => alert.tenantId === tenant.id && alert.siteId === stored.id && alert.status !== "resolved");
+
+        const reasons = site.health.reasons.map((reason) => reason.message);
+        let state = site.health.state;
+        // A box that has stopped reporting is a problem on a site that is working. On one still being set up it is
+        // only what setting up looks like, so it never makes the morning list longer.
+        if (commissioned) {
+          const silence = boxSilenceWords(box, nowMs);
+          if (silence) {
+            reasons.unshift(silence);
+            state = worseState(state, "attention");
+          }
+          if (box.devicesNotAnswering > 0) {
+            reasons.push(`${box.devicesNotAnswering === 1 ? "A device does" : `${box.devicesNotAnswering} devices do`} not answer the box.`);
+            state = worseState(state, "attention");
+          }
+        }
+
+        rows.push({
+          clientId: tenant.id,
+          client: tenant.name,
+          siteId: stored.id,
+          site: stored.name,
+          state,
+          reasons,
+          ...(site.lastReadingAtUtc ? { lastReadingAtUtc: site.lastReadingAtUtc } : {}),
+          box,
+          ...(commissioned ? { commissionedAtUtc: commissioned.atUtc } : {}),
+          openAlerts: {
+            actNow: alerts.filter((alert) => alertPriority(alert.severity) === "act_now").length,
+            checkToday: alerts.filter((alert) => alertPriority(alert.severity) === "check_today").length
+          }
+        });
+      }
+    }
+    return orderFleet(rows);
+  }
+
+  /** The worst of a site's boxes: offline before never-reported before late before waiting before online. */
+  private fleetBoxOf(tenantId: string, siteId: string, nowMs: number): FleetBox {
+    const order: FleetBoxStatus[] = ["offline", "never", "late", "waiting", "online", "none"];
+    const gateways = this.gateways.filter((gateway) => gateway.tenantId === tenantId && gateway.siteId === siteId).map((gateway) => this.assessGateway(gateway, nowMs));
+    if (gateways.length === 0) return { status: "none", devicesNotAnswering: 0 };
+
+    const statusOf = (gateway: EdgeGateway): FleetBoxStatus => (gateway.enrolledAtUtc === undefined && gateway.secureIdentityStatus !== "provisioned" ? "waiting" : (gateway.contact ?? "never"));
+    const worst = [...gateways].sort((a, b) => order.indexOf(statusOf(a)) - order.indexOf(statusOf(b)))[0] as EdgeGateway;
+    return {
+      status: statusOf(worst),
+      name: worst.name,
+      ...(worst.lastSeenUtc ? { lastSeenUtc: worst.lastSeenUtc } : {}),
+      ...(worst.softwareVersion ? { version: worst.softwareVersion } : {}),
+      ...(worst.clockSkewSeconds !== undefined ? { clockSkewSeconds: worst.clockSkewSeconds } : {}),
+      ...(worst.bufferDepth !== undefined ? { bufferDepth: worst.bufferDepth } : {}),
+      devicesNotAnswering: gateways.reduce((count, gateway) => count + (gateway.drivers ?? []).filter((driver) => !driver.ok).length, 0)
+    };
+  }
+
+  /** The morning message for Greecon's own account: the sites that are live, and a line about those still being set up. */
+  private fleetDigest(nowMs: number): DigestFacts {
+    const rows = this.fleetRows(nowMs);
+    const live = rows.filter((row) => row.commissionedAtUtc);
+    const settingUp = rows.filter((row) => !row.commissionedAtUtc);
+    const sinceDays = (row: FleetRow) => Math.max(0, Math.floor((nowMs - Date.parse(row.commissionedAtUtc as string)) / 86_400_000));
+    return {
+      customer: "Greecon",
+      sites: live.map((row) => ({
+        name: `${row.client}: ${row.site} (day ${sinceDays(row) + 1})`,
+        state: row.state,
+        reasons: row.reasons,
+        ...(row.lastReadingAtUtc ? { lastReadingAtUtc: row.lastReadingAtUtc } : {})
+      })),
+      ...(settingUp.length > 0 ? { notes: [`Being set up: ${settingUp.map((row) => `${row.client}: ${row.site}`).join("; ")}.`] } : {})
+    };
   }
 
   /** A person from Greecon in a customer's account to set it up may configure what is measured, not who
@@ -3034,8 +3153,11 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.tenants.find((tenant) => tenant.id === tenantId)?.name ?? "";
   }
 
-  /** The morning message's facts: each of the account's sites, how it is, and what is wrong. */
+  /** The morning message's facts: each of the account's sites, how it is, and what is wrong. For Greecon's own
+   * account that is every customer's sites: the morning check that tells the team of a silent box before
+   * the customer has to (docs/launch/05-runbooks.md). */
   digestOf(tenantId: string, nowMs: number): DigestFacts {
+    if (this.tenants.find((tenant) => tenant.id === tenantId)?.domain === GREECON_DOMAIN) return this.fleetDigest(nowMs);
     const sites = this.sites.filter((site) => site.tenantId === tenantId).map((site) => this.assessSite(site, nowMs));
     return {
       customer: this.tenantNameOf(tenantId),
