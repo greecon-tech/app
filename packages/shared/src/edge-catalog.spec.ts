@@ -46,6 +46,16 @@ describe("the equipment profiles", () => {
     expect(profileByKey("eastron-sdm630-grid")?.notes.join(" ")).toContain("Check the direction");
     expect(profileByKey("nonexistent")).toBeUndefined();
   });
+
+  it("give each meter model its own serial settings and never the other model's", () => {
+    const sdm630 = profileByKey("eastron-sdm630-grid")?.notes.join(" ") ?? "";
+    const sdm230 = profileByKey("eastron-sdm230-grid")?.notes.join(" ") ?? "";
+    expect(sdm630).toContain("9600 baud");
+    expect(sdm630).not.toContain("2400");
+    // The SDM230's speed depends on the version, so its note sends the person to the meter's own display.
+    expect(sdm230).toContain("depends on the version");
+    expect(sdm230).not.toContain("9600");
+  });
 });
 
 describe("the site templates", () => {
