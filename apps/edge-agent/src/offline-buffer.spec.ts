@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -198,6 +198,33 @@ describe("edge agent offline buffer persistence", () => {
 
     const restarted = new OfflineBuffer<{ n: number }>({ persistPath: path, maxItems: 5 });
     expect(restarted.snapshot().map((item) => item.n)).toEqual([36, 37, 38, 39, 40]);
+  });
+
+  it("reads back a file of many megabytes, with accented text across the places it is read in pieces, exactly as written", () => {
+    const writing = new OfflineBuffer<{ n: number; text: string }>({ persistPath: path, maxItems: 100_000 });
+    // About 4 MB: more than the megabyte the file is read in at a time, with two-byte letters throughout.
+    for (let n = 0; n < 4000; n += 1) writing.append({ n, text: `Pompa në shtëpinë e ujit ${"çë".repeat(300)} ${n}` });
+
+    const restarted = new OfflineBuffer<{ n: number; text: string }>({ persistPath: path, maxItems: 100_000 });
+    expect(restarted.size()).toBe(4000);
+    expect(restarted.snapshot()).toEqual(writing.snapshot());
+    expect(statSync(path).size).toBeGreaterThan(3 * 1_048_576);
+  });
+
+  it("writes a large backlog back in pieces without losing or reordering any of it", async () => {
+    const buffer = new OfflineBuffer<{ n: number; text: string }>({ persistPath: path, maxItems: 100_000 });
+    for (let n = 0; n < 3000; n += 1) buffer.append({ n, text: "x".repeat(900) });
+    await buffer.flushInBatches(async (batch) => ({ remaining: [], delivered: batch.length, dropped: 0 }), 10).then(() => undefined);
+
+    // Everything went; nothing is left on disk.
+    expect(new OfflineBuffer<unknown>({ persistPath: path }).size()).toBe(0);
+
+    for (let n = 0; n < 3000; n += 1) buffer.append({ n, text: "y".repeat(900) });
+    await buffer.flushInBatches(async (batch) => ({ remaining: batch, delivered: 0, dropped: 0 }), 1000);
+    expect(buffer.size()).toBe(3000);
+    // A failed send rewrites nothing worse than before: what is on disk is what is waiting, in order.
+    const again = new OfflineBuffer<{ n: number }>({ persistPath: path, maxItems: 100_000 });
+    expect(again.snapshot().map((item) => item.n)).toEqual(Array.from({ length: 3000 }, (_, n) => n));
   });
 
   it("creates its state directory and leaves no temporary file behind", async () => {

@@ -300,11 +300,11 @@ Type=simple
 User=greecon
 Group=greecon
 StateDirectory=greecon-edge
-Environment=NODE_OPTIONS=--max-old-space-size=256
+Environment=NODE_OPTIONS=--max-old-space-size=384
 ExecStart=$OPT/run-edge
 Restart=always
 RestartSec=5
-MemoryMax=400M
+MemoryMax=512M
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

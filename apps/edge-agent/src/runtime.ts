@@ -30,7 +30,9 @@ export interface RuntimeOptions {
   /** Replaced in tests; a real reader opens network connections. */
   reader?: RegisterReader;
   now?: () => number;
-  /** Most messages kept while the platform cannot be reached. Enough for three days with thirty devices. */
+  /** Most messages kept while the platform cannot be reached. At one message a device a minute, which is
+   * what is kept in an outage, the default is three days for thirteen devices, and about 115 MB of memory
+   * when the queue is full and has been read back from disk. */
   bufferMaxMessages?: number;
   requestTimeoutMs?: number;
   /** A device is read every this long unless the platform says otherwise. */
@@ -104,7 +106,7 @@ export class EdgeRuntime {
 
     let outbox: Outbox | undefined;
     const buffer = new OfflineBuffer<TelemetryMessage>({
-      maxItems: options.bufferMaxMessages ?? 150_000,
+      maxItems: options.bufferMaxMessages ?? 60_000,
       persistPath: join(options.stateDir, "queue.jsonl"),
       onDrop: (_item, reason) => {
         if (reason.startsWith("buffer full")) outbox?.noteEvicted();

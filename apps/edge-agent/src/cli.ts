@@ -69,7 +69,15 @@ async function run(env: Record<string, string | undefined>): Promise<number> {
     throw error;
   }
 
-  const runtime = new EdgeRuntime({ identity, stateDir: stateDirectory(env), log, updateHome: env.GREECON_EDGE_HOME });
+  // Sites with many devices can ask for a longer queue, at the cost of memory.
+  const queued = Number(env.GREECON_BUFFER_MAX_MESSAGES);
+  const runtime = new EdgeRuntime({
+    identity,
+    stateDir: stateDirectory(env),
+    log,
+    updateHome: env.GREECON_EDGE_HOME,
+    ...(Number.isInteger(queued) && queued >= 1000 && queued <= 1_000_000 ? { bufferMaxMessages: queued } : {})
+  });
   const bridge = env.MQTT_URL ? startMqttBridge(env.MQTT_URL, identity, runtime.outbox, log) : undefined;
   runtime.start();
 

@@ -1,5 +1,31 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
+import { StringDecoder } from "node:string_decoder";
+
+const CHUNK_BYTES = 1_048_576;
+
+/** Calls `visit` for each line of a file, reading it a megabyte at a time. A backlog of several days is
+ * a file of many megabytes; reading it whole, and splitting it, would need several times its size in memory on
+ * a box that has very little to spare, at the one moment (a restart in the middle of an outage) that it matters. */
+function forEachLine(path: string, visit: (line: string) => void): void {
+  const descriptor = openSync(path, "r");
+  try {
+    const decoder = new StringDecoder("utf8");
+    const buffer = Buffer.alloc(CHUNK_BYTES);
+    let carry = "";
+    for (;;) {
+      const read = readSync(descriptor, buffer, 0, CHUNK_BYTES, null);
+      if (read === 0) break;
+      const lines = (carry + decoder.write(buffer.subarray(0, read))).split("\n");
+      carry = lines.pop() ?? "";
+      for (const line of lines) visit(line);
+    }
+    carry += decoder.end();
+    if (carry) visit(carry);
+  } finally {
+    closeSync(descriptor);
+  }
+}
 
 export interface BufferFlushResult {
   /** Delivered this flush. */
@@ -191,14 +217,14 @@ export class OfflineBuffer<T> {
     if (!existsSync(path)) return;
 
     const restored: T[] = [];
-    for (const line of readFileSync(path, "utf8").split("\n")) {
-      if (!line.trim()) continue;
+    forEachLine(path, (line) => {
+      if (!line.trim()) return;
       try {
         restored.push(JSON.parse(line) as T);
       } catch {
         // A line cut short by a power loss mid-write. Everything before it is intact.
       }
-    }
+    });
 
     this.items = restored.length > this.maxItems ? restored.slice(restored.length - this.maxItems) : restored;
     this.fileLines = restored.length;
@@ -223,7 +249,21 @@ export class OfflineBuffer<T> {
     try {
       this.ensureDirectory(this.persistPath);
       const temporary = `${this.persistPath}.tmp`;
-      writeFileSync(temporary, this.items.map((item) => `${JSON.stringify(item)}\n`).join(""));
+      // Written a megabyte at a time, for the same reason it is read that way.
+      const descriptor = openSync(temporary, "w");
+      try {
+        let chunk = "";
+        for (const item of this.items) {
+          chunk += `${JSON.stringify(item)}\n`;
+          if (chunk.length >= CHUNK_BYTES) {
+            writeSync(descriptor, chunk);
+            chunk = "";
+          }
+        }
+        if (chunk) writeSync(descriptor, chunk);
+      } finally {
+        closeSync(descriptor);
+      }
       renameSync(temporary, this.persistPath);
       this.fileLines = this.items.length;
     } catch {
