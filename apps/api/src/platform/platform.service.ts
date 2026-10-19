@@ -2,11 +2,18 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { generateTemporaryPassword } from "../common/generate-password";
+import { computeSiteValue } from "../value/compute-value";
+import { createEnergyLedger } from "../value/create-ledger";
+import { EnergyLedger, INTEGRATED_POINTS } from "../value/energy-ledger";
+import { demoHistory, demoProfiles, DEMO_FARM_SITE } from "../value/demo";
+import { DEFAULT_TIME_ZONE, isValidTimeZone, periodKeys, PeriodKey, resolvePeriod } from "../value/periods";
 import {
   AlertMessage,
   Asset,
   AutomationRule,
   CanonicalPointName,
+  CurrencyCode,
+  currencyCodes,
   CommandAckMessage,
   CommandMessage,
   DashboardWidgetPreference,
@@ -24,6 +31,8 @@ import {
   RuleExecutionMode,
   RulePriorityLevel,
   Site,
+  SiteProfile,
+  SiteValue,
   StateKey,
   StatusLabel,
   TelemetryMessage,
@@ -148,6 +157,19 @@ export type UpdateSiteInput = Partial<CreateSiteInput> & {
   edgeStatus?: Site["edgeStatus"];
   safetyLimits?: Site["safetyLimits"];
 };
+
+/** What a site pays and what it used before. A field left out is left as it is; null clears it. */
+export interface UpdateSiteProfileInput {
+  timezone?: string;
+  currency?: CurrencyCode;
+  importPricePerKwh?: number | null;
+  exportPricePerKwh?: number | null;
+  waterPricePerM3?: number | null;
+  baselineMonthlyImportKwh?: number | null;
+  baselineMonthlyWaterM3?: number | null;
+  baselineNote?: string | null;
+  zeroExport?: boolean;
+}
 
 export interface CreateAssetInput {
   siteId: string;
@@ -326,18 +348,47 @@ const HEALTH_MONITOR_INTERVAL_MS = 60_000;
 export class PlatformService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(PlatformService.name);
   private healthMonitor?: ReturnType<typeof setInterval>;
+  private ledgerTimer?: ReturnType<typeof setInterval>;
+  private siteProfiles: SiteProfile[] = [];
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly ledger: EnergyLedger = createEnergyLedger(db)
+  ) {}
 
   // Starts after hydration (onModuleInit) so the first pass sees real data. Derived states are not
   // stored, so without this a restart would leave every site with no states until its next reading.
   async onApplicationBootstrap(): Promise<void> {
     await this.refreshAllDerivedStates();
     this.startHealthMonitor();
+    this.startLedgerFlush();
   }
 
-  onApplicationShutdown(): void {
+  async onApplicationShutdown(): Promise<void> {
     this.stopHealthMonitor();
+    this.stopLedgerFlush();
+    // Whatever has been counted since the last save is saved now, so a deploy loses nothing.
+    await this.ledger.flush().catch((error: unknown) => {
+      this.logger.warn(`Could not save energy totals at shutdown: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  // Counted energy and water are saved in small batches. A failed save keeps the counts and tries
+  // again, so a database that is briefly away costs nothing.
+  startLedgerFlush(intervalMs: number = 30_000): void {
+    if (this.ledgerTimer) return;
+    this.ledgerTimer = setInterval(() => {
+      void this.ledger.flush().catch((error: unknown) => {
+        this.logger.warn(`Could not save energy totals: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, intervalMs);
+    this.ledgerTimer.unref?.();
+  }
+
+  stopLedgerFlush(): void {
+    if (!this.ledgerTimer) return;
+    clearInterval(this.ledgerTimer);
+    this.ledgerTimer = undefined;
   }
 
   startHealthMonitor(intervalMs: number = HEALTH_MONITOR_INTERVAL_MS): void {
@@ -366,7 +417,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     // from Postgres here and dual-writes on every mutation, so a restart doesn't lose real pilot
     // data. When no DATABASE_URL is set (the static GitHub Pages demo, or local dev without a
     // database), all of this falls back to the hardcoded seed data below exactly as before.
-    if (!this.db.isConfigured()) return;
+    if (!this.db.isConfigured()) {
+      await this.seedDemoValue();
+      return;
+    }
 
     const tenantRows = await this.db.query<TenantRow>("SELECT * FROM tenants ORDER BY created_at ASC");
     if (tenantRows.rows.length > 0) this.tenants = tenantRows.rows.map((row) => mapTenantRow(row));
@@ -393,6 +447,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     const pointRows = await this.db.query<PointRow>("SELECT * FROM points ORDER BY created_at ASC");
     if (pointRows.rows.length > 0) this.points = pointRows.rows.map((row) => mapPointRow(row));
+
+    const profileRows = await this.db.query<SiteProfileRow>("SELECT * FROM site_profiles");
+    this.siteProfiles = profileRows.rows.map((row) => mapSiteProfileRow(row));
 
     // secret_hash is deliberately excluded from this SELECT — it never needs to exist in memory
     // beyond the moment it's written at creation, and PrincipalGuard queries it directly from
@@ -428,6 +485,43 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     const maintenanceRows = await this.db.query<MaintenanceTaskRow>("SELECT * FROM maintenance_tasks ORDER BY created_at ASC");
     if (maintenanceRows.rows.length > 0) this.maintenanceTasks = maintenanceRows.rows.map((row) => mapMaintenanceTaskRow(row));
+
+    await this.seedDemoValue();
+  }
+
+  /** The demo tenant starts with a month of history and prices of its own, written once, so a first
+   * look at the Value screens shows what they are for. All of it is simulated and labelled so. */
+  private async seedDemoValue(): Promise<void> {
+    if (!this.sites.some((site) => site.id === DEMO_FARM_SITE && site.tenantId === DEMO_TENANT_ID)) return;
+    if (await this.ledger.hasTotals(DEMO_FARM_SITE)) return;
+
+    const nowMs = Date.now();
+    const history = demoHistory(nowMs);
+    await this.ledger.seed(history);
+    for (const profile of demoProfiles(history, nowMs)) {
+      if (this.siteProfiles.some((existing) => existing.siteId === profile.siteId)) continue;
+      if (this.db.isConfigured()) {
+        await this.db.query(
+          `INSERT INTO site_profiles (site_id, tenant_id, timezone, currency, import_price_per_kwh, export_price_per_kwh, water_price_per_m3, baseline_monthly_import_kwh, baseline_monthly_water_m3, baseline_note, zero_export, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (site_id) DO NOTHING`,
+          [
+            profile.siteId,
+            profile.tenantId,
+            profile.timezone,
+            profile.currency,
+            profile.importPricePerKwh ?? null,
+            profile.exportPricePerKwh ?? null,
+            profile.waterPricePerM3 ?? null,
+            profile.baselineMonthlyImportKwh ?? null,
+            profile.baselineMonthlyWaterM3 ?? null,
+            profile.baselineNote ?? null,
+            profile.zeroExport,
+            profile.updatedAtUtc
+          ]
+        );
+      }
+      this.siteProfiles.push(profile);
+    }
   }
 
   private tenants: Tenant[] = [
@@ -1118,6 +1212,137 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     };
   }
 
+  /** What this site pays and what it used before. A site that has never been given any is reported
+   * with its defaults (its own clock, euros, no prices), which is exactly the truth: nothing is set. */
+  siteProfile(siteId: string, principal: Principal): SiteProfile {
+    const site = this.requireSite(siteId, principal.tenantId);
+    return (
+      this.siteProfiles.find((profile) => profile.siteId === site.id) ?? {
+        siteId: site.id,
+        tenantId: site.tenantId,
+        timezone: DEFAULT_TIME_ZONE,
+        currency: "EUR",
+        zeroExport: false
+      }
+    );
+  }
+
+  async updateSiteProfile(siteId: string, input: UpdateSiteProfileInput, principal: Principal): Promise<SiteProfile> {
+    if (!hasPermission(principal.role, "site:manage")) {
+      throw new ForbiddenException("Action blocked by access policy.");
+    }
+    const site = this.requireSite(siteId, principal.tenantId);
+    this.assertValidProfile(input);
+
+    const before = this.siteProfile(site.id, principal);
+    const next: SiteProfile = { ...before };
+    const assign = <K extends keyof SiteProfile>(key: K, value: SiteProfile[K] | null | undefined): void => {
+      if (value === undefined) return;
+      if (value === null) delete next[key];
+      else next[key] = value;
+    };
+    assign("timezone", input.timezone);
+    assign("currency", input.currency);
+    assign("importPricePerKwh", input.importPricePerKwh);
+    assign("exportPricePerKwh", input.exportPricePerKwh);
+    assign("waterPricePerM3", input.waterPricePerM3);
+    assign("baselineMonthlyImportKwh", input.baselineMonthlyImportKwh);
+    assign("baselineMonthlyWaterM3", input.baselineMonthlyWaterM3);
+    assign("baselineNote", input.baselineNote === null ? null : input.baselineNote?.trim() || undefined);
+    if (input.zeroExport !== undefined) next.zeroExport = input.zeroExport;
+    next.updatedByUserId = principal.userId;
+    next.updatedAtUtc = nowIso();
+
+    if (this.db.isConfigured()) {
+      await this.db.query(
+        `INSERT INTO site_profiles (site_id, tenant_id, timezone, currency, import_price_per_kwh, export_price_per_kwh, water_price_per_m3, baseline_monthly_import_kwh, baseline_monthly_water_m3, baseline_note, zero_export, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT (site_id) DO UPDATE SET
+           timezone=EXCLUDED.timezone, currency=EXCLUDED.currency, import_price_per_kwh=EXCLUDED.import_price_per_kwh,
+           export_price_per_kwh=EXCLUDED.export_price_per_kwh, water_price_per_m3=EXCLUDED.water_price_per_m3,
+           baseline_monthly_import_kwh=EXCLUDED.baseline_monthly_import_kwh, baseline_monthly_water_m3=EXCLUDED.baseline_monthly_water_m3,
+           baseline_note=EXCLUDED.baseline_note, zero_export=EXCLUDED.zero_export, updated_by=EXCLUDED.updated_by, updated_at=EXCLUDED.updated_at`,
+        [
+          next.siteId,
+          next.tenantId,
+          next.timezone,
+          next.currency,
+          next.importPricePerKwh ?? null,
+          next.exportPricePerKwh ?? null,
+          next.waterPricePerM3 ?? null,
+          next.baselineMonthlyImportKwh ?? null,
+          next.baselineMonthlyWaterM3 ?? null,
+          next.baselineNote ?? null,
+          next.zeroExport,
+          principal.userId,
+          next.updatedAtUtc
+        ]
+      );
+    }
+
+    this.siteProfiles = [...this.siteProfiles.filter((profile) => profile.siteId !== next.siteId), next];
+    const summary = (profile: SiteProfile) => ({
+      currency: profile.currency,
+      timezone: profile.timezone,
+      importPricePerKwh: profile.importPricePerKwh ?? null,
+      exportPricePerKwh: profile.exportPricePerKwh ?? null,
+      waterPricePerM3: profile.waterPricePerM3 ?? null,
+      baselineMonthlyImportKwh: profile.baselineMonthlyImportKwh ?? null,
+      baselineMonthlyWaterM3: profile.baselineMonthlyWaterM3 ?? null,
+      zeroExport: profile.zeroExport
+    });
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: "site.profile_updated",
+      siteId: site.id,
+      entityType: "site_profile",
+      entityId: site.id,
+      beforeMetadata: summary(before),
+      afterMetadata: summary(next),
+      reason: `Prices and baseline for "${site.name}" updated.`
+    });
+    return next;
+  }
+
+  private assertValidProfile(input: UpdateSiteProfileInput): void {
+    const problems: string[] = [];
+    if (input.timezone !== undefined && !isValidTimeZone(input.timezone)) problems.push(`"${input.timezone}" is not a time zone this platform knows, for example Europe/Tirane.`);
+    if (input.currency !== undefined && !currencyCodes.includes(input.currency)) problems.push(`Currency must be one of ${currencyCodes.join(", ")}.`);
+    const within = (label: string, value: number | null | undefined, max: number): void => {
+      if (value === undefined || value === null) return;
+      if (!Number.isFinite(value) || value < 0 || value > max) problems.push(`${label} must be a number from 0 to ${max}.`);
+    };
+    within("The electricity price", input.importPricePerKwh, 1000);
+    within("The export price", input.exportPricePerKwh, 1000);
+    within("The water price", input.waterPricePerM3, 1000);
+    within("The baseline for electricity", input.baselineMonthlyImportKwh, 100_000_000);
+    within("The baseline for water", input.baselineMonthlyWaterM3, 100_000_000);
+    if (typeof input.baselineNote === "string" && input.baselineNote.length > 500) problems.push("The note must be 500 characters or fewer.");
+    if (problems.length > 0) throw new BadRequestException(problems.join(" "));
+  }
+
+  /** What the site's own readings are worth over a period, at the prices the site entered. */
+  async siteValue(siteId: string, periodKey: PeriodKey, principal: Principal, nowMs: number = Date.now()): Promise<SiteValue> {
+    const site = this.requireSite(siteId, principal.tenantId);
+    if (!periodKeys.includes(periodKey)) throw new BadRequestException(`Period must be one of ${periodKeys.join(", ")}.`);
+    const profile = this.siteProfiles.find((candidate) => candidate.siteId === site.id);
+    const period = resolvePeriod(periodKey, nowMs, profile?.timezone);
+    const totals = await this.ledger.totals(site.id, period.fromMs, period.toMs);
+    const readings = this.latestReadings(this.telemetry.filter((item) => item.tenantId === site.tenantId && item.siteId === site.id));
+    return computeSiteValue({ siteId: site.id, period, profile, totals, simulated: this.edgeStatusOf(readings, nowMs) === "Simulated" });
+  }
+
+  /** This month's value at each of the account's sites that measures any energy or water. */
+  async valueSummary(principal: Principal, nowMs: number = Date.now()): Promise<Array<{ siteId: string; siteName: string; value: SiteValue }>> {
+    const measuring = this.scope(this.sites, principal.tenantId).filter((site) =>
+      this.points.some((point) => point.tenantId === principal.tenantId && point.siteId === site.id && INTEGRATED_POINTS[point.canonicalName] !== undefined)
+    );
+    const summary: Array<{ siteId: string; siteName: string; value: SiteValue }> = [];
+    for (const site of measuring) summary.push({ siteId: site.id, siteName: site.name, value: await this.siteValue(site.id, "month", principal, nowMs) });
+    return summary;
+  }
+
   listAssets(principal: Principal, siteId?: string): Asset[] {
     return this.scope(this.assets, principal.tenantId).filter((asset) => !siteId || asset.siteId === siteId);
   }
@@ -1336,6 +1561,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
 
     this.sites = this.sites.filter((candidate) => candidate.id !== site.id);
+    this.siteProfiles = this.siteProfiles.filter((profile) => profile.siteId !== site.id);
 
     return { deleted: true };
   }
@@ -1783,7 +2009,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return { ageSeconds: age.ageSeconds, freshness: "current", concern: concernForReading(item.canonicalName, trueStates) };
   }
 
-  async ingestTelemetry(message: TelemetryMessage, principal: Principal) {
+  /** `persistRaw: false` keeps the readings out of the raw history table while still using them for
+   * everything live: the latest values, the states, the alerts and the energy totals. Only the
+   * simulated demo uses it, so a demo that updates every few seconds does not fill a database. */
+  async ingestTelemetry(message: TelemetryMessage, principal: Principal, options: { persistRaw?: boolean } = {}) {
     if (principal.tenantId !== message.tenantId) {
       throw new ForbiddenException("Telemetry tenant does not match request context.");
     }
@@ -1806,9 +2035,22 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       // A reading replayed late (for example from an edge buffer after an outage) is stored in
       // history but must not replace a newer 'latest' value or the point's current quality.
       if (this.upsertLatestTelemetry(item)) point.quality = item.quality;
+      // Energy and water are counted from each power and flow reading as it arrives, whatever order
+      // it comes in: the ledger decides what can be joined and what cannot.
+      if (typeof item.value === "number" && INTEGRATED_POINTS[item.canonicalName]) {
+        this.ledger.record({
+          tenantId: item.tenantId,
+          siteId: item.siteId,
+          pointId: item.pointId,
+          canonicalName: item.canonicalName,
+          timestampMs: Date.parse(item.timestampUtc),
+          value: item.value,
+          quality: item.quality
+        });
+      }
     }
 
-    if (this.db.isConfigured()) {
+    if (this.db.isConfigured() && options.persistRaw !== false) {
       for (const item of normalized) {
         await this.persistTelemetryReading(item);
       }
@@ -3079,6 +3321,42 @@ function mapPointRow(row: PointRow): Point {
     quality: row.quality as Point["quality"],
     capability: row.capability as Point["capability"],
     thresholdConfig: row.threshold_config ?? undefined
+  };
+}
+
+interface SiteProfileRow {
+  site_id: string;
+  tenant_id: string;
+  timezone: string;
+  currency: string;
+  import_price_per_kwh: string | null;
+  export_price_per_kwh: string | null;
+  water_price_per_m3: string | null;
+  baseline_monthly_import_kwh: string | null;
+  baseline_monthly_water_m3: string | null;
+  baseline_note: string | null;
+  zero_export: boolean;
+  updated_by: string | null;
+  updated_at: Date;
+}
+
+function mapSiteProfileRow(row: SiteProfileRow): SiteProfile {
+  // numeric columns arrive from the driver as strings
+  const number = (value: string | null): number | undefined => (value === null ? undefined : Number(value));
+  return {
+    siteId: row.site_id,
+    tenantId: row.tenant_id,
+    timezone: row.timezone,
+    currency: row.currency as CurrencyCode,
+    importPricePerKwh: number(row.import_price_per_kwh),
+    exportPricePerKwh: number(row.export_price_per_kwh),
+    waterPricePerM3: number(row.water_price_per_m3),
+    baselineMonthlyImportKwh: number(row.baseline_monthly_import_kwh),
+    baselineMonthlyWaterM3: number(row.baseline_monthly_water_m3),
+    baselineNote: row.baseline_note ?? undefined,
+    zeroExport: row.zero_export,
+    updatedByUserId: row.updated_by ?? undefined,
+    updatedAtUtc: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at)
   };
 }
 

@@ -83,7 +83,9 @@ describe("tenant isolation across the service", () => {
       platform.listIncidents(DEMO_OWNER),
       platform.listMaintenance(DEMO_OWNER),
       platform.listAudit(DEMO_OWNER),
-      platform.listUsers(DEMO_OWNER)
+      platform.listUsers(DEMO_OWNER),
+      await platform.valueSummary(DEMO_OWNER),
+      platform.siteProfile(a.site, DEMO_OWNER)
     ];
     for (const value of asA) for (const id of identifiersIn(value)) aIds.add(id);
     // The Greecon staff member who onboarded tenant B acts inside it by design: their user id is in
@@ -124,7 +126,10 @@ describe("tenant isolation across the service", () => {
       ["listIncidents", platform.listIncidents(b)],
       ["listMaintenance", platform.listMaintenance(b)],
       ["listAudit", platform.listAudit(b)],
-      ["listAudit(A's site)", platform.listAudit(b, a.site)]
+      ["listAudit(A's site)", platform.listAudit(b, a.site)],
+      ["valueSummary", await platform.valueSummary(b)],
+      ["siteProfile(B's site)", platform.siteProfile(mine.site, b)],
+      ["siteValue(B's site)", await platform.siteValue(mine.site, "month", b)]
     ];
 
     for (const [name, result] of reads) {
@@ -218,6 +223,9 @@ describe("tenant isolation across the service", () => {
           return platform.ingestTelemetry(message, b);
         }
       ],
+      ["siteProfile", () => platform.siteProfile(a.site, b)],
+      ["updateSiteProfile", () => platform.updateSiteProfile(a.site, { importPricePerKwh: 99 }, b)],
+      ["siteValue", () => platform.siteValue(a.site, "month", b)],
       ["updateTenantStatus", () => platform.updateTenantStatus(DEMO_TENANT_ID, "suspended", b)],
       ["listAllTenants", () => platform.listAllTenants(b, {})],
       ["createTenant", () => platform.createTenant({ name: "x", domain: "x.example", ownerName: "x", ownerEmail: "x@x.example" }, b)]
@@ -286,7 +294,8 @@ describe("tenant isolation across the service", () => {
       "listMaintenance", "listAudit", "updateSite", "deleteSite", "createAsset", "updateAsset", "deleteAsset", "createDevice", "updateDevice", "deleteDevice",
       "createPoint", "updatePoint", "deletePoint", "createGateway", "deleteGateway", "createRule", "updateRule", "setRuleApprovalState", "deleteRule",
       "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask", "createReportExport",
-      "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant"
+      "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
+      "siteProfile", "updateSiteProfile", "siteValue", "valueSummary"
     ]);
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
     const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser"]);

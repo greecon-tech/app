@@ -229,15 +229,16 @@ describe("the health monitor", () => {
     platform.stopHealthMonitor();
   });
 
-  it("derives states at start-up and starts the monitor, and shuts it down cleanly", async () => {
+  it("derives states at start-up and starts the monitor and the saver of energy totals, and shuts both down cleanly", async () => {
     const platform = new PlatformService(new DatabaseService());
     const refresh = vi.spyOn(platform, "refreshAllDerivedStates");
 
     await platform.onApplicationBootstrap();
     expect(refresh).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(1);
+    // The health monitor and the periodic save of energy and water totals.
+    expect(vi.getTimerCount()).toBe(2);
 
-    platform.onApplicationShutdown();
+    await platform.onApplicationShutdown();
     expect(vi.getTimerCount()).toBe(0);
   });
 });

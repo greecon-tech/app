@@ -1,4 +1,4 @@
-import { EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
+import { EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth, SiteValue, valuePoints } from "@greecon/shared";
 import { Ago } from "../../../components/Ago";
 import { EnergyFlow } from "../../../components/EnergyFlow";
 import { HealthReasons } from "../../../components/HealthHeadline";
@@ -10,6 +10,7 @@ import { SensorMap } from "../../../components/SensorMap";
 import { Shell } from "../../../components/Shell";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
+import { ValueView } from "../../../components/ValueView";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { groupByCanonicalName } from "../../../lib/telemetry-history";
 import { priorityWord, titleCase } from "../../../lib/health";
@@ -48,9 +49,10 @@ export async function generateStaticParams() {
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
-  const [detail, history] = await Promise.all([
+  const [detail, history, value] = await Promise.all([
     apiGet<SiteDetail>(`/sites/${siteId}`),
-    apiGet<TelemetryReading[]>(`/telemetry/history?siteId=${siteId}&hours=${TRENDS_HOURS}`)
+    apiGet<TelemetryReading[]>(`/telemetry/history?siteId=${siteId}&hours=${TRENDS_HOURS}`),
+    apiGet<SiteValue>(`/sites/${siteId}/value?period=month`)
   ]);
   const { site } = detail;
   const metrics = buildMetrics(detail);
@@ -80,6 +82,14 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <Section title="Energy flow">
           <EnergyFlow flow={detail.energyFlow} siteName={site.name} />
         </Section>
+      ) : null}
+      {detail.points.some((point) => (valuePoints as readonly string[]).includes(point.canonicalName)) ? (
+        <section id="value" className="section">
+          <div className="section__header">
+            <h2>Value</h2>
+          </div>
+          <ValueView value={value} />
+        </section>
       ) : null}
       <Section title="Trends">
         {trendPoints.length === 0 ? (

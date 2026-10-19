@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { canonicalPointLabels, CanonicalPointName, DashboardWidgetPreference, EnergyFlowView, hasPermission, TenantHealth } from "@greecon/shared";
+import { canonicalPointLabels, CanonicalPointName, DashboardWidgetPreference, EnergyFlowView, hasPermission, SiteValue, TenantHealth } from "@greecon/shared";
 import { AlertItem, AlertList } from "../components/AlertList";
 import { Ago } from "../components/Ago";
 import { EnergyFlows } from "../components/EnergyFlow";
@@ -9,6 +9,7 @@ import { MetricGrid } from "../components/MetricGrid";
 import { Section } from "../components/Section";
 import { Shell } from "../components/Shell";
 import { SiteRowData, SiteRows } from "../components/SiteRows";
+import { ValueSummary } from "../components/ValueView";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../lib/api";
 import { applyDashboardPreferences } from "../lib/dashboard-preferences";
 import { ReadingView, readingMetric, takenAt } from "../lib/readings";
@@ -32,9 +33,10 @@ interface Overview {
 }
 
 export default async function OverviewPage() {
-  const [overview, preferences] = await Promise.all([
+  const [overview, preferences, valueEntries] = await Promise.all([
     apiGet<Overview>("/overview"),
-    apiGet<DashboardWidgetPreference[]>("/dashboard-preferences")
+    apiGet<DashboardWidgetPreference[]>("/dashboard-preferences"),
+    apiGet<Array<{ siteId: string; siteName: string; value: SiteValue }>>("/value/summary")
   ]);
   const metrics = applyDashboardPreferences(buildMetrics(overview), preferences);
   const siteNames = new Map(overview.sites.map((site) => [site.id, site.name]));
@@ -62,6 +64,11 @@ export default async function OverviewPage() {
           {overview.energy && overview.energy.length > 0 ? (
             <Section title="Energy">
               <EnergyFlows entries={overview.energy} />
+            </Section>
+          ) : null}
+          {valueEntries.length > 0 ? (
+            <Section title="Value">
+              <ValueSummary entries={valueEntries} />
             </Section>
           ) : null}
           <Section

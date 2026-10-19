@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CanonicalPointName, EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
+import { CanonicalPointName, EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth, SiteProfile, SiteValue, valuePoints } from "@greecon/shared";
 import { Ago } from "../../../components/Ago";
 import { EnergyFlow } from "../../../components/EnergyFlow";
 import { HealthReasons } from "../../../components/HealthHeadline";
@@ -18,6 +18,7 @@ import { SensorMap } from "../../../components/SensorMap";
 import { Shell } from "../../../components/Shell";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
+import { ValueSection } from "../../../components/ValueSection";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
 import { groupByCanonicalName } from "../../../lib/telemetry-history";
@@ -59,11 +60,14 @@ const TRENDS_HOURS = 24 * 7;
 // same combination that forced automation/page.tsx to force-dynamic rendering applies here too.
 export const dynamic = "force-dynamic";
 
-export default async function SiteDetailPage({ params }: { params: Promise<{ siteId: string }> }) {
+export default async function SiteDetailPage({ params, searchParams }: { params: Promise<{ siteId: string }>; searchParams: Promise<{ period?: string }> }) {
   const { siteId } = await params;
-  const [detail, history] = await Promise.all([
+  const period = ["day", "week", "month", "last30"].includes((await searchParams).period ?? "") ? ((await searchParams).period as string) : "month";
+  const [detail, history, value, profile] = await Promise.all([
     apiGet<SiteDetail>(`/sites/${siteId}`),
-    apiGet<TelemetryReading[]>(`/telemetry/history?siteId=${siteId}&hours=${TRENDS_HOURS}`)
+    apiGet<TelemetryReading[]>(`/telemetry/history?siteId=${siteId}&hours=${TRENDS_HOURS}`),
+    apiGet<SiteValue>(`/sites/${siteId}/value?period=${period}`),
+    apiGet<SiteProfile>(`/sites/${siteId}/profile`)
   ]);
   const { site } = detail;
   const metrics = buildMetrics(detail);
@@ -115,6 +119,14 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <Section title="Energy flow">
           <EnergyFlow flow={detail.energyFlow} siteName={site.name} />
         </Section>
+      ) : null}
+      {detail.points.some((point) => (valuePoints as readonly string[]).includes(point.canonicalName)) ? (
+        <section id="value" className="section">
+          <div className="section__header">
+            <h2>Value</h2>
+          </div>
+          <ValueSection value={value} siteId={site.id} profile={hasPermission(role, "site:manage") ? profile : undefined} periodHref={(key) => `/sites/${site.id}?period=${key}#value`} />
+        </section>
       ) : null}
       <Section title="Trends" aside={<Link href={`/analytics?siteId=${site.id}`}>Full analytics for this site →</Link>}>
         {trendPoints.length === 0 ? (

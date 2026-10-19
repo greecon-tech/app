@@ -23,6 +23,7 @@ import { SitesModule } from "./modules/sites/sites.module";
 import { TelemetryModule } from "./modules/telemetry/telemetry.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 import { UsersModule } from "./modules/users/users.module";
+import { ValueModule } from "./modules/value/value.module";
 import { throttlers } from "./common/client-throttler";
 import { PrincipalGuard } from "./common/principal.guard";
 import { RbacGuard } from "./common/rbac.guard";
@@ -61,6 +62,7 @@ import { PlatformModule } from "./platform/platform.module";
     IncidentsModule,
     MaintenanceModule,
     ReportsModule,
+    ValueModule,
     AuditModule,
     EdgeSyncModule,
     HealthModule

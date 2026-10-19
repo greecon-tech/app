@@ -130,3 +130,36 @@ export async function updatePointLimitsAction(siteId: string, pointId: string, l
     return { error: apiErrorMessage(error, "Failed to save limits.") };
   }
 }
+
+export interface SiteProfileInput {
+  currency?: string;
+  timezone?: string;
+  importPricePerKwh: number | null;
+  exportPricePerKwh: number | null;
+  waterPricePerM3: number | null;
+  baselineMonthlyImportKwh: number | null;
+  baselineMonthlyWaterM3: number | null;
+  baselineNote: string | null;
+  zeroExport: boolean;
+}
+
+export async function updateSiteProfileAction(siteId: string, input: SiteProfileInput): Promise<{ error?: string }> {
+  for (const [label, value] of [
+    ["The electricity price", input.importPricePerKwh],
+    ["The export price", input.exportPricePerKwh],
+    ["The water price", input.waterPricePerM3],
+    ["The electricity baseline", input.baselineMonthlyImportKwh],
+    ["The water baseline", input.baselineMonthlyWaterM3]
+  ] as const) {
+    if (value !== null && (!Number.isFinite(value) || value < 0)) return { error: `${label} must be a number, zero or more.` };
+  }
+
+  try {
+    await apiMutate(`/sites/${siteId}/profile`, "PUT", input);
+    revalidatePath(`/sites/${siteId}`);
+    revalidatePath("/");
+    return {};
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Failed to save prices and baseline.") };
+  }
+}
