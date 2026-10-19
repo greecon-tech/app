@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { StaffMember } from "@greecon/shared";
-import { apiErrorMessage, apiMutate } from "../../lib/api";
+import { StaffMember, UserRole } from "@greecon/shared";
+import { apiErrorMessage, apiGet, apiMutate } from "../../lib/api";
 import { ORIGIN_TOKEN_COOKIE, ORIGIN_USER_COOKIE, SESSION_TOKEN_COOKIE, SESSION_USER_COOKIE, SessionUser } from "../../lib/session";
 
 interface CreatedTenant {
@@ -73,6 +73,23 @@ export async function setTeamMemberStatusAction(userId: string, status: "active"
 export async function resetTeamMemberPasswordAction(userId: string): Promise<{ error?: string; temporaryPassword?: string }> {
   try {
     const result = await apiMutate<{ temporaryPassword: string }>(`/platform-admin/staff/${userId}/reset-password`, "POST");
+    return { temporaryPassword: result.temporaryPassword };
+  } catch (error) {
+    return { error: apiErrorMessage(error, "The password could not be reset.") };
+  }
+}
+
+export async function listClientPeopleAction(tenantId: string): Promise<{ error?: string; people?: Array<{ id: string; name: string; email: string; role: UserRole; status: "active" | "disabled" }> }> {
+  try {
+    return { people: await apiGet(`/platform-admin/tenants/${tenantId}/people`) };
+  } catch (error) {
+    return { error: apiErrorMessage(error, "The people could not be listed.") };
+  }
+}
+
+export async function resetClientPersonPasswordAction(tenantId: string, userId: string): Promise<{ error?: string; temporaryPassword?: string }> {
+  try {
+    const result = await apiMutate<{ temporaryPassword: string }>(`/platform-admin/tenants/${tenantId}/people/${userId}/reset-password`, "POST");
     return { temporaryPassword: result.temporaryPassword };
   } catch (error) {
     return { error: apiErrorMessage(error, "The password could not be reset.") };

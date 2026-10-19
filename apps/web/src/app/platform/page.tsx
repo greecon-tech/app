@@ -3,6 +3,7 @@ import { AccessRequest, FleetRow, requestedSiteTypeLabels, StaffMember } from "@
 import { Ago } from "../../components/Ago";
 import { DataTable } from "../../components/DataTable";
 import { FleetTable } from "../../components/FleetTable";
+import { ClientPeople } from "../../components/ClientPeople";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
 import { OpenForSetupButton } from "../../components/OpenForSetupButton";
 import { Section } from "../../components/Section";
@@ -154,7 +155,16 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
           columns={[
             { key: "name", label: "Client" },
             { key: "domain", label: "Domain" },
-            { key: "userCount", label: "Users" },
+            {
+              key: "userCount",
+              label: "Users",
+              render: (tenant) => (
+                <>
+                  {tenant.userCount}
+                  <ClientPeople tenantId={tenant.id} clientName={tenant.name} canReset={session?.user.role === "owner"} />
+                </>
+              )
+            },
             { key: "siteCount", label: "Sites" },
             {
               key: "id",

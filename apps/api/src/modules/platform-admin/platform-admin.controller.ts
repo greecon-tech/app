@@ -46,6 +46,17 @@ export class PlatformAdminController {
     return this.auth.issueSupportSession({ tenantId: tenant.id, customer: tenant.name, staffUserId: request.principal.userId, staffName, staffEmail: request.principal.email });
   }
 
+  // A customer's person who is locked out: their owner phones Greecon, and the owner of Greecon's account resets them.
+  @Get("tenants/:tenantId/people")
+  listClientPeople(@Param("tenantId") tenantId: string, @Req() request: RequestWithPrincipal) {
+    return this.platform.listClientPeople(tenantId, request.principal);
+  }
+
+  @Post("tenants/:tenantId/people/:userId/reset-password")
+  resetClientPersonPassword(@Param("tenantId") tenantId: string, @Param("userId") userId: string, @Req() request: RequestWithPrincipal) {
+    return this.platform.resetClientPersonPassword(tenantId, userId, request.principal);
+  }
+
   // Every customer's sites at once, worst first: what Greecon's team looks at each morning.
   @Get("fleet")
   fleet(@Req() request: RequestWithPrincipal) {

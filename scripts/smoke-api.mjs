@@ -275,6 +275,19 @@ try {
   const pmAudit = (await call("GET", "/audit", { token: owner })).json ?? [];
   check(pmAudit.some((event) => event.eventType === "support.session_started" && event.actor === `Greecon staff (${pmEmail})`), "the customer's audit trail names the project manager, not the owner of Greecon");
 
+  const people = await call("GET", `/platform-admin/tenants/${customer.tenantId}/people`, { token: pm.token });
+  check(people.status === 200 && people.json?.length === 1 && people.json[0].email === `owner-${suffix}@smoke.example`, "the project manager can see who is in the customer's account");
+  const ownerId = people.json?.[0]?.id;
+  check((await call("POST", `/platform-admin/tenants/${customer.tenantId}/people/${ownerId}/reset-password`, { token: pm.token })).status === 403, "but cannot reset anyone's password");
+  const lockedOut = await call("POST", `/platform-admin/tenants/${customer.tenantId}/people/${ownerId}/reset-password`, { token: admin.token });
+  check(lockedOut.status === 201 && typeof lockedOut.json?.temporaryPassword === "string", "the owner of Greecon's account resets a locked-out owner's password, shown once");
+  check((await call("GET", "/sites", { token: owner })).status === 401, "which ends the sessions the person had open");
+  const backIn = await login(`owner-${suffix}@smoke.example`, lockedOut.json.temporaryPassword);
+  check(backIn.user.mustChangePassword === true, "and the person signs in with it, to choose their own");
+  const resetTrail = (await call("GET", "/audit", { token: backIn.token })).status;
+  check(resetTrail === 403, "(a temporary-password session can do nothing else)");
+  check((await call("POST", `/platform-admin/tenants/${customer.tenantId}/people/${admin.user.id}/reset-password`, { token: admin.token })).status === 404, "a Greecon team member cannot be reset through a customer's account");
+
   const off = await call("PATCH", `/platform-admin/staff/${pm.user.id}`, { token: admin.token, body: { status: "disabled" } });
   check(off.status === 200 && off.json?.status === "disabled", "the owner turns the project manager off");
   check((await call("GET", "/platform-admin/staff", { token: pm.token })).status === 401, "their open session ends on its next request, not hours later");

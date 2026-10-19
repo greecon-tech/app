@@ -1237,6 +1237,45 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return { member: { id: user.id, name: user.name, email: user.email, status: user.status, isYou: false }, temporaryPassword };
   }
 
+  // ---- A customer's person who is locked out -------------------------------------------------------------------
+  // Staff inside a customer's account cannot touch who may sign in (that is the customer's), and there is no
+  // self-service reset: it would need an email round trip that an owner who cannot sign in is the least able to
+  // use. So when an owner calls in, locked out, the owner of Greecon's account resets their password from the Clients
+  // console, after confirming by phone who is asking. It is a stronger power than a support session, so it is the
+  // team owner's alone, and it is written in the customer's own audit trail under the staff member's name.
+
+  listClientPeople(tenantId: string, principal: Principal): User[] {
+    this.assertTeamMember(principal);
+    if (!this.tenants.some((tenant) => tenant.id === tenantId)) throw new NotFoundException("Client not found.");
+    return this.users.filter((user) => user.tenantId === tenantId && !this.staffIds.has(user.id));
+  }
+
+  async resetClientPersonPassword(tenantId: string, userId: string, principal: Principal): Promise<{ user: User; temporaryPassword: string }> {
+    this.assertTeamOwner(principal);
+    const tenant = this.tenants.find((candidate) => candidate.id === tenantId);
+    if (!tenant) throw new NotFoundException("Client not found.");
+    const user = this.users.find((candidate) => candidate.id === userId && candidate.tenantId === tenantId && !this.staffIds.has(candidate.id));
+    if (!user) throw new NotFoundException("That person is not in this client's account.");
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    if (this.db.isConfigured()) {
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = now(), updated_at = now() WHERE id = $2 AND tenant_id = $3`, [passwordHash, user.id, tenantId]);
+    }
+    forgetUser(user.id);
+
+    // In the customer's own trail, where their owner can see that Greecon did it and who at Greecon.
+    await this.recordAudit({
+      tenantId,
+      userId: principal.userId,
+      eventType: "user.password_reset",
+      entityType: "user",
+      entityId: user.id,
+      reason: `Password reset for "${user.email}" by Greecon staff (${principal.email}), at the customer's request.`
+    });
+    return { user, temporaryPassword };
+  }
+
   // ---- Every customer's sites at once -------------------------------------------------------------------------
 
   /** Where every customer's sites stand, worst first: for Greecon's team to look at each morning and whenever a

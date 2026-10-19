@@ -244,6 +244,8 @@ describe("tenant isolation across the service", () => {
       // Greecon's own team is not a customer's business: a customer's owner can neither see nor change it.
       ["listStaff", () => platform.listStaff(b)],
       ["fleet", () => platform.fleet(b)],
+      ["listClientPeople", () => platform.listClientPeople(DEMO_TENANT_ID, b)],
+      ["resetClientPersonPassword", () => platform.resetClientPersonPassword(DEMO_TENANT_ID, aUser, b)],
       ["addStaffMember", () => platform.addStaffMember({ name: "x", email: "x@x.example" }, b)],
       ["setStaffStatus", () => platform.setStaffStatus(aUser, "disabled", b)],
       ["resetStaffPassword", () => platform.resetStaffPassword(aUser, b)]
@@ -337,7 +339,7 @@ describe("tenant isolation across the service", () => {
       "createPoint", "updatePoint", "deletePoint", "createGateway", "deleteGateway", "createRule", "updateRule", "setRuleApprovalState", "deleteRule",
       "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask",
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
-      "listStaff", "addStaffMember", "setStaffStatus", "resetStaffPassword", "fleet",
+      "listStaff", "addStaffMember", "setStaffStatus", "resetStaffPassword", "fleet", "listClientPeople", "resetClientPersonPassword",
       "siteProfile", "updateSiteProfile", "siteValue", "valueSummary",
       "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway", "beginSupportSession",
       // The batch route and the shared implementation behind both ingest routes.

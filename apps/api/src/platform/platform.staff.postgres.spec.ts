@@ -214,6 +214,42 @@ describe.skipIf(!testDatabaseUrl)("Greecon's own team (real PostgreSQL)", () => 
     });
   }, 60_000);
 
+  it("lets only the owner of Greecon's account reset a customer's locked-out person, and says so in the customer's own trail", async () => {
+    await inTeam(async ({ platform, auth, db, founder }) => {
+      const customer = await platform.createTenant({ name: "Hotel Adriatik", ownerName: "Besa", ownerEmail: "besa@hotel-adriatik.example" }, founder);
+      const owner: Principal = { tenantId: customer.tenant.id, userId: customer.owner.id, role: "owner", email: customer.owner.email, isPlatformAdmin: false };
+      const staff = await platform.addStaffMember({ name: "Arta Project", email: "arta.pm@greecon.earth" }, founder);
+      const arta = asTeamMember(founder, staff.member);
+      const open = Math.floor(Date.now() / 1000) - 120;
+
+      const people = platform.listClientPeople(customer.tenant.id, arta);
+      expect(people.map((person) => person.email)).toEqual(["besa@hotel-adriatik.example"]);
+      await expect(platform.resetClientPersonPassword(customer.tenant.id, customer.owner.id, arta)).rejects.toThrow(/Only the owner/);
+
+      const reset = await platform.resetClientPersonPassword(customer.tenant.id, customer.owner.id, founder);
+      expect(reset.temporaryPassword).not.toBe(customer.temporaryPassword);
+      expect(await sessionIsStillGood(db, customer.owner.id, open)).toBe(false);
+      await expect(auth.login("besa@hotel-adriatik.example", customer.temporaryPassword)).rejects.toThrow(/Invalid email or password/);
+      expect((await auth.login("besa@hotel-adriatik.example", reset.temporaryPassword)).user.mustChangePassword).toBe(true);
+
+      const trail = platform.listAudit(owner).find((event) => event.eventType === "user.password_reset");
+      expect(trail?.actor).toBe("Greecon staff (eridon.manuka@greecon.earth)");
+      expect(trail?.reason).toContain("at the customer's request");
+      expect(JSON.stringify(trail)).not.toContain(reset.temporaryPassword);
+    });
+  }, 60_000);
+
+  it("will not reset a person through the wrong client, a team member through the customer route, or an unknown person", async () => {
+    await inTeam(async ({ platform, founder }) => {
+      const one = await platform.createTenant({ name: "Hotel One", ownerName: "Besa", ownerEmail: "besa@one.example" }, founder);
+      const two = await platform.createTenant({ name: "Hotel Two", ownerName: "Arben", ownerEmail: "arben@two.example" }, founder);
+      await expect(platform.resetClientPersonPassword(one.tenant.id, two.owner.id, founder)).rejects.toThrow(/not in this client's account/);
+      await expect(platform.resetClientPersonPassword(founder.tenantId, founder.userId, founder)).rejects.toThrow(/not in this client's account/);
+      await expect(platform.resetClientPersonPassword("00000000-0000-4000-8000-000000000000", one.owner.id, founder)).rejects.toThrow(/Client not found/);
+      expect(() => platform.listClientPeople("00000000-0000-4000-8000-000000000000", founder)).toThrow(/Client not found/);
+    });
+  }, 60_000);
+
   it("will not turn off or reset the person asking, or someone who is not on the team", async () => {
     await inTeam(async ({ platform, founder }) => {
       await expect(platform.setStaffStatus(founder.userId, "disabled", founder)).rejects.toThrow(/own access/);
