@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function HandoverPage({ params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
   const session = await getSession();
-  requirePermission(session?.user.role ?? DEMO_ROLE, "device:manage");
+  requirePermission(session?.user.role ?? DEMO_ROLE, "site:manage");
   const view = await apiGet<HandoverView>(`/sites/${siteId}/handover`);
 
   return (
