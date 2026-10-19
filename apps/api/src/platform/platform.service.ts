@@ -1197,7 +1197,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (user.id === principal.userId) throw new ForbiddenException("You cannot turn off your own access.");
 
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE users SET status = $1, sessions_valid_after = now(), updated_at = now() WHERE id = $2`, [status, user.id]);
+      await this.db.query(`UPDATE users SET status = $1, sessions_valid_after = $3, updated_at = now() WHERE id = $2`, [status, user.id, new Date()]);
     }
     user.status = status;
     forgetUser(user.id);
@@ -1222,7 +1222,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = now(), updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = $3, updated_at = now() WHERE id = $2`, [passwordHash, user.id, new Date()]);
     }
     forgetUser(user.id);
 
@@ -1260,7 +1260,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = now(), updated_at = now() WHERE id = $2 AND tenant_id = $3`, [passwordHash, user.id, tenantId]);
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = $4, updated_at = now() WHERE id = $2 AND tenant_id = $3`, [passwordHash, user.id, tenantId, new Date()]);
     }
     forgetUser(user.id);
 
@@ -1442,7 +1442,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = now(), updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, sessions_valid_after = $3, updated_at = now() WHERE id = $2`, [passwordHash, user.id, new Date()]);
     }
     // Whoever had the old password must not stay signed in on the strength of it.
     forgetUser(user.id);

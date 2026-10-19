@@ -43,16 +43,18 @@ export async function login(email, password) {
   return result.json;
 }
 
-/** Greecon onboards a customer; returns the owner's first session, an ordinary session and the customer's id. */
+/** Greecon onboards a customer; returns the owner's first session (and what it could do), an ordinary session and the customer's id. */
 export async function onboard(adminToken, name, ownerEmail) {
   const created = await call("POST", "/platform-admin/tenants", { token: adminToken, body: { name, ownerName: "Owner", ownerEmail } });
   if (created.status !== 201) throw new Error(`Could not onboard ${name}: ${created.status} ${created.text}`);
   const temporary = created.json.temporaryPassword;
   const first = await login(ownerEmail, temporary);
+  // What a temporary-password session can do is looked at now: once the person has chosen a password, that session has ended.
+  const whileTemporary = await call("GET", "/sites", { token: first.token });
   const ownPassword = `Own-password-${Math.random().toString(36).slice(2, 10)}-1`;
   const changed = await call("POST", "/auth/change-password", { token: first.token, body: { currentPassword: temporary, newPassword: ownPassword } });
   if (changed.status !== 201 && changed.status !== 200) throw new Error(`Could not change password: ${changed.status} ${changed.text}`);
-  return { first, session: (await login(ownerEmail, ownPassword)).token, tenantId: created.json.tenant.id };
+  return { first, whileTemporary, session: (await login(ownerEmail, ownPassword)).token, tenantId: created.json.tenant.id };
 }
 
 export async function until(description, probe, { timeoutMs = 60_000, everyMs = 500 } = {}) {

@@ -5,6 +5,10 @@ import type { DatabaseService } from "../database/database.service";
 // account is still active and whether the token was issued after the last time sessions were cut off.
 // The answer is remembered for a few seconds, so a busy page does not ask the database each time; turning
 // someone off, or resetting a password, forgets it at once, so that takes effect on their next click.
+//
+// The cut-off is written from the API's own clock (never the database's `now()`), because the token's date comes
+// from that clock too: two machines that disagree by a few seconds would otherwise turn away a person who signed in
+// straight after a reset.
 
 export const ACTIVE_CHECK_SECONDS = 15;
 const MAX_REMEMBERED = 2000;

@@ -37,8 +37,9 @@ try {
   const suffix = Math.random().toString(36).slice(2, 8);
   const customer = await onboard(admin.token, `Smoke Hotel ${suffix}`, `owner-${suffix}@smoke.example`);
   check(customer.first.user.mustChangePassword === true, "the owner's first session is for choosing a password");
-  const locked = await call("GET", "/sites", { token: customer.first.token });
+  const locked = customer.whileTemporary;
   check(locked.status === 403 && locked.json?.code === "PASSWORD_CHANGE_REQUIRED", "a temporary-password session can do nothing else");
+  check((await call("GET", "/sites", { token: customer.first.token })).status !== 200, "and once the password is chosen, that session is over");
   const owner = customer.session;
 
   step("The project manager makes a site from the hotel template");

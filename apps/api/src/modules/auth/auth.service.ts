@@ -163,7 +163,7 @@ export class AuthService {
 
     const newHash = await bcrypt.hash(newPassword, 10);
     // Every session opened before now, on this password or the old one, ends: the person signs in again.
-    await this.db.query("UPDATE users SET password_hash = $1, must_change_password = false, sessions_valid_after = now() WHERE id = $2", [newHash, userId]);
+    await this.db.query("UPDATE users SET password_hash = $1, must_change_password = false, sessions_valid_after = $3 WHERE id = $2", [newHash, userId, new Date()]);
     forgetUser(userId);
   }
 }
