@@ -1524,3 +1524,155 @@ tbody tr:hover {
   font-size: 0.8rem;
   font-weight: 400;
 }
+
+/* Energy flow ----------------------------------------------------------------------------------
+   A junction with up to four spokes. Line colours are at least 4:1 against the page and card, the
+   words carry every fact, and the movement stops for anyone who asks for less of it. */
+:root {
+  --flow-solar: #9a6700;
+  --flow-grid: #3a5a78;
+  --flow-battery: #2f6b4a;
+  --flow-site: #2f3d35;
+}
+
+.energy-flow {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.energy-flow__caption {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.energy-flow__headline {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.energy-flow__diagram {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  margin-inline: auto;
+  overflow: visible;
+}
+
+.energy-flow__notes {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
+}
+
+.energy-flows {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.energy-flows--several {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.energy-flows__site {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.ef-solar { color: var(--flow-solar); }
+.ef-grid { color: var(--flow-grid); }
+.ef-battery { color: var(--flow-battery); }
+.ef-site { color: var(--flow-site); }
+
+.ef-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.ef-line--base {
+  opacity: 0.5;
+}
+
+.ef-line--moving {
+  stroke-dasharray: 7 11;
+  animation: ef-flow var(--flow-duration, 1.4s) linear infinite;
+}
+
+@keyframes ef-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+
+.ef-line--idle {
+  stroke: var(--faint);
+  stroke-width: 2;
+  opacity: 0.6;
+}
+
+.ef-line--unknown {
+  stroke: var(--faint);
+  stroke-width: 2;
+  stroke-dasharray: 2 7;
+}
+
+.ef-arrow {
+  fill: currentColor;
+}
+
+.ef-hub {
+  fill: var(--forest);
+}
+
+.ef-node__ring {
+  fill: var(--bg);
+  stroke: currentColor;
+  stroke-width: 2.5;
+}
+
+.ef-node__glyph {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ef-node--quiet .ef-node__ring {
+  stroke-dasharray: 4 4;
+}
+
+.ef-label {
+  fill: var(--muted);
+  font-size: 12.5px;
+}
+
+.ef-value {
+  fill: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ef-sub {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-line--moving {
+    display: none;
+  }
+
+  .ef-line--base {
+    opacity: 0.8;
+  }
+}

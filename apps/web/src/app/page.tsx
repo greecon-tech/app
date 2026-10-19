@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { canonicalPointLabels, CanonicalPointName, DashboardWidgetPreference, hasPermission, TenantHealth } from "@greecon/shared";
+import { canonicalPointLabels, CanonicalPointName, DashboardWidgetPreference, EnergyFlowView, hasPermission, TenantHealth } from "@greecon/shared";
 import { AlertItem, AlertList } from "../components/AlertList";
 import { Ago } from "../components/Ago";
+import { EnergyFlows } from "../components/EnergyFlow";
 import { HealthHeadline } from "../components/HealthHeadline";
 import { LiveRefresh } from "../components/LiveRefresh";
 import { MetricGrid } from "../components/MetricGrid";
@@ -24,6 +25,7 @@ interface Overview {
   asOfUtc: string;
   health: TenantHealth;
   sites: SiteRowData[];
+  energy?: Array<{ siteId: string; siteName: string; flow: EnergyFlowView }>;
   summaries: { edge: { connectedSites: number; simulatedSites: number } };
   readings: Partial<Record<CanonicalPointName, OverviewReading>>;
   activeAlerts: AlertItem[];
@@ -57,6 +59,11 @@ export default async function OverviewPage() {
           <Section title="Sites">
             <SiteRows sites={overview.sites} />
           </Section>
+          {overview.energy && overview.energy.length > 0 ? (
+            <Section title="Energy">
+              <EnergyFlows entries={overview.energy} />
+            </Section>
+          ) : null}
           <Section
             title="Latest readings"
             aside={

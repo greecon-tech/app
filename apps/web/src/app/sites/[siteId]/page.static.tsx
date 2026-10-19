@@ -1,5 +1,6 @@
-import { HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
+import { EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth } from "@greecon/shared";
 import { Ago } from "../../../components/Ago";
+import { EnergyFlow } from "../../../components/EnergyFlow";
 import { HealthReasons } from "../../../components/HealthHeadline";
 import { LiveRefresh } from "../../../components/LiveRefresh";
 import { DataTable } from "../../../components/DataTable";
@@ -18,6 +19,7 @@ import { Metric } from "../../../lib/types";
 interface SiteDetail {
   site: { id: string; name: string; type: string; locationName: string; status: string; edgeStatus: string };
   health: SiteHealth;
+  energyFlow?: EnergyFlowView;
   lastReadingAtUtc?: string;
   assets: Array<{ id: string; name: string; type: string; status: string }>;
   devices: Array<{ id: string; name: string; deviceType: string; protocol: string; health: string; lastSeenUtc?: string; positionX?: number; positionY?: number; placementNote?: string }>;
@@ -74,6 +76,11 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <HealthReasons reasons={detail.health.reasons} showSite={false} />
         <MetricGrid metrics={metrics} />
       </Section>
+      {detail.energyFlow?.hasEnergy ? (
+        <Section title="Energy flow">
+          <EnergyFlow flow={detail.energyFlow} siteName={site.name} />
+        </Section>
+      ) : null}
       <Section title="Trends">
         {trendPoints.length === 0 ? (
           <div className="empty-state">No trackable points configured for this site yet.</div>

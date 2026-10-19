@@ -15,6 +15,8 @@ import {
   Device,
   EdgeGateway,
   EdgeSyncMessage,
+  EnergyFlowView,
+  FlowReading,
   Point,
   QualityFlag,
   RuleAction,
@@ -29,6 +31,7 @@ import {
   Tenant,
   User,
   UserRole,
+  deriveEnergyFlow,
   hasPermission,
   validatePointLimits,
   validateTelemetryMessage
@@ -680,8 +683,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333305", "44444444-4444-4444-8444-444444444405", "55555555-5555-4555-8555-555555555506", "agri.soil.moisture.percent", 24, "%", "OK", 5),
     reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333307", "44444444-4444-4444-8444-444444444406", "55555555-5555-4555-8555-555555555507", "agri.air.temperature.c", 24.5, "C", "OK", 4),
     reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333307", "44444444-4444-4444-8444-444444444406", "55555555-5555-4555-8555-555555555508", "agri.humidity.percent", 62, "%", "OK", 3),
-    reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333308", "44444444-4444-4444-8444-444444444407", "55555555-5555-4555-8555-555555555510", "energy.grid.import.kw", 3.2, "kW", "OK", 2),
-    reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333308", "44444444-4444-4444-8444-444444444407", "55555555-5555-4555-8555-555555555511", "energy.grid.export.kw", 9.8, "kW", "OK", 2),
+    reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333308", "44444444-4444-4444-8444-444444444407", "55555555-5555-4555-8555-555555555510", "energy.grid.import.kw", 0, "kW", "OK", 2),
+    reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333308", "44444444-4444-4444-8444-444444444407", "55555555-5555-4555-8555-555555555511", "energy.grid.export.kw", 6.6, "kW", "OK", 2),
     reading("22222222-2222-4222-8222-222222222201", "33333333-3333-4333-8333-333333333308", "44444444-4444-4444-8444-444444444407", "55555555-5555-4555-8555-555555555512", "energy.consumption.kw", 12.0, "kW", "OK", 2)
   ];
 
@@ -1043,6 +1046,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       asOfUtc: new Date(nowMs).toISOString(),
       health,
       sites: tenantSites,
+      // Where the energy is going at each site that measures any, so one screen can show it moving.
+      energy: tenantSites
+        .map((site) => ({ siteId: site.id, siteName: site.name, flow: this.energyFlowOf(principal.tenantId, site.id, nowMs) }))
+        .filter((entry) => entry.flow.hasEnergy),
       summaries: {
         energy: {
           // Data-driven from whatever energy.* points a tenant's sites actually have — a site
@@ -1103,6 +1110,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       points: this.points.filter((point) => point.tenantId === principal.tenantId && point.siteId === siteId),
       gateways: this.gateways.filter((gateway) => gateway.tenantId === principal.tenantId && gateway.siteId === siteId),
       latestTelemetry: this.latestTelemetry(principal, siteId, nowMs),
+      energyFlow: this.energyFlowOf(principal.tenantId, siteId, nowMs),
       derivedStates: this.listDerivedStates(principal, siteId),
       alerts: this.listAlerts(principal, siteId),
       rules: this.listRules(principal, siteId),
@@ -2587,6 +2595,26 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
         record.createdAtUtc
       ]
     );
+  }
+
+  /** Where the energy at one site is going, from its newest readings. Only what is measured and
+   * current is shown as flowing (see deriveEnergyFlow). */
+  private energyFlowOf(tenantId: string, siteId: string, nowMs: number): EnergyFlowView {
+    const readings = this.latestReadings(this.telemetry.filter((item) => item.tenantId === tenantId && item.siteId === siteId));
+    const pick = (name: CanonicalPointName): FlowReading | undefined => {
+      const item = readings.find((candidate) => candidate.canonicalName === name);
+      if (!item || typeof item.value !== "number") return undefined;
+      const view = this.viewReading(item, nowMs);
+      return { value: item.value, fresh: view.freshness === "current", ageSeconds: view.ageSeconds, simulated: item.source === "simulator" };
+    };
+    return deriveEnergyFlow({
+      solarKw: pick("energy.solar.power.kw"),
+      consumptionKw: pick("energy.consumption.kw"),
+      gridImportKw: pick("energy.grid.import.kw"),
+      gridExportKw: pick("energy.grid.export.kw"),
+      batteryKw: pick("energy.battery.power.kw"),
+      batterySocPercent: pick("energy.battery.soc.percent")
+    });
   }
 
   // Both helpers take the tenant explicitly. They used to read every tenant's data, so one
