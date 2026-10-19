@@ -44,6 +44,9 @@ These are decided so that you do not have to think about them. The second one ma
    yet which of the two programs to build. Continue.
 3. In the project, click **+ New → Database → Add PostgreSQL**. Railway creates the database.
    - This platform needs PostgreSQL 14 or newer (Railway's current default is newer than that).
+4. **Region:** where Railway offers a choice (project or service **Settings**), choose a **European** region for the
+   services and the database, so that customers' data stays in Europe. A database's region is fixed when it is made,
+   so choose before you add it.
 
 **You should see:** a project with two boxes, your repository's service and `Postgres`, with Postgres showing
 as active. Rename the repository's service to **api** (click it, Settings, Service Name). The names matter below.

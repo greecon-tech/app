@@ -63,8 +63,9 @@ reason they buy.** Quote it back to them at the order form.
 2. *"The box reads your solar meter, your grid meter, your tank level and the pump. It reports to a screen only you and your
    staff can see, and to the phone of whoever you choose."*
 3. *"Most days it says nothing, apart from one message at half past seven: all fine, or something needs a look."*
-4. *"If the tank gets low, the first person is emailed at once. If nobody answers in ten minutes, they are texted, and
-   thirty minutes later the next person is."*
+4. *"If the tank gets critically low or the pump runs dry, the first person is emailed at once. If nobody answers in ten
+   minutes, they are texted, and thirty minutes later the next person is. A tank that is only getting low is one email,
+   held until morning if it is night."*
 5. *"It only reads. It does not switch your pump or your inverter, and it is not a safety system. Your float switches and
    relief valves stay the protection."*
 6. *"Your data is yours. You can download every reading as a spreadsheet at any time."*
@@ -235,8 +236,8 @@ or to commercial solar), not push harder.
 >
 > One small box and a few meters. An electrician fits them in an afternoon; nothing is switched or controlled.
 > A screen shows, in one sentence, whether everything is all right. One email at half past seven each morning says
-> so. If the tank gets low or the pump runs dry, the person you choose is emailed at once and texted ten minutes
-> later if nobody has answered, and then the next person.
+> so. If the tank gets critically low or the pump runs dry, the person you choose is emailed at once and texted ten
+> minutes later if nobody has answered, and then the next person. A tank that is only getting low is one email.
 >
 > It shows what your solar kept on site, at your own prices, from real readings. Your data is yours: download every
 > reading as a spreadsheet any time.

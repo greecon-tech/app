@@ -183,7 +183,7 @@ HTTPS on port 443), a clock that is wrong, or a code already used or older than 
 | 2 | Fit the grid meter and the solar meter in the board: voltage connections with their fuses as the meter's manual says, the current clamps around the incoming phases, **arrow towards the site** | Mount the box, the converter and the 12 or 24 V supply on a shelf or rail; run the data cable from the converter to the first meter |
 | 3 | Connect the pump's run contact to the input module; fit the level and pressure transmitters (a wet part: only the electrician or the customer's plumber) | Connect the 4 to 20 mA signal wires to the input module; the module's 24 V supply |
 | 4 | Remove the lock-out only when you both agree the work is closed up | Set each meter's address, speed and parity from its display ([03](03-hardware-and-wiring.md), "Meter settings") and write them down |
-| 5 | Stay until commissioning is done | Set the converter to **Modbus RTU to TCP** mode with the same speed and parity; connect it and the box to the network; power up |
+| 5 | Stay until commissioning is done | Set the converter to **Modbus gateway** mode (Modbus TCP to RTU) with the same speed and parity; connect it and the box to the network; power up |
 
 **Meter settings are read from the meter's own display, never assumed.** Different makers, and different
 versions of the same meter, are delivered with different defaults (the Eastron SDM630 is 9600 baud, and the
@@ -195,7 +195,7 @@ Write the unit numbers on the converter's label: grid meter 1, solar meter 2, wa
 
 | Situation | What you do |
 |---|---|
-| **The customer's cable and router (best)** | Plug the box and the converter into the router. Ask the customer's IT person (or the router's page) to give the converter a **fixed address** that the router will not change (a "DHCP reservation" on the converter's MAC address, or a fixed address outside the router's range). Write it down: you enter it in step 7.5. The box can take any address. |
+| **The customer's cable and router (best)** | Plug the box and the converter into the router. Ask the customer's IT person (or the router's page) to give the converter a **fixed address** that the router will not change (a "DHCP reservation" on the converter's MAC address, or a fixed address outside the router's range). Write it down: you enter it in step 7.3. The box can take any address. |
 | **A fixed address you set yourself** | Set the converter's own address in its web page, on the same range as the router. |
 | **No usable internet (cellular)** | Fit the cellular router from the kit with a SIM, plug the box and the converter into **its** sockets. Greecon supplies the SIM, charged at cost. Check the signal where it sits. |
 | **A firewall** | The box needs only **outgoing HTTPS (port 443)** to `api.greecon.earth` and, when it is installed, to `nodejs.org`, plus the time service (port 123 UDP, or the box's own). Nothing needs to come in. |
@@ -219,7 +219,7 @@ the site **cannot send energy to the grid** (tick it if the plant is zero-export
 (`Europe/Tirane`). **Save.**
 
 **7.2 Install the box.** Done by itself once the box reports ([step 5](#5-prepare-the-kit-at-the-office)).
-If the box says **Late** or **Offline**, it is not reaching Greecon: see "The box does not report" below.
+If the box says **Late** or **Offline**, it is not reaching Greecon: see [section 12](#12-when-something-is-wrong).
 
 **7.3 Where each device is on the network.** One small form per device ("Address of Grid meter"): **IP address**
 (the converter's address), **Port** (502 unless the converter's page says otherwise) and **Unit number** (the
@@ -280,8 +280,10 @@ register or a wiring fault.
 
 How alerts reach people, for the owner (say this at handover, in these words): **Act now** goes by email at once
 and by text ten minutes later if nobody has acknowledged it, then to the next person after thirty minutes.
-**Check today** is one email, held until morning if it is night. Nothing else is sent, apart from one morning
-message (07:30) saying whether everything is all right. Quiet hours (22:00 to 07:00) hold everything except Act now.
+**Check today** is one email, held until morning if it is night. Beyond those, three short notes only: one to the people
+who were told when somebody **acknowledges** the alert (who took it), one when the problem has stayed clear for 15
+minutes (**Resolved**), and one **morning message** at 07:30 saying whether everything is all right. Quiet hours
+(22:00 to 07:00) hold everything except Act now.
 
 **7.8 Grid meter direction checked** *(only on sites with a grid meter and solar)*. Greecon cannot see which way
 the meter's clamps point. A reversed clamp swaps what the site buys with what it sells, and every figure with it.
@@ -492,7 +494,7 @@ tell the founder. It is meant to be corrected by the person who uses it.
 | Word | Meaning |
 |---|---|
 | **Box** | The small computer at the site that reads devices and reports to Greecon |
-| **Converter** | Puts the RS-485 cable on the network (Modbus RTU to TCP) |
+| **Converter** | Puts the RS-485 cable on the network (a Modbus gateway: Modbus TCP to RTU) |
 | **Modbus** | The language most meters and modules speak. A device has a **unit number** and **registers** |
 | **Register** | A numbered place in a device that holds one value. **Input** registers are read-only, **holding** can be written (Greecon never writes) |
 | **Clamp / CT** | A ring that goes around a cable and tells the meter how much current flows |

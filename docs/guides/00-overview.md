@@ -73,7 +73,9 @@ your information**. They also reach people, by the rules you can read on **Who i
 - **Check today** is one email to the first person, held until morning if it comes in quiet hours
   (22:00 to 07:00 unless you change them).
 - **For your information** is only shown, never sent.
-- One message at 07:30 each day says whether everything is all right, and what needs a look if not.
+- One message at 07:30 each day says whether everything is all right, and what needs a look if not. When someone
+  acknowledges an alert, the people who were told hear who took it, and when the problem has stayed clear for
+  15 minutes they are told it is resolved.
 
 You choose the people and their order, and see what was sent and what the email or text service said
 about it. "Accepted for delivery" means the service took it; Greecon cannot know a person read it, which is
