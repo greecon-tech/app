@@ -29,6 +29,8 @@ export interface JwtClaims {
   role: UserRole;
   email: string;
   isPlatformAdmin?: boolean;
+  /** Set while the account still has a temporary password: the session may only be used to choose a new one. */
+  mcp?: boolean;
 }
 
 export function jwtSecret(): string | undefined {

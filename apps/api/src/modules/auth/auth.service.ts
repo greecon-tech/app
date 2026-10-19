@@ -1,8 +1,9 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { DEMO_TENANT_ID, UserRole, userRoles } from "@greecon/shared";
 import { DatabaseService } from "../../database/database.service";
+import { problemWithNewPassword } from "../../common/password-policy";
 import { JwtClaims, jwtSecret } from "../../common/principal";
 
 interface UserCredentialRow {
@@ -13,6 +14,7 @@ interface UserCredentialRow {
   password_hash: string | null;
   role: string;
   is_platform_admin: boolean;
+  must_change_password: boolean;
   tenant_status: string;
 }
 
@@ -25,6 +27,8 @@ export interface LoginResult {
     name: string;
     role: UserRole;
     isPlatformAdmin: boolean;
+    /** True while the password is a temporary one: the session can only be used to choose a new one. */
+    mustChangePassword: boolean;
   };
 }
 
@@ -46,7 +50,7 @@ export class AuthService {
     }
 
     const result = await this.db.query<UserCredentialRow>(
-      `SELECT u.id, u.tenant_id, u.email, u.name, u.password_hash, u.is_platform_admin, m.role, t.status AS tenant_status
+      `SELECT u.id, u.tenant_id, u.email, u.name, u.password_hash, u.is_platform_admin, u.must_change_password, m.role, t.status AS tenant_status
        FROM users u
        JOIN memberships m ON m.user_id = u.id AND m.tenant_id = u.tenant_id
        JOIN tenants t ON t.id = u.tenant_id
@@ -82,7 +86,8 @@ export class AuthService {
       tenantId: row.tenant_id,
       role,
       email: row.email,
-      isPlatformAdmin
+      isPlatformAdmin,
+      ...(row.must_change_password === true ? { mcp: true } : {})
     };
 
     const token = jwt.sign(claims, secret, { expiresIn: "12h" });
@@ -95,7 +100,8 @@ export class AuthService {
         email: row.email,
         name: row.name,
         role,
-        isPlatformAdmin
+        isPlatformAdmin,
+        mustChangePassword: row.must_change_password === true
       }
     };
   }
@@ -125,7 +131,10 @@ export class AuthService {
       throw new UnauthorizedException("Current password is incorrect.");
     }
 
+    const problem = problemWithNewPassword(newPassword, currentPassword);
+    if (problem) throw new BadRequestException(problem);
+
     const newHash = await bcrypt.hash(newPassword, 10);
-    await this.db.query("UPDATE users SET password_hash = $1 WHERE id = $2", [newHash, userId]);
+    await this.db.query("UPDATE users SET password_hash = $1, must_change_password = false WHERE id = $2", [newHash, userId]);
   }
 }

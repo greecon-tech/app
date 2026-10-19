@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AccessRequest, requestedSiteTypeLabels } from "@greecon/shared";
+import { Ago } from "../../components/Ago";
 import { DataTable } from "../../components/DataTable";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
 import { Section } from "../../components/Section";
@@ -6,7 +8,7 @@ import { Shell } from "../../components/Shell";
 import { requirePlatformAdmin } from "../../lib/access";
 import { apiGet } from "../../lib/api";
 import { getSession } from "../../lib/session";
-import { updateTenantStatusAction } from "./actions";
+import { updateAccessRequestAction, updateTenantStatusAction } from "./actions";
 
 interface TenantSummary {
   id: string;
@@ -34,7 +36,7 @@ interface TenantsResponse {
 // screen in the app that could not stay unpaginated.
 export const dynamic = "force-dynamic";
 
-export default async function PlatformAdminPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+export default async function PlatformAdminPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; onboard?: string }> }) {
   const session = await getSession();
   requirePlatformAdmin(session?.user.isPlatformAdmin ?? false);
 
@@ -45,14 +47,93 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
   const query = new URLSearchParams({ page: String(page), pageSize: "25" });
   if (search) query.set("q", search);
 
-  const { tenants, total, pageSize } = await apiGet<TenantsResponse>(`/platform-admin/tenants?${query.toString()}`);
+  const [{ tenants, total, pageSize }, requests] = await Promise.all([
+    apiGet<TenantsResponse>(`/platform-admin/tenants?${query.toString()}`),
+    apiGet<AccessRequest[]>("/platform-admin/access-requests")
+  ]);
   const lastPage = Math.max(Math.ceil(total / pageSize), 1);
+  const open = requests.filter((request) => request.status === "new" || request.status === "contacted");
+  const onboarding = params.onboard ? requests.find((request) => request.id === params.onboard) : undefined;
 
   return (
     <Shell title="Clients" subtitle="Onboard and manage every Greecon client account. Visible only to Greecon platform administrators.">
-      <Section title="Onboard a new client" aside={<span className="muted">Creates the client's account and its first owner login</span>}>
-        <CreateTenantForm />
+      <Section title="Requests" aside={<span className="muted">{open.length} waiting</span>}>
+        {open.length === 0 ? (
+          <div className="empty-state">No one is waiting. Requests from the sign-in page appear here.</div>
+        ) : (
+          <DataTable
+            rows={open}
+            columns={[
+              { key: "createdAtUtc", label: "Received", render: (request) => <Ago iso={request.createdAtUtc} /> },
+              {
+                key: "company",
+                label: "Who",
+                render: (request) => (
+                  <>
+                    <strong>{request.company}</strong>
+                    <br />
+                    {request.name}
+                  </>
+                )
+              },
+              {
+                key: "email",
+                label: "Contact",
+                render: (request) => (
+                  <>
+                    <a href={`mailto:${request.email}`}>{request.email}</a>
+                    {request.phone ? (
+                      <>
+                        <br />
+                        <a href={`tel:${request.phone.replace(/\s+/g, "")}`}>{request.phone}</a>
+                      </>
+                    ) : null}
+                  </>
+                )
+              },
+              { key: "siteType", label: "Runs", render: (request) => requestedSiteTypeLabels[request.siteType] },
+              { key: "message", label: "Said", render: (request) => request.message ?? "" },
+              {
+                key: "status",
+                label: "Next",
+                render: (request) => (
+                  <div className="rule-actions">
+                    <Link href={`/platform?onboard=${request.id}#onboard`} className="button-primary">
+                      Onboard
+                    </Link>
+                    {request.status === "new" ? (
+                      <form action={updateAccessRequestAction.bind(null, request.id, "contacted")}>
+                        <button type="submit" className="button-ghost">
+                          Mark contacted
+                        </button>
+                      </form>
+                    ) : (
+                      <span className="muted">Contacted</span>
+                    )}
+                    <form action={updateAccessRequestAction.bind(null, request.id, "declined")}>
+                      <button type="submit" className="button-ghost">
+                        Decline
+                      </button>
+                    </form>
+                  </div>
+                )
+              }
+            ]}
+          />
+        )}
       </Section>
+      <section id="onboard" className="section">
+        <div className="section__header">
+          <h2>Onboard a new client</h2>
+          <div>
+            <span className="muted">{onboarding ? `From the request by ${onboarding.name}` : "Creates the client's account and its first owner login"}</span>
+          </div>
+        </div>
+        <CreateTenantForm
+          key={onboarding?.id ?? "blank"}
+          prefill={onboarding ? { requestId: onboarding.id, name: onboarding.company, ownerName: onboarding.name, ownerEmail: onboarding.email } : undefined}
+        />
+      </section>
       <Section title="All clients" aside={<span className="muted">{total} total</span>}>
         <form method="get" className="user-row-form" style={{ marginBottom: 12 }}>
           <input type="search" name="q" placeholder="Search by name, domain, or status" defaultValue={search} />

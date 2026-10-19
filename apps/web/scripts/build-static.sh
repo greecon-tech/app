@@ -13,6 +13,9 @@
 #     opposite generateStaticParams situation from the SSR version — see that file's own comment.
 #   login/page.tsx          — imports LoginForm, which calls the real login Server Action. The
 #     static export has no server to log in against at all (see login/page.static.tsx).
+#   request-access/page.tsx — imports RequestAccessForm, which calls the request-access Server Action.
+#     The static demo has no server to send a request to, so its twin just says how to reach Greecon.
+#   change-password/page.tsx — imports ChangePasswordForm, which calls Server Actions. The demo has no accounts.
 #   components/Shell.tsx    — imports the logout Server Action and reads the real session. Shell
 #     is used by every single page, so this one import would otherwise break the entire export,
 #     not just the routes that obviously need it.
@@ -43,6 +46,8 @@ SWAPPED="
 src/app/automation/page.tsx
 src/app/sites/[siteId]/page.tsx
 src/app/login/page.tsx
+src/app/request-access/page.tsx
+src/app/change-password/page.tsx
 src/app/admin/page.tsx
 src/app/platform/page.tsx
 src/app/analytics/page.tsx

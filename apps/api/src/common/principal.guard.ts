@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import jwt from "jsonwebtoken";
 import { hashGatewaySecret } from "./gateway-secret";
 import {
@@ -31,12 +31,17 @@ export class PrincipalGuard implements CanActivate {
       if (!secret) {
         throw new UnauthorizedException("This deployment cannot verify session tokens (JWT_SECRET is not configured).");
       }
+      let claims: JwtClaims;
       try {
-        const claims = jwt.verify(token, secret) as JwtClaims;
-        request.principal = principalFromClaims(claims);
+        claims = jwt.verify(token, secret) as JwtClaims;
       } catch {
         throw new UnauthorizedException("Session is invalid or has expired.");
       }
+      // A session opened with a temporary password can do exactly one thing: choose a new password.
+      if (claims.mcp === true && !isAllowedWhilePasswordIsTemporary(request)) {
+        throw new ForbiddenException({ message: "Choose a new password before you continue.", code: "PASSWORD_CHANGE_REQUIRED" });
+      }
+      request.principal = principalFromClaims(claims);
       return true;
     }
 
@@ -107,13 +112,24 @@ export class PrincipalGuard implements CanActivate {
   }
 }
 
+const ALLOWED_WHILE_PASSWORD_IS_TEMPORARY: ReadonlyArray<{ method: string; path: string }> = [
+  { method: "POST", path: "/auth/change-password" },
+  { method: "GET", path: "/auth/session" }
+];
+
+function isAllowedWhilePasswordIsTemporary(request: RequestWithPrincipal): boolean {
+  return ALLOWED_WHILE_PASSWORD_IS_TEMPORARY.some((route) => route.method === request.method && route.path === request.path);
+}
+
 function isEdgeIngestRequest(request: RequestWithPrincipal): boolean {
   return request.method === "POST" && request.path === "/telemetry/ingest";
 }
 
 const PUBLIC_ROUTES: ReadonlyArray<{ method: string; path: string }> = [
   { method: "POST", path: "/auth/login" },
-  { method: "GET", path: "/health" }
+  { method: "GET", path: "/health" },
+  // The "Request access" form: someone who is not a user yet asking Greecon to set them up.
+  { method: "POST", path: "/public/access-requests" }
 ];
 
 function isPublicRoute(request: RequestWithPrincipal): boolean {

@@ -11,6 +11,8 @@ export interface SessionUser {
   name: string;
   role: UserRole;
   isPlatformAdmin: boolean;
+  /** True while the password is a temporary one: the only thing to do is choose a new one. */
+  mustChangePassword?: boolean;
 }
 
 export interface Session {

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { AccessRequestsModule } from "./modules/access-requests/access-requests.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AssetsModule } from "./modules/assets/assets.module";
@@ -63,6 +64,7 @@ import { PlatformModule } from "./platform/platform.module";
     MaintenanceModule,
     ReportsModule,
     ValueModule,
+    AccessRequestsModule,
     AuditModule,
     EdgeSyncModule,
     HealthModule

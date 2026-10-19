@@ -128,7 +128,8 @@ export type UpdateRuleInput = Partial<Omit<CreateRuleInput, "siteId">>;
 
 export interface CreateTenantInput {
   name: string;
-  domain: string;
+  /** Left out, one is made from the name. */
+  domain?: string;
   ownerName: string;
   ownerEmail: string;
 }
@@ -945,10 +946,11 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       throw new ForbiddenException("This action requires Greecon platform-administrator access.");
     }
 
-    const domain = input.domain.trim().toLowerCase();
-    if (this.tenants.some((existing) => existing.domain.toLowerCase() === domain)) {
+    const requestedDomain = input.domain?.trim().toLowerCase();
+    if (requestedDomain && this.tenants.some((existing) => existing.domain.toLowerCase() === requestedDomain)) {
       throw new ConflictException("A client with this domain already exists.");
     }
+    const domain = requestedDomain || this.clientDomainFor(input.name);
 
     const tenant: Tenant = {
       id: randomUUID(),
@@ -972,7 +974,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (this.db.isConfigured()) {
       await this.db.query(`INSERT INTO tenants (id, name, domain, status) VALUES ($1,$2,$3,$4)`, [tenant.id, tenant.name, tenant.domain, tenant.status]);
       await this.db.query(
-        `INSERT INTO users (id, tenant_id, email, name, status, password_hash) VALUES ($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO users (id, tenant_id, email, name, status, password_hash, must_change_password) VALUES ($1,$2,$3,$4,$5,$6,true)`,
         [owner.id, owner.tenantId, owner.email, owner.name, owner.status, passwordHash]
       );
       await this.db.query(`INSERT INTO memberships (id, tenant_id, user_id, role) VALUES ($1,$2,$3,$4)`, [
@@ -999,6 +1001,22 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return { tenant, owner, temporaryPassword };
   }
 
+  // A client's domain is only an identifier that must be unique. When nobody supplies one it is made
+  // from the company name, so the project manager does not have to invent it.
+  private clientDomainFor(name: string): string {
+    const slug =
+      name
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 50) || "client";
+    let candidate = `${slug}.clients.greecon.earth`;
+    for (let suffix = 2; this.tenants.some((existing) => existing.domain.toLowerCase() === candidate); suffix += 1) candidate = `${slug}-${suffix}.clients.greecon.earth`;
+    return candidate;
+  }
+
   listUsers(principal: Principal): User[] {
     return this.scope(this.users, principal.tenantId);
   }
@@ -1013,9 +1031,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       throw new ConflictException("A user with this email already exists in this tenant.");
     }
 
-    // There is no self-service reset flow yet (docs/15-master-roadmap.md, Phase 0) — the
-    // temporary password is returned once, here, and never stored or logged anywhere else.
-    // Whoever creates the account is responsible for passing it to the new user out of band.
+    // The temporary password is returned once, here, and never stored or logged anywhere else.
+    // Whoever creates the account passes it to the new user out of band, and the new user must
+    // choose their own before doing anything else (users.must_change_password).
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
@@ -1030,7 +1048,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     if (this.db.isConfigured()) {
       await this.db.query(
-        `INSERT INTO users (id, tenant_id, email, name, status, password_hash) VALUES ($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO users (id, tenant_id, email, name, status, password_hash, must_change_password) VALUES ($1,$2,$3,$4,$5,$6,true)`,
         [user.id, user.tenantId, user.email, user.name, user.status, passwordHash]
       );
       await this.db.query(`INSERT INTO memberships (id, tenant_id, user_id, role) VALUES ($1,$2,$3,$4)`, [
@@ -1069,7 +1087,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
+      await this.db.query(`UPDATE users SET password_hash = $1, must_change_password = true, updated_at = now() WHERE id = $2`, [passwordHash, user.id]);
     }
 
     await this.recordAudit({

@@ -47,6 +47,7 @@ export type StatusLabel = (typeof statusLabels)[number];
 export { describeAge } from "./age";
 export * from "./energy-flow";
 export * from "./value";
+export * from "./access-requests";
 
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;
 export type SeverityLevel = (typeof severityLevels)[number];

@@ -487,6 +487,20 @@ describe("PlatformService", () => {
       ).rejects.toThrow();
     });
 
+    it("makes a domain from the company name when none is given, and keeps it unique", async () => {
+      const first = await platform.createTenant({ name: "Hotel Adriatik Sh.p.k", ownerName: "A", ownerEmail: "a@adriatik.example" }, PLATFORM_ADMIN);
+      expect(first.tenant.domain).toBe("hotel-adriatik-sh-p-k.clients.greecon.earth");
+
+      const second = await platform.createTenant({ name: "Hotel Adriatik Sh.p.k", ownerName: "B", ownerEmail: "b@adriatik.example" }, PLATFORM_ADMIN);
+      expect(second.tenant.domain).toBe("hotel-adriatik-sh-p-k-2.clients.greecon.earth");
+
+      const accents = await platform.createTenant({ name: "Fermë Lushnjë", ownerName: "C", ownerEmail: "c@ferme.example" }, PLATFORM_ADMIN);
+      expect(accents.tenant.domain).toBe("ferme-lushnje.clients.greecon.earth");
+
+      const symbols = await platform.createTenant({ name: "!!!", ownerName: "D", ownerEmail: "d@x.example" }, PLATFORM_ADMIN);
+      expect(symbols.tenant.domain).toBe("client.clients.greecon.earth");
+    });
+
     it("lets a platform admin suspend and reactivate a client, blocking a non-admin from doing the same", async () => {
       const { tenant } = await platform.createTenant(
         { name: "Suspend Test Farm", domain: "suspend-test.example", ownerName: "Owner", ownerEmail: "owner@suspend-test.example" },

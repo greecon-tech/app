@@ -6,11 +6,11 @@ import { createTenantAction } from "../app/platform/actions";
 // Onboards a brand new client (tenant) with its own first owner account, isolated from every
 // other client's data — see apps/api/src/platform/platform.service.ts's createTenant. The owner's
 // temporary password is shown exactly once, same handling as CreateUserForm.
-export function CreateTenantForm() {
-  const [name, setName] = useState("");
+export function CreateTenantForm({ prefill }: { prefill?: { requestId: string; name: string; ownerName: string; ownerEmail: string } }) {
+  const [name, setName] = useState(prefill?.name ?? "");
   const [domain, setDomain] = useState("");
-  const [ownerName, setOwnerName] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerName, setOwnerName] = useState(prefill?.ownerName ?? "");
+  const [ownerEmail, setOwnerEmail] = useState(prefill?.ownerEmail ?? "");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ clientName: string; ownerEmail: string; temporaryPassword: string } | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -19,7 +19,7 @@ export function CreateTenantForm() {
     event.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await createTenantAction(name, domain, ownerName, ownerEmail);
+      const result = await createTenantAction(name, domain, ownerName, ownerEmail, prefill?.requestId);
       if (result.error || !result.tenant || !result.owner || !result.temporaryPassword) {
         setError(result.error ?? "Failed to onboard client.");
         return;
@@ -40,10 +40,6 @@ export function CreateTenantForm() {
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Vjosa Agro Sh.p.k" required />
         </label>
         <label>
-          Domain
-          <input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="e.g. vjosaagro.example" required />
-        </label>
-        <label>
           Owner name
           <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Full name" required />
         </label>
@@ -58,6 +54,14 @@ export function CreateTenantForm() {
           />
         </label>
       </div>
+      <details className="limits">
+        <summary>Advanced</summary>
+        <label>
+          Identifier (optional)
+          <input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="Made from the company name when left empty" />
+          <span className="muted limits__help">Only has to be unique across clients. Nobody types it.</span>
+        </label>
+      </details>
       <div className="rule-form__footer">
         <button type="submit" disabled={isPending}>
           {isPending ? "Onboarding…" : "Onboard client"}

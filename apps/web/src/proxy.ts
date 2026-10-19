@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_TOKEN_COOKIE } from "./lib/session";
+import { SESSION_TOKEN_COOKIE, SESSION_USER_COOKIE } from "./lib/session";
 
 // This only runs on the live SSR deployment — the static GitHub Pages export has no server to
 // run middleware on at all (see docs/12-deployment-github-pages.md); each of its five role
@@ -23,14 +23,29 @@ function isMissingOrExpired(token: string | undefined): boolean {
   }
 }
 
+// Someone who signed in with a temporary password can only choose a new one. The API refuses
+// everything else for that session anyway (apps/api/src/common/principal.guard.ts); this just sends
+// them where they can act instead of letting every page fail.
+function mustChangePassword(request: NextRequest): boolean {
+  try {
+    const raw = request.cookies.get(SESSION_USER_COOKIE)?.value;
+    return raw !== undefined && (JSON.parse(raw) as { mustChangePassword?: boolean }).mustChangePassword === true;
+  } catch {
+    return false;
+  }
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const token = request.cookies.get(SESSION_TOKEN_COOKIE)?.value;
   if (isMissingOrExpired(token)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
+  if (mustChangePassword(request) && request.nextUrl.pathname !== "/change-password") {
+    return NextResponse.redirect(new URL("/change-password", request.url));
+  }
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
+  matcher: ["/((?!login|request-access|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
 };

@@ -126,6 +126,38 @@ describe("PrincipalGuard", () => {
     });
   });
 
+  describe("a session opened with a temporary password", () => {
+    const temporary = () => jwt.sign({ sub: "u1", tenantId: "t1", role: "owner", email: "o@x.example", mcp: true } satisfies JwtClaims, "test-secret");
+
+    it("may choose a new password and look at who it is, and nothing else", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/auth/change-password", method: "POST" },
+        { path: "/auth/session", method: "GET" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": temporary() }, route)), `${route.method} ${route.path}`).resolves.toBe(true);
+      }
+    });
+
+    it("is turned away from everything else, and told why", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/overview", method: "GET" },
+        { path: "/sites", method: "GET" },
+        { path: "/auth/change-password", method: "GET" },
+        { path: "/commands", method: "POST" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": temporary() }, route)), `${route.method} ${route.path}`).rejects.toThrow(/Choose a new password/);
+      }
+    });
+
+    it("is an ordinary session once the flag is gone", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      const token = jwt.sign({ sub: "u1", tenantId: "t1", role: "owner", email: "o@x.example" } satisfies JwtClaims, "test-secret");
+      await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": token }, { path: "/overview", method: "GET" }))).resolves.toBe(true);
+    });
+  });
+
   describe("public routes", () => {
     beforeEach(() => {
       process.env.NODE_ENV = "production";
@@ -143,6 +175,24 @@ describe("PrincipalGuard", () => {
       const context = contextWithHeaders({}, { path: "/health", method: "GET" });
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it("lets an unauthenticated POST /public/access-requests through, because the people asking are not users yet", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      const context = contextWithHeaders({}, { path: "/public/access-requests", method: "POST" });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it("does not let the public form's pass reach Greecon's inbox of requests, or read anything", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/platform-admin/access-requests", method: "GET" },
+        { path: "/platform-admin/access-requests/abc", method: "PATCH" },
+        { path: "/public/access-requests", method: "GET" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({}, route)), `${route.method} ${route.path}`).rejects.toThrow(UnauthorizedException);
+      }
     });
 
     it("does not extend the same pass to a lookalike route", async () => {
