@@ -20,6 +20,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # A real PostgreSQL for the tests that must not be faked: the migration runner and the account
+    # safeguards. Each test creates and drops its own database in it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: greecon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +52,8 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:greecon@localhost:5432/postgres
 
       - name: Build
         run: npm run build

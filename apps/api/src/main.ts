@@ -5,22 +5,26 @@ import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
-import { apiDocsEnabled, trustedProxyHops } from "./common/runtime-config";
+import { apiDocsEnabled, checkRuntimeConfig, trustedProxyHops } from "./common/runtime-config";
+import { prepareDatabase } from "./database/startup";
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("Bootstrap");
 
   // A missing DATABASE_URL is legitimate (local dev without Postgres, the in-memory-only fallback
-  // every domain in PlatformService has); a missing JWT_SECRET alongside a REAL database is not —
-  // it means login can never work on what's clearly meant to be a real deployment. Warn loudly at
-  // boot rather than letting that surface only when someone's first login attempt fails, so a
-  // misconfigured production deploy is obvious in the deploy logs immediately.
-  if (process.env.DATABASE_URL && !process.env.JWT_SECRET) {
-    logger.warn(
-      "DATABASE_URL is set but JWT_SECRET is not — this deployment has a real database but " +
-        "login will fail for every user until JWT_SECRET is configured (docs/07-security-and-rbac.md)."
-    );
+  // every domain in PlatformService has). A real database with a missing or weak JWT_SECRET is not:
+  // on a production deployment that stops the boot here, so it shows in the deploy logs at once
+  // instead of surfacing as "nobody can sign in" or, worse, as sessions anyone could forge.
+  const config = checkRuntimeConfig(process.env);
+  for (const warning of config.warnings) logger.warn(warning);
+  if (config.errors.length > 0) {
+    for (const error of config.errors) logger.error(error);
+    throw new Error("The deployment's settings are not safe to start with. See the errors above.");
   }
+
+  // Brings the schema up to this version and closes accounts that carry a published password,
+  // before anything reads the database (PlatformService hydrates from it when the module starts).
+  await prepareDatabase(process.env, (message) => (message.startsWith("SECURITY") ? logger.warn(message) : logger.log(message)));
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true
@@ -74,4 +78,7 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  new Logger("Bootstrap").error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
