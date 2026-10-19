@@ -39,6 +39,8 @@
 #     in a static export and must not have it in the live build (same reason as sites/[siteId]/page.tsx).
 #   settings/people/page.tsx — imports the forms that save who is told and send test messages (Server
 #     Actions). The twin explains the rules and says the demo sends nobody a message.
+#   export/[kind]/route.ts  — the download route: it reads the person's session on each request, which a
+#     static export cannot. The twin has no routes at all (the demo makes no files).
 set -e
 # Disables pathname expansion for the rest of the script: one of the paths below literally
 # contains "[siteId]", which the shell would otherwise try to glob-match as a one-character
@@ -64,6 +66,7 @@ src/app/maintenance/page.tsx
 src/app/sites/[siteId]/setup/page.tsx
 src/app/sites/[siteId]/handover/page.tsx
 src/app/settings/people/page.tsx
+src/app/export/[kind]/route.ts
 src/components/Shell.tsx
 "
 
@@ -73,9 +76,17 @@ restore() {
   done
 }
 
+# The twin of page.tsx is page.static.tsx; the twin of route.ts is route.static.ts.
+twin_of() {
+  case "$1" in
+    *.tsx) echo "${1%.tsx}.static.tsx" ;;
+    *.ts) echo "${1%.ts}.static.ts" ;;
+  esac
+}
+
 for path in $SWAPPED; do
   cp "$path" "$path.live"
-  cp "${path%.tsx}.static.tsx" "$path"
+  cp "$(twin_of "$path")" "$path"
 done
 trap restore EXIT
 

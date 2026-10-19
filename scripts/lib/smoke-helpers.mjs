@@ -34,7 +34,7 @@ export async function call(method, path, { token, box, body, headers = {} } = {}
   } catch {
     json = undefined;
   }
-  return { status: response.status, json, text };
+  return { status: response.status, json, text, headers: Object.fromEntries(response.headers) };
 }
 
 export async function login(email, password) {

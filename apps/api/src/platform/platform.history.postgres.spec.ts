@@ -129,3 +129,78 @@ describe.skipIf(!testDatabaseUrl)("history kept for a point (real PostgreSQL)", 
     });
   }, 120_000);
 });
+
+describe.skipIf(!testDatabaseUrl)("history shown on a chart (real PostgreSQL)", () => {
+  /** Twelve days of a reading a minute from two points: more than the old twenty-thousand-row cut-off could carry. */
+  async function seedTwelveDays(world: { owner: Principal; site: ProvisionedSite; pool: Pool }) {
+    const grid = world.site.pointIds["energy.grid.import.kw"] as string;
+    const pump = world.site.pointIds["water.pump.status"] as string;
+    const common = [world.owner.tenantId, world.site.site.id, world.site.device.id];
+    // The value falls by one for every day further back, so where a window starts shows in its values.
+    await world.pool.query(
+      `INSERT INTO telemetry_readings (timestamp_utc, tenant_id, site_id, device_id, point_id, canonical_name, value_numeric, unit, quality, source)
+       SELECT now() - (g || ' minutes')::interval, $1, $2, $3, $4, 'energy.grid.import.kw', 100 - g / 1440.0, 'kW', 'OK', 'edge' FROM generate_series(0, 17279) g`,
+      [...common, grid]
+    );
+    await world.pool.query(
+      `INSERT INTO telemetry_readings (timestamp_utc, tenant_id, site_id, device_id, point_id, canonical_name, value_bool, unit, quality, source)
+       SELECT now() - (g || ' minutes')::interval, $1, $2, $3, $4, 'water.pump.status', (g / 360) % 2 = 0, 'state', 'OK', 'edge' FROM generate_series(0, 17279) g`,
+      [...common, pump]
+    );
+    return { grid, pump };
+  }
+
+  it("covers the whole of a week, newest included, instead of the oldest twenty thousand readings", async () => {
+    await inPlatform(async (world) => {
+      const { grid } = await seedTwelveDays(world);
+      const history = await world.platform.telemetryHistory(world.owner, world.site.site.id, 24 * 7);
+      const gridPoints = history.filter((reading) => reading.pointId === grid);
+
+      // About 168 hourly buckets, not 10,080 readings and not a cut-off.
+      expect(gridPoints.length).toBeGreaterThan(160);
+      expect(gridPoints.length).toBeLessThanOrEqual(170);
+      const times = gridPoints.map((reading) => Date.parse(reading.timestampUtc));
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+      expect(Date.now() - (times.at(-1) as number)).toBeLessThan(2 * 3_600_000);
+      expect(Date.now() - (times[0] as number)).toBeGreaterThan(6.5 * 24 * 3_600_000);
+      expect(Date.now() - (times[0] as number)).toBeLessThan(7.2 * 24 * 3_600_000);
+
+      // Values are the averages of what was read: roughly 100 now, and seven less seven days back.
+      expect(Number(gridPoints.at(-1)?.value)).toBeGreaterThan(99.9);
+      expect(Number(gridPoints[0]?.value)).toBeGreaterThan(92.5);
+      expect(Number(gridPoints[0]?.value)).toBeLessThan(93.2);
+    });
+  }, 180_000);
+
+  it("shows a switch as on if it was on at any time in the bucket, and keeps the unit and the point", async () => {
+    await inPlatform(async (world) => {
+      const { pump } = await seedTwelveDays(world);
+      const history = await world.platform.telemetryHistory(world.owner, world.site.site.id, 24 * 7);
+      const pumpPoints = history.filter((reading) => reading.pointId === pump);
+      expect(pumpPoints.length).toBeGreaterThan(160);
+      expect(pumpPoints.every((reading) => typeof reading.value === "boolean" && reading.unit === "state" && reading.canonicalName === "water.pump.status")).toBe(true);
+      expect(pumpPoints.some((reading) => reading.value === true)).toBe(true);
+      expect(pumpPoints.some((reading) => reading.value === false)).toBe(true);
+    });
+  }, 180_000);
+
+  it("gives a short window reading by reading", async () => {
+    await inPlatform(async (world) => {
+      const { grid } = await seedTwelveDays(world);
+      const history = await world.platform.telemetryHistory(world.owner, world.site.site.id, 2);
+      const gridPoints = history.filter((reading) => reading.pointId === grid);
+      expect(gridPoints.length).toBeGreaterThanOrEqual(120);
+      expect(gridPoints.length).toBeLessThanOrEqual(122);
+    });
+  }, 180_000);
+
+  it("is the account's own history and nobody else's", async () => {
+    await inPlatform(async (world) => {
+      await seedTwelveDays(world);
+      const other = await world.platform.createTenant({ name: "Other Ltd", domain: "other.example", ownerName: "O", ownerEmail: "o@other.example" }, PLATFORM_ADMIN);
+      const stranger: Principal = { tenantId: other.tenant.id, userId: other.owner.id, role: "owner", email: other.owner.email, isPlatformAdmin: false };
+      expect(await world.platform.telemetryHistory(stranger, undefined, 24 * 7)).toEqual([]);
+      await expect(world.platform.telemetryHistory(stranger, world.site.site.id, 24 * 7)).rejects.toThrow();
+    });
+  }, 180_000);
+});

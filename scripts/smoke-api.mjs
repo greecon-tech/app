@@ -178,6 +178,24 @@ try {
   check(tooEarly.status === 409, "and refuses to confirm that people are told");
   check(handover.json?.told?.length === 0 || Array.isArray(handover.json?.told), "the handover has a list of who is told");
 
+  step("The customer can take their data away");
+  const csv = await call("GET", `/exports/readings.csv?siteId=${siteId}&days=7&resolution=hourly`, { token: owner });
+  check(csv.status === 200 && csv.headers["content-type"]?.startsWith("text/csv") && /^attachment; filename="greecon-readings-.*-hourly\.csv"$/.test(csv.headers["content-disposition"] ?? ""), "the readings come as a spreadsheet file");
+  // (fetch drops the byte-order mark when it reads text; the unit tests check it is written.)
+  check(csv.text.startsWith("hour_utc,hour_local,site,device,reading,canonical_name,average,minimum,maximum,unit,samples\r\n"), "with a head row that says what each column is");
+  check(csv.headers["cache-control"] === "no-store", "that nothing keeps a copy of");
+  const euCsv = await call("GET", `/exports/readings.csv?siteId=${siteId}&days=7&resolution=raw&style=eu`, { token: owner });
+  check(euCsv.status === 200 && euCsv.text.includes("time_utc;time_local;site;device;reading;canonical_name;value;unit;quality"), "and in the European style, with semicolons");
+  const tooLong = await call("GET", `/exports/readings.csv?siteId=${siteId}&days=40&resolution=raw`, { token: owner });
+  check(tooLong.status === 400 && /up to 31 days/.test(tooLong.text), "every reading for more than a month is refused, saying to ask for hourly averages");
+  const alertsCsv = await call("GET", "/exports/alerts.csv?days=30", { token: owner });
+  check(alertsCsv.status === 200 && alertsCsv.text.includes("raised_utc,raised_local,site,priority,alert"), "the alerts come as a spreadsheet too");
+  const accountJson = await call("GET", "/exports/account.json", { token: owner });
+  check(accountJson.status === 200 && accountJson.json?.format === "greecon-account-export/1" && accountJson.json?.sites?.length === 1, "everything about the account's setup comes as one file");
+  check(!/password|secret|hash/i.test(JSON.stringify({ ...accountJson.json, about: "" })), "with nothing in it that would open the account");
+  const exportAudit = (await call("GET", "/exports/audit.csv", { token: owner })).text;
+  check(exportAudit.includes("export.downloaded") && exportAudit.includes("Hourly averages of Hotel Adriatik"), "and every download is in the audit trail, with what was taken");
+
   step("Another customer cannot reach any of it");
   const other = await onboard(admin.token, `Smoke Other ${suffix}`, `other-${suffix}@smoke.example`);
   for (const [method, path, body] of [
@@ -187,7 +205,8 @@ try {
     ["POST", "/gateways/provision", { siteId, name: "Intruder" }],
     ["POST", `/gateways/${gatewayId}/enrolment`],
     ["POST", "/devices/from-profile", { siteId, profileKey: "eastron-sdm630-grid" }],
-    ["POST", `/notifications/contacts/${contactId}/test`]
+    ["POST", `/notifications/contacts/${contactId}/test`],
+    ["GET", `/exports/readings.csv?siteId=${siteId}&days=7&resolution=hourly`]
   ]) {
     const result = await call(method, path, { token: other.session, body });
     check(result.status === 403 || result.status === 404, `${method} ${path} is refused for another customer (${result.status})`);

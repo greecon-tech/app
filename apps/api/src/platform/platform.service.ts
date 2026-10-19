@@ -81,6 +81,7 @@ import { generateGatewaySecret, hashGatewaySecret } from "../common/gateway-secr
 import { DatabaseService } from "../database/database.service";
 import { buildEdgeConfig } from "../setup/edge-config";
 import type { Confirmation } from "../setup/setup-checklist";
+import { historyBucketMinutes } from "./history";
 import type { DigestFacts } from "../notifications/messages";
 import type { AlertView } from "../notifications/notifications.service";
 import type { AlertEvent } from "../notifications/plan";
@@ -355,12 +356,6 @@ export interface CreateCommandInput {
   };
 }
 
-export interface ReportExportInput {
-  siteId?: string;
-  reportType: "operational" | "sustainability" | "audit" | "incident";
-  parameters?: Record<string, string | number | boolean>;
-}
-
 export interface EdgeSyncInput {
   siteId: string;
   gatewayId: string;
@@ -533,8 +528,6 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const edgeSyncRows = await this.db.query<EdgeSyncRow>("SELECT * FROM edge_sync_batches ORDER BY created_at DESC LIMIT 200");
     if (edgeSyncRows.rows.length > 0) this.edgeSyncBatches = edgeSyncRows.rows.map((row) => mapEdgeSyncRow(row));
 
-    const reportRows = await this.db.query<ReportExportRow>("SELECT * FROM report_exports ORDER BY created_at DESC LIMIT 200");
-    if (reportRows.rows.length > 0) this.reportExports = reportRows.rows.map((row) => mapReportExportRow(row));
 
     const maintenanceRows = await this.db.query<MaintenanceTaskRow>("SELECT * FROM maintenance_tasks ORDER BY created_at ASC");
     if (maintenanceRows.rows.length > 0) this.maintenanceTasks = maintenanceRows.rows.map((row) => mapMaintenanceTaskRow(row));
@@ -843,7 +836,6 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
   private rules: AutomationRule[] = demoRules();
   private commands: CommandRecord[] = [];
-  private reportExports: Array<ReportExportInput & { id: string; status: string; requestedBy: string; createdAtUtc: string }> = [];
   private edgeSyncBatches: Array<EdgeSyncInput & { id: string; tenantId: string; createdAtUtc: string }> = [];
 
   private alerts: AlertRecord[] = [
@@ -2359,14 +2351,37 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteFilter = "AND site_id = $3";
     }
 
-    const result = await this.db.query<TelemetryRow>(
-      `SELECT * FROM telemetry_readings
-       WHERE tenant_id = $1 AND timestamp_utc >= now() - ($2 || ' hours')::interval ${siteFilter}
-       ORDER BY timestamp_utc ASC
-       LIMIT 20000`,
-      params
-    );
+    const bucketMinutes = historyBucketMinutes(hours);
+    if (bucketMinutes === 0) {
+      const result = await this.db.query<TelemetryRow>(
+        `SELECT * FROM telemetry_readings
+         WHERE tenant_id = $1 AND timestamp_utc >= now() - ($2 || ' hours')::interval ${siteFilter}
+         ORDER BY timestamp_utc ASC
+         LIMIT 20000`,
+        params
+      );
+      return result.rows.map((row) => mapTelemetryRow(row));
+    }
 
+    // A long window is averaged into buckets across all of it, newest included. A switch reads as on if it was on at
+    // any time in the bucket, a text as its last value, and the quality as the worst in the bucket.
+    const result = await this.db.query<TelemetryRow>(
+      `SELECT date_bin(($${params.length + 1} || ' minutes')::interval, timestamp_utc, TIMESTAMPTZ '2000-01-01 00:00:00+00') AS timestamp_utc,
+              tenant_id, site_id, NULL::uuid AS asset_id, device_id, point_id, canonical_name,
+              avg(value_numeric) AS value_numeric,
+              (array_agg(value_text ORDER BY timestamp_utc DESC) FILTER (WHERE value_text IS NOT NULL))[1] AS value_text,
+              bool_or(value_bool) AS value_bool,
+              max(unit) AS unit,
+              CASE max(CASE quality WHEN 'BAD' THEN 3 WHEN 'WARN' THEN 2 ELSE 1 END) WHEN 3 THEN 'BAD' WHEN 2 THEN 'WARN' ELSE 'OK' END AS quality,
+              'aggregate' AS source,
+              max(timestamp_utc) AS ingestion_timestamp_utc
+       FROM telemetry_readings
+       WHERE tenant_id = $1 AND timestamp_utc >= now() - ($2 || ' hours')::interval ${siteFilter}
+       GROUP BY 1, tenant_id, site_id, device_id, point_id, canonical_name
+       ORDER BY 1 ASC, point_id
+       LIMIT 50000`,
+      [...params, bucketMinutes]
+    );
     return result.rows.map((row) => mapTelemetryRow(row));
   }
 
@@ -2880,6 +2895,11 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.alerts.filter((alert) => alert.status === "open").map((alert) => ({ alert: { ...alert }, siteName: this.siteNameOf(alert.tenantId, alert.siteId) }));
   }
 
+  /** Someone took data out of the account as a file: the account's own audit trail says who and what. */
+  async recordDataExport(principal: Principal, kind: "readings" | "alerts" | "audit" | "account", siteId: string | undefined, reason: string): Promise<void> {
+    await this.recordAudit({ tenantId: principal.tenantId, userId: principal.userId, eventType: "export.downloaded", siteId, entityType: "data_export", afterMetadata: { kind }, reason });
+  }
+
   /** Who is told, or when, was changed: the account's own audit trail says so, and by whom. */
   async recordNotificationSettingsChange(principal: Principal, eventType: string, reason: string): Promise<void> {
     await this.recordAudit({ tenantId: principal.tenantId, userId: principal.userId, eventType, entityType: "notification_settings", reason });
@@ -3050,60 +3070,6 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     });
 
     return task;
-  }
-
-  reportTemplates() {
-    return [
-      "Operational report",
-      "Sustainability report",
-      "Audit report",
-      "Incident report"
-    ];
-  }
-
-  async createReportExport(input: ReportExportInput, principal: Principal) {
-    // A report is for the caller's own site. Without this, one tenant could request an export (and
-    // write an audit entry) naming another tenant's site, and a real export would hand its data over.
-    if (input.siteId) this.requireSite(input.siteId, principal.tenantId);
-
-    const auditEvent = await this.recordAudit({
-      tenantId: principal.tenantId,
-      userId: principal.userId,
-      eventType: "report.export_requested",
-      siteId: input.siteId,
-      entityType: "report_export",
-      afterMetadata: { reportType: input.reportType, parameters: input.parameters ?? {} },
-      reason: "Report export placeholder requested."
-    });
-
-    const exportRecord = {
-      ...input,
-      id: randomUUID(),
-      status: "queued_placeholder",
-      requestedBy: principal.userId,
-      createdAtUtc: auditEvent.createdAtUtc
-    };
-    this.reportExports.unshift(exportRecord);
-
-    if (this.db.isConfigured()) {
-      await this.db.query(
-        `INSERT INTO report_exports (id, tenant_id, site_id, requested_by, report_type, parameters, export_status, audit_event_id, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [
-          exportRecord.id,
-          principal.tenantId,
-          exportRecord.siteId ?? null,
-          principal.userId,
-          exportRecord.reportType,
-          JSON.stringify(exportRecord.parameters ?? {}),
-          exportRecord.status,
-          auditEvent.id,
-          exportRecord.createdAtUtc
-        ]
-      );
-    }
-
-    return exportRecord;
   }
 
   /** The audit trail with who did each thing, in words: a person of this account by name, Greecon staff as
@@ -4180,29 +4146,6 @@ function mapEdgeSyncRow(row: EdgeSyncRow): EdgeSyncInput & { id: string; tenantI
     bufferedReadings: row.buffered_readings,
     startedAtUtc: row.started_at,
     completedAtUtc: row.completed_at ?? undefined,
-    createdAtUtc: row.created_at
-  };
-}
-
-interface ReportExportRow {
-  id: string;
-  tenant_id: string;
-  site_id: string | null;
-  requested_by: string;
-  report_type: string;
-  parameters: Record<string, string | number | boolean>;
-  export_status: string;
-  created_at: string;
-}
-
-function mapReportExportRow(row: ReportExportRow): ReportExportInput & { id: string; status: string; requestedBy: string; createdAtUtc: string } {
-  return {
-    id: row.id,
-    siteId: row.site_id ?? undefined,
-    reportType: row.report_type as ReportExportInput["reportType"],
-    parameters: row.parameters,
-    status: row.export_status,
-    requestedBy: row.requested_by,
     createdAtUtc: row.created_at
   };
 }

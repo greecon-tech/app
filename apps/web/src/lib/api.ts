@@ -50,6 +50,12 @@ async function parseJsonResponse<T>(response: Response, role: DemoRole, method: 
   }
 }
 
+/** The API's own answer to pass on as it is, such as a file to download: authenticated like any other call,
+ * and not read into memory here, so a year of readings streams through. */
+export async function apiStream(path: string, role: DemoRole = DEMO_ROLE): Promise<Response> {
+  return fetch(`${API_BASE_URL}${path}`, { headers: await requestHeaders(role), cache: "no-store" });
+}
+
 /** Mutations only work against a live server (Railway/GCP) — the static GitHub Pages export
  * has nothing to send them to, so callers must gate this behind NEXT_OUTPUT_EXPORT themselves. */
 export async function apiMutate<T>(path: string, method: "POST" | "PATCH" | "PUT" | "DELETE", body?: unknown, role: DemoRole = DEMO_ROLE): Promise<T> {

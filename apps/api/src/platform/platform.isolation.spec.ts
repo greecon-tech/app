@@ -202,7 +202,6 @@ describe("tenant isolation across the service", () => {
       ["updateIncidentStatus", () => platform.updateIncidentStatus(a.incident, "closed", b)],
       ["createMaintenanceTask", () => platform.createMaintenanceTask({ siteId: a.site, title: "Intruder" }, b)],
       ["updateMaintenanceTask", () => platform.updateMaintenanceTask(a.task, { title: "Taken" }, b)],
-      ["createReportExport", () => platform.createReportExport({ siteId: a.site, reportType: "operational" }, b)],
       ["updateUser", () => platform.updateUser(aUser, { status: "disabled" }, b)],
       ["resetUserPassword", () => platform.resetUserPassword(aUser, b)],
       ["recordEdgeSync", () => platform.recordEdgeSync({ siteId: a.site, gatewayId: aGateway, status: "completed", bufferedReadings: 0, startedAtUtc: new Date().toISOString() }, b)],
@@ -330,7 +329,7 @@ describe("tenant isolation across the service", () => {
       "listGateways", "telemetryHistory", "latestTelemetry", "listDerivedStates", "listRules", "simulateRules", "listCommands", "listAlerts", "listIncidents",
       "listMaintenance", "listAudit", "updateSite", "deleteSite", "createAsset", "updateAsset", "deleteAsset", "createDevice", "updateDevice", "deleteDevice",
       "createPoint", "updatePoint", "deletePoint", "createGateway", "deleteGateway", "createRule", "updateRule", "setRuleApprovalState", "deleteRule",
-      "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask", "createReportExport",
+      "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask",
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
       "siteProfile", "updateSiteProfile", "siteValue", "valueSummary",
       "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway", "beginSupportSession",
@@ -338,8 +337,8 @@ describe("tenant isolation across the service", () => {
       "ingestTelemetryBatch", "applyTelemetry"
     ]);
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
-    // recordNotificationSettingsChange only writes one audit line, into the caller's own tenant's trail.
-    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport", "recordNotificationSettingsChange"]);
+    // recordNotificationSettingsChange and recordDataExport only write one audit line, into the caller's own tenant's trail.
+    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport", "recordNotificationSettingsChange", "recordDataExport"]);
 
     const takingAPrincipal = Object.getOwnPropertyNames(PlatformService.prototype).filter((name) => {
       const method = (PlatformService.prototype as unknown as Record<string, unknown>)[name];
