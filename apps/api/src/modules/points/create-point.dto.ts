@@ -1,5 +1,5 @@
 import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from "class-validator";
-import { canonicalPoints, pointCapabilities } from "@greecon/shared";
+import { PointSource, canonicalPoints, pointCapabilities } from "@greecon/shared";
 
 export class CreatePointDto {
   @IsString()
@@ -31,4 +31,9 @@ export class CreatePointDto {
   @IsOptional()
   @IsObject()
   thresholdConfig?: Record<string, number>;
+
+  // Which register the box reads this from. Checked in PlatformService, in words a person at the site can act on.
+  @IsOptional()
+  @IsObject()
+  source?: PointSource;
 }

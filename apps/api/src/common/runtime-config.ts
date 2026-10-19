@@ -1,6 +1,8 @@
 // Small, pure readers for deployment settings that change what the API exposes or how it
 // identifies callers. Kept apart from main.ts so each rule can be unit-tested without booting Nest.
 
+import { configuredPublicApiUrl } from "./public-url";
+
 type Env = Record<string, string | undefined>;
 
 /** The Swagger UI and the machine-readable spec (/docs, /docs-yaml, /docs-json) describe every
@@ -69,6 +71,17 @@ export function checkRuntimeConfig(env: Env): ConfigReport {
 
   if (Boolean(env.EDGE_INGEST_TOKEN) !== Boolean(env.EDGE_INGEST_TENANT_ID)) {
     warnings.push("EDGE_INGEST_TOKEN and EDGE_INGEST_TENANT_ID only work as a pair, so the shared device token is switched off. Per-gateway credentials (Add gateway) are the supported route.");
+  }
+
+  if (production && env.DATABASE_URL) {
+    const publicUrl = configuredPublicApiUrl(env);
+    if (!publicUrl) {
+      warnings.push(
+        "PUBLIC_API_URL is not set (or is not an address), so the install command shown for a new box would name this service's private address, which a box on the customer's network cannot reach. Set it to the API's public address, for example https://api.greecon.earth."
+      );
+    } else if (!publicUrl.startsWith("https://")) {
+      warnings.push("PUBLIC_API_URL is not https. A box sends its credential and its readings to this address; use an https address.");
+    }
   }
 
   if (production && env.DATABASE_URL && trustedProxyHops(env) === undefined) {

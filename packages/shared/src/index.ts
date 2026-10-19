@@ -1,3 +1,6 @@
+import type { ModbusConnection, PointSource } from "./modbus";
+import type { DriverDeviceStatus } from "./edge";
+
 export const GREECON_COMPANY = "Greecon Sh.p.k";
 export const GREECON_DOMAIN = "greecon.earth";
 export const GREECON_PUBLIC_EMAILS = ["info@greecon.earth", "eridon.manuka@greecon.earth"] as const;
@@ -52,6 +55,7 @@ export * from "./modbus";
 export * from "./edge";
 export * from "./device-profiles";
 export * from "./site-templates";
+export * from "./setup";
 
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;
 export type SeverityLevel = (typeof severityLevels)[number];
@@ -492,7 +496,14 @@ export interface Device {
   positionX?: number;
   positionY?: number;
   placementNote?: string;
+  /** Where the box at the site reaches this device on the site's network. Absent until someone
+   * has entered it: a device without a connection is listed but never read. */
+  connection?: ModbusConnection;
 }
+
+/** How recently a box has been heard from, in words that need no explaining. */
+export const gatewayContacts = ["online", "late", "offline", "never"] as const;
+export type GatewayContact = (typeof gatewayContacts)[number];
 
 // One real industrial PC/gateway at a site. Its `id` is what a device's optional `gatewayId`
 // points at; its own credential (never sent back after creation — see EdgeGatewayWithSecret) is
@@ -504,9 +515,23 @@ export interface EdgeGateway {
   siteId: string;
   name: string;
   status: StatusLabel;
+  /** When the box last reported in (its heartbeat). Absent if it never has. */
   lastSeenUtc?: string;
   softwareVersion?: string;
   secureIdentityStatus: "placeholder" | "provisioned" | "revoked";
+  /** When a box used this gateway's enrolment code. Absent while the gateway is waiting for its box. */
+  enrolledAtUtc?: string;
+  /** Computed when listed, from lastSeenUtc: never, online, late or offline. */
+  contact?: GatewayContact;
+  /** The version of the device configuration the box said it is running. */
+  configVersion?: string;
+  /** Readings waiting on the box because the platform could not be reached. */
+  bufferDepth?: number;
+  oldestBufferedAgeSeconds?: number;
+  /** The box's clock minus the platform's, as of its last heartbeat. */
+  clockSkewSeconds?: number;
+  /** How each device answered the box's last round of reading. */
+  drivers?: DriverDeviceStatus[];
 }
 
 export const pointCapabilities = ["read", "write", "read_write"] as const;
@@ -525,6 +550,8 @@ export interface Point {
   capability: PointCapability;
   thresholdConfig?: Record<string, number>;
   metadata?: Record<string, string | number | boolean>;
+  /** Which register the box reads this from and how it becomes a number. Absent until mapped. */
+  source?: PointSource;
 }
 
 export interface TelemetryReading {

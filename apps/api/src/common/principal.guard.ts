@@ -47,9 +47,9 @@ export class PrincipalGuard implements CanActivate {
 
     // No session token. A real edge device (an industrial PC at a farm site, reachable over the
     // open internet — docs/14-edge-hardware-deployment.md) authenticates with a device secret
-    // instead of a login, scoped to exactly this one route: the "simple lock" chosen over a
-    // private tunnel for the first real pilot.
-    if (isEdgeIngestRequest(request)) {
+    // instead of a login, scoped to the few routes a box needs (EDGE_ROUTES below): the "simple
+    // lock" chosen over a private tunnel for the first real pilot.
+    if (isEdgeRequest(request)) {
       const deviceToken = headerValue(request.headers[EDGE_DEVICE_TOKEN_HEADER]);
       if (deviceToken) {
         // The real path: a per-gateway secret generated through the "Add gateway" form on a
@@ -68,7 +68,9 @@ export class PrincipalGuard implements CanActivate {
         // set together; either one missing disables this fallback entirely.
         const expectedToken = process.env.EDGE_INGEST_TOKEN;
         const expectedTenantId = process.env.EDGE_INGEST_TENANT_ID;
-        if (expectedToken && expectedTenantId && deviceToken === expectedToken) {
+        // It names no gateway, so it can send readings and nothing else: a box asking for its
+        // configuration or reporting its health must have a credential of its own.
+        if (expectedToken && expectedTenantId && deviceToken === expectedToken && isEdgeIngestRequest(request)) {
           request.principal = edgeDeviceIngestPrincipal(expectedTenantId);
           return true;
         }
@@ -104,11 +106,11 @@ export class PrincipalGuard implements CanActivate {
   private async principalForGatewaySecret(secret: string) {
     if (!this.db.isConfigured()) return undefined;
 
-    const result = await this.db.query<{ tenant_id: string }>("SELECT tenant_id FROM edge_gateways WHERE secret_hash = $1", [
+    const result = await this.db.query<{ id: string; tenant_id: string }>("SELECT id, tenant_id FROM edge_gateways WHERE secret_hash = $1", [
       hashGatewaySecret(secret)
     ]);
     const row = result.rows[0];
-    return row ? edgeDeviceIngestPrincipal(row.tenant_id) : undefined;
+    return row ? edgeDeviceIngestPrincipal(row.tenant_id, row.id) : undefined;
   }
 }
 
@@ -125,11 +127,32 @@ function isEdgeIngestRequest(request: RequestWithPrincipal): boolean {
   return request.method === "POST" && request.path === "/telemetry/ingest";
 }
 
+/** What a box may call with its own credential: send readings, ask what to read, say how it is, and
+ * fetch its own software. Nothing that reads or changes a customer's data. */
+const EDGE_ROUTES: ReadonlyArray<{ method: string; path: string }> = [
+  { method: "POST", path: "/telemetry/ingest" },
+  { method: "GET", path: "/edge/config" },
+  { method: "POST", path: "/edge/heartbeat" },
+  { method: "GET", path: "/edge/bundle" },
+  { method: "GET", path: "/edge/bundle.json" }
+];
+
+function isEdgeRequest(request: RequestWithPrincipal): boolean {
+  return EDGE_ROUTES.some((route) => route.method === request.method && route.path === request.path);
+}
+
 const PUBLIC_ROUTES: ReadonlyArray<{ method: string; path: string }> = [
   { method: "POST", path: "/auth/login" },
   { method: "GET", path: "/health" },
   // The "Request access" form: someone who is not a user yet asking Greecon to set them up.
-  { method: "POST", path: "/public/access-requests" }
+  { method: "POST", path: "/public/access-requests" },
+  // A freshly installed box has no credential yet: it presents a one-time enrolment code and gets one.
+  { method: "POST", path: "/edge/enrol" },
+  { method: "GET", path: "/edge/install.sh" },
+  // The software itself is fetched with a credential (a box updating) or an unused enrolment code
+  // (a box being installed); the route checks which. The guard only lets the request reach it.
+  { method: "GET", path: "/edge/bundle" },
+  { method: "GET", path: "/edge/bundle.json" }
 ];
 
 function isPublicRoute(request: RequestWithPrincipal): boolean {

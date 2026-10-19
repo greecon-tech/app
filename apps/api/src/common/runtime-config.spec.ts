@@ -46,7 +46,7 @@ describe("trustedProxyHops", () => {
 
 describe("checkRuntimeConfig", () => {
   const strong = "x".repeat(40);
-  const production = { NODE_ENV: "production", DATABASE_URL: "postgres://db", JWT_SECRET: strong, TRUST_PROXY: "1" };
+  const production = { NODE_ENV: "production", DATABASE_URL: "postgres://db", JWT_SECRET: strong, TRUST_PROXY: "1", PUBLIC_API_URL: "https://api.greecon.earth" };
 
   it("accepts a properly configured production deployment", () => {
     expect(checkRuntimeConfig(production)).toEqual({ errors: [], warnings: [] });
@@ -85,5 +85,19 @@ describe("checkRuntimeConfig", () => {
     expect(report.warnings.join("\n")).toMatch(/BOOTSTRAP_ADMIN/);
     expect(report.warnings.join("\n")).toMatch(/EDGE_INGEST_TOKEN/);
     expect(report.warnings.join("\n")).toMatch(/TRUST_PROXY/);
+  });
+
+  it("warns, without stopping, when a box would be told an address it cannot reach", () => {
+    const missing = checkRuntimeConfig({ ...production, PUBLIC_API_URL: undefined });
+    expect(missing.errors).toEqual([]);
+    expect(missing.warnings.join("\n")).toMatch(/PUBLIC_API_URL is not set/);
+
+    expect(checkRuntimeConfig({ ...production, PUBLIC_API_URL: "api.greecon.earth" }).warnings.join("\n")).toMatch(/PUBLIC_API_URL is not set \(or is not an address\)/);
+    expect(checkRuntimeConfig({ ...production, PUBLIC_API_URL: "http://api.greecon.earth" }).warnings.join("\n")).toMatch(/not https/);
+  });
+
+  it("does not mind the public address outside production or without a database", () => {
+    expect(checkRuntimeConfig({ DATABASE_URL: "postgres://db", JWT_SECRET: strong }).warnings).toEqual([]);
+    expect(checkRuntimeConfig({ NODE_ENV: "production" }).warnings).toEqual([]);
   });
 });

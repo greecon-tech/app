@@ -21,6 +21,8 @@ export interface Principal {
   // Never true from principalFromHeaders(): the header fallback (static export/local dev) must
   // never grant cross-tenant access.
   isPlatformAdmin: boolean;
+  /** Set when the caller is a box at a site, not a person: the gateway whose credential it presented. */
+  gatewayId?: string;
 }
 
 export interface JwtClaims {
@@ -82,13 +84,14 @@ export function principalFromHeaders(headers: Record<string, string | string[] |
  * (the token isn't per-gateway yet — see docs/15-master-roadmap.md, Phase 2, "Real device identity
  * for machine traffic") and to "operator"'s permissions, which is more than telemetry:ingest alone
  * needs; the route match in PrincipalGuard is what actually keeps this narrow, not the role. */
-export function edgeDeviceIngestPrincipal(tenantId: string): Principal {
+export function edgeDeviceIngestPrincipal(tenantId: string, gatewayId?: string): Principal {
   return {
     tenantId,
     userId: "edge-device",
     role: "operator",
     email: "edge-device@greecon.earth",
-    isPlatformAdmin: false
+    isPlatformAdmin: false,
+    ...(gatewayId ? { gatewayId } : {})
   };
 }
 

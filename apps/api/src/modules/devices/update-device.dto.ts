@@ -1,5 +1,5 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
-import { deviceProtocols, statusLabels } from "@greecon/shared";
+import { IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, Max, Min } from "class-validator";
+import { ModbusConnection, deviceProtocols, statusLabels } from "@greecon/shared";
 
 export class UpdateDeviceDto {
   @IsOptional()
@@ -48,4 +48,9 @@ export class UpdateDeviceDto {
   @IsOptional()
   @IsString()
   placementNote?: string;
+
+  // null takes the address away; left out, it is left as it is.
+  @IsOptional()
+  @IsObject()
+  connection?: ModbusConnection | null;
 }

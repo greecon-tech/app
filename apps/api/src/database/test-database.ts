@@ -12,10 +12,13 @@ export async function withEmptyDatabase<T>(use: (pool: Pool, connectionString: s
   if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is not set.");
   const name = `greecon_t_${randomBytes(6).toString("hex")}`;
   const admin = new Pool({ connectionString: testDatabaseUrl });
+  admin.on("error", () => undefined);
   await admin.query(`CREATE DATABASE ${name}`);
   const target = new URL(testDatabaseUrl);
   target.pathname = `/${name}`;
   const pool = new Pool({ connectionString: target.toString() });
+  // Dropping the database with FORCE can reach a connection that is still closing; that is expected here.
+  pool.on("error", () => undefined);
   try {
     return await use(pool, target.toString());
   } finally {

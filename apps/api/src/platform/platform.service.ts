@@ -20,11 +20,15 @@ import {
   DEMO_TENANT_ID,
   DerivedState,
   Device,
+  DriverDeviceStatus,
   EdgeGateway,
   EdgeSyncMessage,
   EnergyFlowView,
   FlowReading,
+  GatewayHeartbeat,
+  ModbusConnection,
   Point,
+  PointSource,
   QualityFlag,
   RuleAction,
   RuleCondition,
@@ -41,8 +45,13 @@ import {
   User,
   UserRole,
   deriveEnergyFlow,
+  describeConnection,
+  describeSource,
+  gatewayContact,
   hasPermission,
+  validateConnection,
   validatePointLimits,
+  validatePointSource,
   validateTelemetryMessage
 } from "@greecon/shared";
 import {
@@ -70,6 +79,8 @@ import {
 import { Principal } from "../common/principal";
 import { generateGatewaySecret, hashGatewaySecret } from "../common/gateway-secret";
 import { DatabaseService } from "../database/database.service";
+import { buildEdgeConfig } from "../setup/edge-config";
+import type { Confirmation } from "../setup/setup-checklist";
 
 /** A latest reading as the Overview presents it: the value, where it came from, and how old it is. */
 export interface OverviewReading {
@@ -191,6 +202,8 @@ export interface CreateDeviceInput {
   positionX?: number;
   positionY?: number;
   placementNote?: string;
+  /** Where the box reaches the device on the site's network. Modbus devices only. */
+  connection?: ModbusConnection;
 }
 
 export interface CreateGatewayInput {
@@ -198,7 +211,8 @@ export interface CreateGatewayInput {
   name: string;
 }
 
-export type UpdateDeviceInput = Partial<Omit<CreateDeviceInput, "siteId">> & { health?: Device["health"] };
+/** `connection: null` takes the address away again. */
+export type UpdateDeviceInput = Partial<Omit<CreateDeviceInput, "siteId" | "connection">> & { health?: Device["health"]; connection?: ModbusConnection | null };
 
 export interface CreatePointInput {
   siteId: string;
@@ -209,9 +223,21 @@ export interface CreatePointInput {
   unit: string;
   capability: Point["capability"];
   thresholdConfig?: Record<string, number>;
+  /** Which register the box reads this from. Readings of Modbus devices only. */
+  source?: PointSource;
 }
 
-export type UpdatePointInput = Partial<Omit<CreatePointInput, "siteId" | "deviceId" | "canonicalName">> & { quality?: Point["quality"] };
+/** `source: null` takes the register mapping away again. */
+export type UpdatePointInput = Partial<Omit<CreatePointInput, "siteId" | "deviceId" | "canonicalName" | "source">> & { quality?: Point["quality"]; source?: PointSource | null };
+
+/** What was said and confirmed by hand while setting a site up (docs/27-setup-guide.md): the template
+ * it was made from, and the steps a person checked, with who and when. */
+export interface SiteSetupRecord {
+  siteId: string;
+  tenantId: string;
+  templateKey?: string;
+  confirmations: Record<string, Confirmation>;
+}
 
 export interface CreateMaintenanceTaskInput {
   siteId: string;
@@ -351,6 +377,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   private healthMonitor?: ReturnType<typeof setInterval>;
   private ledgerTimer?: ReturnType<typeof setInterval>;
   private siteProfiles: SiteProfile[] = [];
+  private siteSetup: SiteSetupRecord[] = [];
 
   constructor(
     private readonly db: DatabaseService,
@@ -456,9 +483,14 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     // beyond the moment it's written at creation, and PrincipalGuard queries it directly from
     // Postgres per request rather than through this in-memory list.
     const gatewayRows = await this.db.query<EdgeGatewayRow>(
-      "SELECT id, tenant_id, site_id, name, status, last_seen_utc, software_version, secure_identity_status FROM edge_gateways ORDER BY created_at ASC"
+      `SELECT id, tenant_id, site_id, name, status, last_seen_utc, software_version, secure_identity_status,
+              enrolled_at, config_version, buffer_depth, oldest_buffered_age_seconds, clock_skew_seconds, driver_status
+       FROM edge_gateways ORDER BY created_at ASC`
     );
     if (gatewayRows.rows.length > 0) this.gateways = gatewayRows.rows.map((row) => mapGatewayRow(row));
+
+    const setupRows = await this.db.query<SiteSetupRow>("SELECT site_id, tenant_id, template_key, confirmations FROM site_setup");
+    this.siteSetup = setupRows.rows.map((row) => mapSiteSetupRow(row));
 
     const rows = await this.db.query<RuleRow>("SELECT * FROM rules ORDER BY created_at ASC");
     if (rows.rows.length > 0) this.rules = rows.rows.map((row) => mapRuleRow(row));
@@ -1220,7 +1252,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       assets: this.assets.filter((asset) => asset.tenantId === principal.tenantId && asset.siteId === siteId),
       devices: this.listDevices(principal, siteId, nowMs),
       points: this.points.filter((point) => point.tenantId === principal.tenantId && point.siteId === siteId),
-      gateways: this.gateways.filter((gateway) => gateway.tenantId === principal.tenantId && gateway.siteId === siteId),
+      gateways: this.gateways.filter((gateway) => gateway.tenantId === principal.tenantId && gateway.siteId === siteId).map((gateway) => this.assessGateway(gateway, nowMs)),
       latestTelemetry: this.latestTelemetry(principal, siteId, nowMs),
       energyFlow: this.energyFlowOf(principal.tenantId, siteId, nowMs),
       derivedStates: this.listDerivedStates(principal, siteId),
@@ -1361,6 +1393,60 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return summary;
   }
 
+  /** What was confirmed by hand while this site was being set up, and the template it was made from.
+   * A site nobody has touched has an empty record, which is the truth. */
+  siteSetupRecord(siteId: string, principal: Principal): SiteSetupRecord {
+    const site = this.requireSite(siteId, principal.tenantId);
+    const record = this.siteSetup.find((candidate) => candidate.siteId === site.id);
+    return record ? { ...record, confirmations: { ...record.confirmations } } : { siteId: site.id, tenantId: site.tenantId, confirmations: {} };
+  }
+
+  /** Remembers which template a site was made from. Called by the setup service, which has checked
+   * the caller may manage sites. */
+  async recordSiteTemplate(siteId: string, templateKey: string, principal: Principal): Promise<void> {
+    const record = this.siteSetupRecord(siteId, principal);
+    await this.saveSiteSetup({ ...record, templateKey });
+  }
+
+  /** A person says they checked something the platform cannot see, or takes it back. Both are recorded
+   * in the audit trail with who and when, because "someone checked the clamps" is only worth
+   * something if it can be said who. */
+  async setSetupConfirmation(siteId: string, key: string, confirmation: Confirmation | null, principal: Principal): Promise<SiteSetupRecord> {
+    if (!hasPermission(principal.role, "site:manage")) {
+      throw new ForbiddenException("Action blocked by access policy.");
+    }
+    const site = this.requireSite(siteId, principal.tenantId);
+    const record = this.siteSetupRecord(siteId, principal);
+    const confirmations = { ...record.confirmations };
+    if (confirmation) confirmations[key] = confirmation;
+    else delete confirmations[key];
+
+    const saved = { ...record, confirmations };
+    await this.saveSiteSetup(saved);
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: confirmation ? "setup.step_confirmed" : "setup.step_reopened",
+      siteId: site.id,
+      entityType: "site_setup",
+      entityId: site.id,
+      afterMetadata: { step: key, ...(confirmation?.note ? { note: confirmation.note } : {}) },
+      reason: confirmation ? `Setup step "${key}" confirmed for "${site.name}".` : `Setup step "${key}" reopened for "${site.name}".`
+    });
+    return saved;
+  }
+
+  private async saveSiteSetup(record: SiteSetupRecord): Promise<void> {
+    if (this.db.isConfigured()) {
+      await this.db.query(
+        `INSERT INTO site_setup (site_id, tenant_id, template_key, confirmations, updated_at) VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (site_id) DO UPDATE SET template_key=EXCLUDED.template_key, confirmations=EXCLUDED.confirmations, updated_at=now()`,
+        [record.siteId, record.tenantId, record.templateKey ?? null, JSON.stringify(record.confirmations)]
+      );
+    }
+    this.siteSetup = [...this.siteSetup.filter((candidate) => candidate.siteId !== record.siteId), record];
+  }
+
   listAssets(principal: Principal, siteId?: string): Asset[] {
     return this.scope(this.assets, principal.tenantId).filter((asset) => !siteId || asset.siteId === siteId);
   }
@@ -1377,8 +1463,26 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.scope(this.points, principal.tenantId).filter((point) => !deviceId || point.deviceId === deviceId);
   }
 
-  listGateways(principal: Principal, siteId?: string): EdgeGateway[] {
-    return this.scope(this.gateways, principal.tenantId).filter((gateway) => !siteId || gateway.siteId === siteId);
+  /** Boxes with how recently each was heard from, worked out now from its last heartbeat. */
+  listGateways(principal: Principal, siteId?: string, nowMs: number = Date.now()): EdgeGateway[] {
+    return this.scope(this.gateways, principal.tenantId)
+      .filter((gateway) => !siteId || gateway.siteId === siteId)
+      .map((gateway) => this.assessGateway(gateway, nowMs));
+  }
+
+  /** The stored status of a box is not trusted: it says what the box was when it was set up. What is
+   * shown follows from when it last reported. */
+  private assessGateway(stored: EdgeGateway, nowMs: number): EdgeGateway {
+    const contact = gatewayContact(stored.lastSeenUtc, nowMs);
+    const status: EdgeGateway["status"] = contact === "online" ? "OK" : contact === "late" ? "Watch" : contact === "offline" ? "Offline" : "Unknown";
+    return { ...stored, contact, status };
+  }
+
+  /** One box of this account, or undefined. For the setup and edge services, which are told the
+   * gateway by its credential and must not be able to name another account's. */
+  findGateway(gatewayId: string, tenantId: string, nowMs: number = Date.now()): EdgeGateway | undefined {
+    const gateway = this.gateways.find((candidate) => candidate.id === gatewayId && candidate.tenantId === tenantId);
+    return gateway ? this.assessGateway(gateway, nowMs) : undefined;
   }
 
   // The one credential a real edge box needs to send telemetry — generated here and returned
@@ -1412,6 +1516,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
 
     this.gateways.push(gateway);
+    const adopted = await this.adoptSiteDevices(gateway);
     await this.recordAudit({
       tenantId: principal.tenantId,
       userId: principal.userId,
@@ -1419,11 +1524,150 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteId: gateway.siteId,
       entityType: "gateway",
       entityId: gateway.id,
-      afterMetadata: { name: gateway.name },
+      afterMetadata: { name: gateway.name, devicesAssigned: adopted },
       reason: `Gateway "${gateway.name}" created.`
     });
 
     return { gateway, secret };
+  }
+
+  /** A gateway with no credential yet. The box it is for gets one by presenting an enrolment code
+   * (SetupService.enrol), so the credential is never typed, shown or copied by anyone. */
+  async provisionGateway(input: CreateGatewayInput, principal: Principal): Promise<EdgeGateway> {
+    if (!hasPermission(principal.role, "device:manage")) {
+      throw new ForbiddenException("Action blocked by access policy.");
+    }
+    this.requireSite(input.siteId, principal.tenantId);
+
+    const gateway: EdgeGateway = {
+      id: randomUUID(),
+      tenantId: principal.tenantId,
+      siteId: input.siteId,
+      name: input.name,
+      status: "Unknown",
+      secureIdentityStatus: "placeholder"
+    };
+
+    if (this.db.isConfigured()) {
+      await this.db.query(`INSERT INTO edge_gateways (id, tenant_id, site_id, name, status, secure_identity_status) VALUES ($1,$2,$3,$4,$5,$6)`, [
+        gateway.id,
+        gateway.tenantId,
+        gateway.siteId,
+        gateway.name,
+        gateway.status,
+        gateway.secureIdentityStatus
+      ]);
+    }
+
+    this.gateways.push(gateway);
+    const adopted = await this.adoptSiteDevices(gateway);
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: "gateway.created",
+      siteId: gateway.siteId,
+      entityType: "gateway",
+      entityId: gateway.id,
+      afterMetadata: { name: gateway.name, devicesAssigned: adopted },
+      reason: `Gateway "${gateway.name}" added, waiting for its box.`
+    });
+    return gateway;
+  }
+
+  /** The devices of a site that nobody has assigned to a box go to its box, when the site has exactly
+   * one: the usual case, and the one where asking would be asking the obvious. With two boxes it is
+   * ambiguous and left to the person. Returns how many were assigned. */
+  private async adoptSiteDevices(gateway: EdgeGateway): Promise<number> {
+    const boxes = this.gateways.filter((candidate) => candidate.tenantId === gateway.tenantId && candidate.siteId === gateway.siteId);
+    if (boxes.length !== 1) return 0;
+
+    const unassigned = this.devices.filter((device) => device.tenantId === gateway.tenantId && device.siteId === gateway.siteId && !device.gatewayId && device.protocol === "modbus");
+    for (const device of unassigned) {
+      if (this.db.isConfigured()) {
+        await this.db.query(`UPDATE devices SET gateway_id=$1, updated_at=now() WHERE id=$2 AND tenant_id=$3`, [gateway.id, device.id, device.tenantId]);
+      }
+      device.gatewayId = gateway.id;
+    }
+    return unassigned.length;
+  }
+
+  /** Gives the box that presented a valid enrolment code its credential, once. A box installed again
+   * (a replacement, a fresh disk) enrols the same way and the old credential stops working at that
+   * moment; what the old box last said about itself is cleared, so the new one is judged on its own. */
+  async completeGatewayEnrolment(gatewayId: string, tenantId: string, issuedBy: string | undefined, nowMs: number = Date.now()): Promise<{ gateway: EdgeGateway; secret: string }> {
+    const gateway = this.requireGateway(gatewayId, tenantId);
+    const secret = generateGatewaySecret();
+    const enrolledAtUtc = new Date(nowMs).toISOString();
+
+    if (this.db.isConfigured()) {
+      await this.db.query(
+        `UPDATE edge_gateways SET secret_hash=$1, secure_identity_status='provisioned', enrolled_at=$2, last_seen_utc=NULL, software_version=NULL,
+           config_version=NULL, buffer_depth=NULL, oldest_buffered_age_seconds=NULL, clock_skew_seconds=NULL, driver_status=NULL, updated_at=now()
+         WHERE id=$3 AND tenant_id=$4`,
+        [hashGatewaySecret(secret), enrolledAtUtc, gateway.id, tenantId]
+      );
+    }
+
+    gateway.secureIdentityStatus = "provisioned";
+    gateway.enrolledAtUtc = enrolledAtUtc;
+    for (const key of ["lastSeenUtc", "softwareVersion", "configVersion", "bufferDepth", "oldestBufferedAgeSeconds", "clockSkewSeconds", "drivers"] as const) delete gateway[key];
+
+    await this.recordAudit({
+      tenantId,
+      // The box has no account. The person who made the code is the one answerable for it.
+      userId: issuedBy ?? "system",
+      eventType: "gateway.enrolled",
+      siteId: gateway.siteId,
+      entityType: "gateway",
+      entityId: gateway.id,
+      afterMetadata: { name: gateway.name },
+      reason: `A box enrolled as gateway "${gateway.name}".`
+    });
+    return { gateway: this.assessGateway(gateway, nowMs), secret };
+  }
+
+  /** What a box says about itself, kept so that the people setting a site up and the people running
+   * it can see whether it is alive, what it is running, how far behind it is and what its devices say. */
+  async recordGatewayHeartbeat(gatewayId: string, tenantId: string, heartbeat: GatewayHeartbeat, nowMs: number = Date.now()): Promise<EdgeGateway> {
+    const gateway = this.requireGateway(gatewayId, tenantId);
+    // Only devices that belong to this box are kept: a box cannot write about anything else.
+    const known = new Set(this.devices.filter((device) => device.tenantId === tenantId && device.gatewayId === gateway.id).map((device) => device.id));
+    const drivers: DriverDeviceStatus[] = heartbeat.devices.filter((device) => known.has(device.deviceId));
+    const skew = Math.round((Date.parse(heartbeat.sentAtUtc) - nowMs) / 1000);
+
+    gateway.lastSeenUtc = new Date(nowMs).toISOString();
+    gateway.softwareVersion = heartbeat.agentVersion;
+    gateway.configVersion = heartbeat.configVersion;
+    gateway.bufferDepth = Math.round(heartbeat.bufferDepth);
+    gateway.oldestBufferedAgeSeconds = heartbeat.oldestBufferedAgeSeconds === undefined ? undefined : Math.round(heartbeat.oldestBufferedAgeSeconds);
+    gateway.clockSkewSeconds = skew;
+    gateway.drivers = drivers;
+
+    if (this.db.isConfigured()) {
+      await this.db.query(
+        `UPDATE edge_gateways SET last_seen_utc=$1, software_version=$2, config_version=$3, buffer_depth=$4, oldest_buffered_age_seconds=$5,
+           clock_skew_seconds=$6, driver_status=$7, updated_at=now()
+         WHERE id=$8 AND tenant_id=$9`,
+        [
+          gateway.lastSeenUtc,
+          gateway.softwareVersion,
+          gateway.configVersion ?? null,
+          gateway.bufferDepth,
+          gateway.oldestBufferedAgeSeconds ?? null,
+          gateway.clockSkewSeconds,
+          JSON.stringify(drivers),
+          gateway.id,
+          tenantId
+        ]
+      );
+    }
+    return this.assessGateway(gateway, nowMs);
+  }
+
+  /** What one box is told to read. The version changes exactly when what it reads changes. */
+  edgeConfigFor(gatewayId: string, tenantId: string, pollIntervalMs?: number) {
+    const gateway = this.requireGateway(gatewayId, tenantId);
+    return buildEdgeConfig(gateway, this.devices, this.points, pollIntervalMs);
   }
 
   // Safe to delete freely, unlike a site or device with things registered under it — a device's
@@ -1580,6 +1824,11 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     this.sites = this.sites.filter((candidate) => candidate.id !== site.id);
     this.siteProfiles = this.siteProfiles.filter((profile) => profile.siteId !== site.id);
+    // The database removes these with the site; the working copy has to as well, or they would linger
+    // in the lists until the next restart.
+    this.siteSetup = this.siteSetup.filter((record) => record.siteId !== site.id);
+    this.assets = this.assets.filter((asset) => asset.siteId !== site.id);
+    this.gateways = this.gateways.filter((gateway) => gateway.siteId !== site.id);
 
     return { deleted: true };
   }
@@ -1698,13 +1947,19 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
     this.requireSite(input.siteId, principal.tenantId);
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
+    if (input.connection !== undefined) this.assertValidConnection(input.connection, input.protocol);
+    // A named box must be this account's, at this site. Left unnamed, a Modbus device goes to the
+    // site's box when it has exactly one: that is the only box it could mean.
+    if (input.gatewayId) this.assertGatewayAtSite(input.gatewayId, input.siteId, principal.tenantId);
+    const siteBoxes = this.gateways.filter((gateway) => gateway.tenantId === principal.tenantId && gateway.siteId === input.siteId);
+    const gatewayId = input.gatewayId ?? (input.protocol === "modbus" && siteBoxes.length === 1 ? siteBoxes[0]?.id : undefined);
 
     const device: Device = {
       id: randomUUID(),
       tenantId: principal.tenantId,
       siteId: input.siteId,
       assetId: input.assetId,
-      gatewayId: input.gatewayId,
+      gatewayId,
       name: input.name,
       deviceType: input.deviceType,
       protocol: input.protocol,
@@ -1714,13 +1969,14 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       secureIdentityStatus: "placeholder",
       positionX: input.positionX,
       positionY: input.positionY,
-      placementNote: input.placementNote
+      placementNote: input.placementNote,
+      ...(input.connection ? { connection: tidyConnection(input.connection) } : {})
     };
 
     if (this.db.isConfigured()) {
       await this.db.query(
-        `INSERT INTO devices (id, tenant_id, site_id, asset_id, gateway_id, name, device_type, protocol, driver_type, health, last_seen_utc, secure_identity_status, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        `INSERT INTO devices (id, tenant_id, site_id, asset_id, gateway_id, name, device_type, protocol, driver_type, health, last_seen_utc, secure_identity_status, metadata, connection)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           device.id,
           device.tenantId,
@@ -1734,7 +1990,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
           device.health,
           device.lastSeenUtc,
           device.secureIdentityStatus,
-          JSON.stringify(devicePlacementMetadata(device))
+          JSON.stringify(devicePlacementMetadata(device)),
+          device.connection ? JSON.stringify(device.connection) : null
         ]
       );
     }
@@ -1747,11 +2004,24 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteId: device.siteId,
       entityType: "device",
       entityId: device.id,
-      afterMetadata: { name: device.name, deviceType: device.deviceType, protocol: device.protocol },
+      afterMetadata: { name: device.name, deviceType: device.deviceType, protocol: device.protocol, ...(device.connection ? { address: describeConnection(device.connection) } : {}) },
       reason: `Device "${device.name}" created.`
     });
 
     return device;
+  }
+
+  /** What is wrong with a device's address is said in words: it is typed by a person at a site. */
+  private assertValidConnection(connection: unknown, protocol: Device["protocol"]): void {
+    if (protocol !== "modbus") throw new BadRequestException("Only a Modbus device has a network address.");
+    // An address pasted from a message or a datasheet often has a space at one end; that is not a mistake worth refusing.
+    const problems = validateConnection(trimmedHost(connection));
+    if (problems.length > 0) throw new BadRequestException(problems.join(" "));
+  }
+
+  private assertGatewayAtSite(gatewayId: string, siteId: string, tenantId: string): void {
+    const gateway = this.requireGateway(gatewayId, tenantId);
+    if (gateway.siteId !== siteId) throw new BadRequestException("That box belongs to a different site.");
   }
 
   async updateDevice(deviceId: string, input: UpdateDeviceInput, principal: Principal): Promise<Device> {
@@ -1761,14 +2031,24 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
 
     const device = this.requireDevice(deviceId, principal.tenantId);
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
+    if (input.gatewayId) this.assertGatewayAtSite(input.gatewayId, device.siteId, principal.tenantId);
+    const { connection, ...rest } = input;
+    const nextProtocol = rest.protocol ?? device.protocol;
+    const nextConnection = connection === null ? undefined : connection ?? device.connection;
+    if (connection) this.assertValidConnection(connection, nextProtocol);
+    if (nextProtocol !== "modbus" && nextConnection) throw new BadRequestException("Only a Modbus device has a network address. Remove the address first.");
+
     const before = { ...device };
-    const patch = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+    const patch = Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined));
     Object.assign(device, patch);
+    if (connection === null) delete device.connection;
+    else if (connection) device.connection = tidyConnection(connection);
+    const addressChanged = JSON.stringify(before.connection ?? null) !== JSON.stringify(device.connection ?? null);
 
     if (this.db.isConfigured()) {
       await this.db.query(
-        `UPDATE devices SET asset_id=$1, gateway_id=$2, name=$3, device_type=$4, protocol=$5, driver_type=$6, health=$7, metadata=$8, updated_at=now()
-         WHERE id=$9 AND tenant_id=$10`,
+        `UPDATE devices SET asset_id=$1, gateway_id=$2, name=$3, device_type=$4, protocol=$5, driver_type=$6, health=$7, metadata=$8, connection=$9, updated_at=now()
+         WHERE id=$10 AND tenant_id=$11`,
         [
           device.assetId ?? null,
           device.gatewayId ?? null,
@@ -1778,6 +2058,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
           device.driverType,
           device.health,
           JSON.stringify(devicePlacementMetadata(device)),
+          device.connection ? JSON.stringify(device.connection) : null,
           device.id,
           principal.tenantId
         ]
@@ -1791,9 +2072,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteId: device.siteId,
       entityType: "device",
       entityId: device.id,
-      beforeMetadata: { name: before.name, health: before.health },
-      afterMetadata: { name: device.name, health: device.health },
-      reason: `Device "${device.name}" updated.`
+      // The address decides what the box reads, so a change of it is recorded as old and new.
+      beforeMetadata: { name: before.name, health: before.health, ...(addressChanged ? { address: before.connection ? describeConnection(before.connection) : null } : {}) },
+      afterMetadata: { name: device.name, health: device.health, ...(addressChanged ? { address: device.connection ? describeConnection(device.connection) : null } : {}) },
+      reason: addressChanged ? `Address of device "${device.name}" changed.` : `Device "${device.name}" updated.`
     });
 
     return device;
@@ -1840,6 +2122,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
     this.assertValidLimits(input.canonicalName, input.thresholdConfig);
+    if (input.source !== undefined) this.assertValidSource(input.source, device, input.capability);
 
     const point: Point = {
       id: randomUUID(),
@@ -1852,13 +2135,14 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       unit: input.unit,
       quality: "OK",
       capability: input.capability,
-      thresholdConfig: input.thresholdConfig
+      thresholdConfig: input.thresholdConfig,
+      ...(input.source ? { source: tidySource(input.source) } : {})
     };
 
     if (this.db.isConfigured()) {
       await this.db.query(
-        `INSERT INTO points (id, tenant_id, site_id, asset_id, device_id, canonical_name, label, unit, quality, capability, threshold_config)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        `INSERT INTO points (id, tenant_id, site_id, asset_id, device_id, canonical_name, label, unit, quality, capability, threshold_config, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           point.id,
           point.tenantId,
@@ -1870,7 +2154,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
           point.unit,
           point.quality,
           point.capability,
-          JSON.stringify(point.thresholdConfig ?? {})
+          JSON.stringify(point.thresholdConfig ?? {}),
+          point.source ? JSON.stringify(point.source) : null
         ]
       );
     }
@@ -1883,11 +2168,19 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteId: point.siteId,
       entityType: "point",
       entityId: point.id,
-      afterMetadata: { canonicalName: point.canonicalName, capability: point.capability },
+      afterMetadata: { canonicalName: point.canonicalName, capability: point.capability, ...(point.source ? { register: describeSource(point.source) } : {}) },
       reason: `Point "${point.label}" created on device ${device.name}.`
     });
 
     return point;
+  }
+
+  /** A register description is typed by a person from a datasheet, so what is wrong with it is said in words. */
+  private assertValidSource(source: unknown, device: Device, capability: Point["capability"]): void {
+    if (device.protocol !== "modbus") throw new BadRequestException("Only a reading of a Modbus device has a register.");
+    if (capability === "write") throw new BadRequestException("A command is written to equipment, not read from a register.");
+    const problems = validatePointSource(source);
+    if (problems.length > 0) throw new BadRequestException(problems.join(" "));
   }
 
   async updatePoint(pointId: string, input: UpdatePointInput, principal: Principal): Promise<Point> {
@@ -1898,18 +2191,28 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const point = this.requirePoint(pointId, principal.tenantId);
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
     if (input.thresholdConfig !== undefined) this.assertValidLimits(point.canonicalName, input.thresholdConfig);
+    const { source, ...rest } = input;
+    const nextCapability = rest.capability ?? point.capability;
+    const nextSource = source === null ? undefined : source ?? point.source;
+    if (source) this.assertValidSource(source, this.requireDevice(point.deviceId, principal.tenantId), nextCapability);
+    if (nextCapability === "write" && nextSource) throw new BadRequestException("A command is written to equipment, not read from a register. Remove the register first.");
+
     const before = { ...point };
-    const patch = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+    const patch = Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined));
     Object.assign(point, patch);
+    if (source === null) delete point.source;
+    else if (source) point.source = tidySource(source);
     const limitsChanged = JSON.stringify(before.thresholdConfig ?? {}) !== JSON.stringify(point.thresholdConfig ?? {});
+    const registerChanged = JSON.stringify(before.source ?? null) !== JSON.stringify(point.source ?? null);
 
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE points SET label=$1, unit=$2, capability=$3, quality=$4, threshold_config=$5, updated_at=now() WHERE id=$6 AND tenant_id=$7`, [
+      await this.db.query(`UPDATE points SET label=$1, unit=$2, capability=$3, quality=$4, threshold_config=$5, source=$6, updated_at=now() WHERE id=$7 AND tenant_id=$8`, [
         point.label,
         point.unit,
         point.capability,
         point.quality,
         JSON.stringify(point.thresholdConfig ?? {}),
+        point.source ? JSON.stringify(point.source) : null,
         point.id,
         principal.tenantId
       ]);
@@ -1924,9 +2227,19 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       entityId: point.id,
       // A change of limits is what decides when people are alerted, so it is recorded with the old
       // and the new values, not just "updated".
-      beforeMetadata: { label: before.label, capability: before.capability, ...(limitsChanged ? { thresholdConfig: before.thresholdConfig ?? {} } : {}) },
-      afterMetadata: { label: point.label, capability: point.capability, ...(limitsChanged ? { thresholdConfig: point.thresholdConfig ?? {} } : {}) },
-      reason: limitsChanged ? `Limits for point "${point.label}" changed.` : `Point "${point.label}" updated.`
+      beforeMetadata: {
+        label: before.label,
+        capability: before.capability,
+        ...(limitsChanged ? { thresholdConfig: before.thresholdConfig ?? {} } : {}),
+        ...(registerChanged ? { register: before.source ? describeSource(before.source) : null } : {})
+      },
+      afterMetadata: {
+        label: point.label,
+        capability: point.capability,
+        ...(limitsChanged ? { thresholdConfig: point.thresholdConfig ?? {} } : {}),
+        ...(registerChanged ? { register: point.source ? describeSource(point.source) : null } : {})
+      },
+      reason: limitsChanged ? `Limits for point "${point.label}" changed.` : registerChanged ? `Register for point "${point.label}" changed.` : `Point "${point.label}" updated.`
     });
 
     // The states and alerts follow the new limits now, not at the next reading.
@@ -3135,7 +3448,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
         [
           auditEvent.id,
           auditEvent.tenantId,
-          auditEvent.userId,
+          // A box, a background job or a user since removed is not a row in users; the event is still
+          // worth keeping, so it is kept without one rather than refused by the foreign key.
+          this.users.some((user) => user.id === auditEvent.userId) ? auditEvent.userId : null,
           auditEvent.eventType,
           auditEvent.siteId ?? null,
           auditEvent.assetId ?? null,
@@ -3265,6 +3580,7 @@ interface DeviceRow {
   firmware_version: string | null;
   secure_identity_status: string;
   metadata: { positionX?: number; positionY?: number; placementNote?: string } | null;
+  connection: ModbusConnection | null;
 }
 
 function mapDeviceRow(row: DeviceRow): Device {
@@ -3279,12 +3595,13 @@ function mapDeviceRow(row: DeviceRow): Device {
     protocol: row.protocol as Device["protocol"],
     driverType: row.driver_type,
     health: row.health as Device["health"],
-    lastSeenUtc: row.last_seen_utc ?? undefined,
+    lastSeenUtc: row.last_seen_utc ? toIso(row.last_seen_utc) : undefined,
     firmwareVersion: row.firmware_version ?? undefined,
     secureIdentityStatus: row.secure_identity_status as Device["secureIdentityStatus"],
     positionX: row.metadata?.positionX,
     positionY: row.metadata?.positionY,
-    placementNote: row.metadata?.placementNote
+    placementNote: row.metadata?.placementNote,
+    ...(row.connection ? { connection: row.connection } : {})
   };
 }
 
@@ -3294,9 +3611,15 @@ interface EdgeGatewayRow {
   site_id: string;
   name: string;
   status: string;
-  last_seen_utc: string | null;
+  last_seen_utc: string | Date | null;
   software_version: string | null;
   secure_identity_status: string;
+  enrolled_at: string | Date | null;
+  config_version: string | null;
+  buffer_depth: number | null;
+  oldest_buffered_age_seconds: number | null;
+  clock_skew_seconds: number | null;
+  driver_status: DriverDeviceStatus[] | null;
 }
 
 function mapGatewayRow(row: EdgeGatewayRow): EdgeGateway {
@@ -3306,10 +3629,52 @@ function mapGatewayRow(row: EdgeGatewayRow): EdgeGateway {
     siteId: row.site_id,
     name: row.name,
     status: row.status as EdgeGateway["status"],
-    lastSeenUtc: row.last_seen_utc ?? undefined,
+    lastSeenUtc: row.last_seen_utc ? toIso(row.last_seen_utc) : undefined,
     softwareVersion: row.software_version ?? undefined,
-    secureIdentityStatus: row.secure_identity_status as EdgeGateway["secureIdentityStatus"]
+    secureIdentityStatus: row.secure_identity_status as EdgeGateway["secureIdentityStatus"],
+    enrolledAtUtc: row.enrolled_at ? toIso(row.enrolled_at) : undefined,
+    configVersion: row.config_version ?? undefined,
+    bufferDepth: row.buffer_depth ?? undefined,
+    oldestBufferedAgeSeconds: row.oldest_buffered_age_seconds ?? undefined,
+    clockSkewSeconds: row.clock_skew_seconds ?? undefined,
+    drivers: row.driver_status ?? undefined
   };
+}
+
+interface SiteSetupRow {
+  site_id: string;
+  tenant_id: string;
+  template_key: string | null;
+  confirmations: Record<string, Confirmation> | null;
+}
+
+function mapSiteSetupRow(row: SiteSetupRow): SiteSetupRecord {
+  return { siteId: row.site_id, tenantId: row.tenant_id, templateKey: row.template_key ?? undefined, confirmations: row.confirmations ?? {} };
+}
+
+/** The same address with the spaces around its host taken off, when it has a host to take them from. */
+function trimmedHost(connection: unknown): unknown {
+  if (typeof connection === "object" && connection !== null && typeof (connection as { host?: unknown }).host === "string") {
+    return { ...(connection as Record<string, unknown>), host: ((connection as { host: string }).host).trim() };
+  }
+  return connection;
+}
+
+/** An address as it is kept: only the fields that mean something, with the host trimmed. */
+function tidyConnection(connection: ModbusConnection): ModbusConnection {
+  return { kind: "modbus_tcp", host: connection.host.trim(), port: connection.port, unitId: connection.unitId };
+}
+
+/** A register description as it is kept: only the fields that mean something, so what a person typed
+ * beyond them is not stored and cannot reach the box. */
+function tidySource(source: PointSource): PointSource {
+  const tidy: PointSource = { kind: "modbus", registerType: source.registerType, address: source.address, dataType: source.dataType };
+  if (source.wordOrder !== undefined) tidy.wordOrder = source.wordOrder;
+  if (source.scale !== undefined) tidy.scale = source.scale;
+  if (source.offset !== undefined) tidy.offset = source.offset;
+  if (source.linear !== undefined) tidy.linear = { rawLow: source.linear.rawLow, rawHigh: source.linear.rawHigh, engLow: source.linear.engLow, engHigh: source.linear.engHigh };
+  if (source.part !== undefined) tidy.part = source.part;
+  return tidy;
 }
 
 interface PointRow {
@@ -3324,6 +3689,7 @@ interface PointRow {
   quality: string;
   capability: string;
   threshold_config: Record<string, number> | null;
+  source: PointSource | null;
 }
 
 function mapPointRow(row: PointRow): Point {
@@ -3338,7 +3704,8 @@ function mapPointRow(row: PointRow): Point {
     unit: row.unit,
     quality: row.quality as Point["quality"],
     capability: row.capability as Point["capability"],
-    thresholdConfig: row.threshold_config ?? undefined
+    thresholdConfig: row.threshold_config ?? undefined,
+    ...(row.source ? { source: row.source } : {})
   };
 }
 

@@ -11,6 +11,7 @@ import { CommandsModule } from "./modules/commands/commands.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DerivedStatesModule } from "./modules/derived-states/derived-states.module";
 import { DevicesModule } from "./modules/devices/devices.module";
+import { EdgeModule } from "./modules/edge/edge.module";
 import { EdgeSyncModule } from "./modules/edge-sync/edge-sync.module";
 import { GatewaysModule } from "./modules/gateways/gateways.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -20,6 +21,7 @@ import { PlatformAdminModule } from "./modules/platform-admin/platform-admin.mod
 import { PointsModule } from "./modules/points/points.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { RulesModule } from "./modules/rules/rules.module";
+import { SetupModule } from "./modules/setup/setup.module";
 import { SitesModule } from "./modules/sites/sites.module";
 import { TelemetryModule } from "./modules/telemetry/telemetry.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
@@ -52,6 +54,8 @@ import { PlatformModule } from "./platform/platform.module";
     AssetsModule,
     DevicesModule,
     GatewaysModule,
+    SetupModule,
+    EdgeModule,
     PlatformAdminModule,
     PointsModule,
     TelemetryModule,

@@ -1,5 +1,5 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
-import { deviceProtocols } from "@greecon/shared";
+import { IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, Max, Min } from "class-validator";
+import { ModbusConnection, deviceProtocols } from "@greecon/shared";
 
 export class CreateDeviceDto {
   @IsString()
@@ -46,4 +46,9 @@ export class CreateDeviceDto {
   @IsOptional()
   @IsString()
   placementNote?: string;
+
+  // Where the box at the site reaches the device. Checked in PlatformService, in words a person at the site can act on.
+  @IsOptional()
+  @IsObject()
+  connection?: ModbusConnection;
 }

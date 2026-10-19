@@ -129,7 +129,8 @@ describe("tenant isolation across the service", () => {
       ["listAudit(A's site)", platform.listAudit(b, a.site)],
       ["valueSummary", await platform.valueSummary(b)],
       ["siteProfile(B's site)", platform.siteProfile(mine.site, b)],
-      ["siteValue(B's site)", await platform.siteValue(mine.site, "month", b)]
+      ["siteValue(B's site)", await platform.siteValue(mine.site, "month", b)],
+      ["siteSetupRecord(B's site)", platform.siteSetupRecord(mine.site, b)]
     ];
 
     for (const [name, result] of reads) {
@@ -226,6 +227,17 @@ describe("tenant isolation across the service", () => {
       ["siteProfile", () => platform.siteProfile(a.site, b)],
       ["updateSiteProfile", () => platform.updateSiteProfile(a.site, { importPricePerKwh: 99 }, b)],
       ["siteValue", () => platform.siteValue(a.site, "month", b)],
+      ["siteSetupRecord", () => platform.siteSetupRecord(a.site, b)],
+      ["recordSiteTemplate", () => platform.recordSiteTemplate(a.site, "hotel", b)],
+      ["setSetupConfirmation", () => platform.setSetupConfirmation(a.site, "direction", { atUtc: new Date().toISOString(), by: "b@x.example" }, b)],
+      ["provisionGateway", () => platform.provisionGateway({ siteId: a.site, name: "Intruder" }, b)],
+      // These are told which box by its credential, not by a person, so they take the account's id.
+      ["completeGatewayEnrolment", () => platform.completeGatewayEnrolment(aGateway, b.tenantId, undefined)],
+      [
+        "recordGatewayHeartbeat",
+        () => platform.recordGatewayHeartbeat(aGateway, b.tenantId, { agentVersion: "x", uptimeSeconds: 1, sentAtUtc: new Date().toISOString(), bufferDepth: 0, devices: [] })
+      ],
+      ["edgeConfigFor", () => platform.edgeConfigFor(aGateway, b.tenantId)],
       ["updateTenantStatus", () => platform.updateTenantStatus(DEMO_TENANT_ID, "suspended", b)],
       ["listAllTenants", () => platform.listAllTenants(b, {})],
       ["createTenant", () => platform.createTenant({ name: "x", domain: "x.example", ownerName: "x", ownerEmail: "x@x.example" }, b)]
@@ -250,6 +262,11 @@ describe("tenant isolation across the service", () => {
         platform.listUsers(DEMO_OWNER)
       ])
     ).toBe(before);
+  });
+
+  it("does not name another account's box to anyone but its own account", () => {
+    expect(platform.findGateway(aGateway, b.tenantId)).toBeUndefined();
+    expect(platform.findGateway(aGateway, DEMO_TENANT_ID)?.id).toBe(aGateway);
   });
 
   it("does not let tenant B's readings or alerts appear for tenant A either", async () => {
@@ -295,7 +312,8 @@ describe("tenant isolation across the service", () => {
       "createPoint", "updatePoint", "deletePoint", "createGateway", "deleteGateway", "createRule", "updateRule", "setRuleApprovalState", "deleteRule",
       "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask", "createReportExport",
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
-      "siteProfile", "updateSiteProfile", "siteValue", "valueSummary"
+      "siteProfile", "updateSiteProfile", "siteValue", "valueSummary",
+      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway"
     ]);
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
     const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser"]);
