@@ -1,101 +1,88 @@
-# Deployment on Railway (pilot)
+# Deployment on Railway
 
-Railway hosts the initial pilot: it deploys straight from GitHub using the existing Dockerfiles, with no Terraform, no Workload Identity Federation, and no separate CLI setup. Google Cloud (`docs/10-deployment-gcp.md`) remains the target for later, once the pilot outgrows this.
+Railway hosts the first customers: it builds from GitHub with the Dockerfiles in `infra/docker/`, with no Terraform
+and no separate tooling. Google Cloud ([10](10-deployment-gcp.md)) is the target when this is outgrown. **The
+click-by-click version for the founder is [launch/01 Founder go-live](launch/01-founder-go-live.md); this page is the
+reference it rests on.**
 
-## Network boundary
+## Shape
 
-By default, keep the API service **without** a public domain — only reachable over Railway's private network, called only by the web service. This is still the right default: nothing needs the API to be public until a real edge device (an industrial PC at a farm site) needs to reach it directly.
-
-**If you do need that** (see "Connecting a real edge device" below), it's now safe to give the API a public domain too: `docs/07-security-and-rbac.md`'s old self-asserted `x-user-role` header trust is disabled outright on a production deployment (`NODE_ENV=production`, set by the Dockerfile) — an unauthenticated request gets rejected, not a free role. The one narrow exception is `POST /telemetry/ingest` with a real device secret, scoped to exactly that one route and one gateway's own tenant — see below.
-
-## Connecting a real edge device
-
-Once a real sensor's industrial PC needs to send readings from outside Railway's network, this is entirely a one-time step on the `api` service plus a couple of clicks in the app — no per-client Railway configuration:
-
-1. On the `api` service's Settings → Networking, click **Generate Domain** (the same step the `web` service already has) — needed once, ever, not per client or per gateway.
-2. Log into the app as that client (or as a Greecon team member), open the site's own page, and use the **"Add gateway"** form. It generates a real secret for this specific gateway and shows it exactly once.
-3. On the edge box itself, set `EDGE_TOKEN` in `/etc/greecon/edge.env` to that secret, and `API_URL` to the api service's public URL — see `docs/14-edge-hardware-deployment.md` for the rest of that setup.
-
-Every gateway gets its own secret this way, scoped to its own tenant only — onboarding a second, third, or hundredth client's device needs nothing beyond step 2 above, repeated on their own site.
-
-**Before you generate that domain, two settings on the `api` service:**
-
-- `TRUST_PROXY=1` — Railway's edge proxy sits in front of a public domain, so without this the API sees
-  the proxy's address for every caller and counts all edge boxes (and everyone else) as one source for
-  rate limiting. It is the number of trusted proxy hops, not "true": trusting more hops than exist lets a
-  caller choose their own address by forging `X-Forwarded-For`. Confirm Railway's hop count for your
-  setup before relying on it (check the `x-forwarded-for` header a request actually arrives with).
-- Leave `ENABLE_API_DOCS` unset. Swagger (`/docs`, `/docs-json`, `/docs-yaml`) is off in production by
-  default; setting it to `true` would publish the API's complete route list to anyone who finds the domain.
-
-**Legacy path, still supported:** a single `EDGE_INGEST_TOKEN`/`EDGE_INGEST_TENANT_ID` variable pair on the `api` service, shared by every gateway in one fixed tenant, was the only option before per-gateway credentials existed. Still works if already configured — both must be set together, either one missing disables it entirely — but a new deployment should use the "Add gateway" form above instead, since this pair can't support more than one client's tenant at all.
-
-## One-time setup, in the Railway dashboard
-
-1. Sign in to [railway.app](https://railway.app) with GitHub, then **New Project → Deploy from GitHub repo** → select `greecon-tech/demo` and the branch to deploy.
-2. Add Postgres: in the project, **+ New → Database → Add PostgreSQL**. Railway provisions it and exposes `DATABASE_URL` automatically as a variable on that service — TimescaleDB isn't available here either, and the migrations already handle that (see `docs/10-deployment-gcp.md`).
-3. Configure the service Railway created from the repo to be the **API**:
-   - Settings → Build → Dockerfile Path: `infra/docker/api.Dockerfile`
-   - Settings → Networking → do **not** enable a public domain.
-   - Variables: add `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (Railway's variable-reference syntax — type it literally, it resolves the other service's value).
-   - Variables: add `JWT_SECRET` = a real random secret (e.g. `openssl rand -base64 32`) — this signs and verifies login sessions (`docs/07-security-and-rbac.md`). Do not reuse the `.env.example` placeholder.
-4. Add a second service for the **web app**: **+ New → GitHub Repo**, same repo/branch.
-   - Settings → Build → Dockerfile Path: `infra/docker/web.Dockerfile`
-   - Settings → Networking → **enable** a public domain (this is the pilot URL).
-   - Variables: add `GREECON_API_URL` = `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4000` — replace `api` with whatever you named the API service if you renamed it.
-5. Both services redeploy automatically on every push to the connected branch from here on.
-
-There is now real per-user login (`docs/07-security-and-rbac.md`) — visitors land on `/login` and
-need a real account to get in. `GREECON_DEMO_ROLE` is no longer needed on this deployment (it only
-still matters for the static GitHub Pages export, which has no login at all). Create real accounts
-by inserting into `users`/`memberships` with a bcrypt-hashed `password_hash`, the same way
-`003_auth.sql` seeds the demo ones — there is no admin UI for this yet
-(`docs/15-master-roadmap.md`, Phase 0).
-
-## Load the database schema (one time)
-
-Install the Railway CLI and link it to this project from a terminal (Cloud Shell works fine for this too):
-
-```bash
-npm install -g @railway/cli
-railway login
-railway link            # pick this project when prompted
-npm install
-npm run build -w @greecon/api
-railway run --service api npm run db:migrate -w @greecon/api
+```
+ box at a site ──HTTPS──►  api.greecon.earth ──┐
+ browser ──HTTPS──► app.greecon.earth (web) ───┼──►  api service ──► Postgres
+                       private network ────────┘      (NestJS)
 ```
 
-`railway run` injects that service's real environment (including `DATABASE_URL`) into the command without ever exposing the database publicly.
+Three Railway services in one project: **Postgres**, **api** (`infra/docker/api.Dockerfile`) and **web**
+(`infra/docker/web.Dockerfile`). The web service reaches the API over Railway's private network
+(`GREECON_API_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4000`); a browser never calls the API directly. The **API has a public
+domain** because a box at a customer's site reports to it. Both have custom domains:
 
-**Demo vs. real accounts — read this before handing out any login.** `002_seed_demo.sql`,
-`003_auth.sql`, and `006_split_demo_and_real_tenant.sql` together produce exactly one demo login
-and Eridon's own real account, kept in two completely separate tenants (`docs/13-pilot-readiness.md`,
-"There was no way to onboard a second client"):
+| | Address | Why |
+|---|---|---|
+| Web | `https://app.greecon.earth` | What people type |
+| API | `https://api.greecon.earth` | **Written into every box when it is enrolled.** If this ever has to change, every box needs a visit. Choose it once. |
 
-- **`demo@greecon.earth` / `demo123`** — sales/marketing only. Sees the seeded fake demo tenant
-  (solar/battery/water/farm sites with simulated telemetry) and nothing real. Safe to hand to a
-  prospect: it holds no real permissions over anything real, by construction (it lives in a tenant
-  that only ever contains fake data), and its role is deliberately **operator**, not owner — full
-  read access and Manual Control to show off the product, but no `/admin` or `/platform`, so it
-  can't create other users, change anyone's role, or reset any password (including its own — that
-  needs the `user:manage` permission "operator" doesn't have). Re-running `db:migrate` always puts
-  this account back to `demo123`/operator, even if someone changed either by hand in the meantime.
-  Never reuse this simple password for a real client account.
-- **`eridon.manuka@greecon.earth`** — the real working account, in its own real tenant that starts
-  with zero sites/devices until they're actually provisioned via the Admin page. Its password is
-  set by hand (not shipped in any migration) — see the password-reset step under "One-time setup"
-  below if it's ever forgotten.
-- Every **new real client** gets onboarded through `/platform` (Greecon platform administrators
-  only) — see `docs/13-pilot-readiness.md` — which creates its own isolated tenant the same way,
-  never by editing seed SQL.
+The API builds the box's software into itself (`npm run build:edge-bundle` in the Dockerfile) and serves it, so a
+box is installed from, and updated by, the platform it reports to (`14-edge-hardware-deployment.md`).
 
-Do not add more demo-style shared-password accounts by hand later; use `/admin`'s "Create user" or
-`/platform`'s "Onboard a new client" instead, both of which generate a real one-time password.
+## The API's settings
 
-## Getting the pilot URL
+All are Railway variables on the **api** service. The API refuses to start with an unsafe production configuration
+(`apps/api/src/common/runtime-config.ts`) and names the setting; it warns about the rest at every start.
 
-Settings → Networking on the web service shows the generated `*.up.railway.app` domain (or attach a custom domain there, e.g. a `greecon.earth` subdomain).
+| Variable | Needed | Meaning |
+|---|---|---|
+| `DATABASE_URL` | Yes | `${{Postgres.DATABASE_URL}}`. PostgreSQL 14 or newer (the history charts use `date_bin`) |
+| `JWT_SECRET` | Yes | At least 32 characters; signs sessions. Missing or short: boot stops. Changing it signs everyone out |
+| `PORT` | Yes | `4000` (the web service's private address uses it) |
+| `TRUST_PROXY` | Yes | `1`: the number of proxy hops to trust for the caller's address (rate limits count each site separately) |
+| `PUBLIC_API_URL` | Yes | `https://api.greecon.earth`; the address in every install command. Warns if missing or not https |
+| `PUBLIC_WEB_URL` | Yes | `https://app.greecon.earth`; the link in each message. Warns if missing |
+| `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | First start | Creates (or sets the password of) the first Greecon administrator, at least 12 characters. They only fill a gap: an account with a password keeps it. Remove them after |
+| `SALES_NOTIFY_EMAIL` | Recommended | Emailed on each request for access. Warns if missing |
+| `RESEND_API_KEY`, `ALERT_FROM_EMAIL`, `ALERT_FROM_NAME`, `ALERT_REPLY_TO` | Recommended | Email. The sender defaults to `Greecon <alerts@greecon.earth>`, replies to `info@greecon.earth`. The sending domain must be verified at Resend |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM` or `TWILIO_MESSAGING_SERVICE_SID` | Recommended | Text messages (Act now only). `TWILIO_FROM` is a number in international form, or a sender name such as `Greecon` where the destination country allows it. All three of the first group, or none: a partial set is reported and left off |
+| `EDGE_AUTO_UPDATE` | No | `false` holds every box on the software it has (a platform-side hold, for when an update must wait) |
+| `DEMO_FEED` | No | `false` stops the simulated feed of the demo account |
+| `ENABLE_API_DOCS` | No | Leave unset: it would publish the API's route list |
+| `AUTO_MIGRATE` | No | Leave unset: the database is brought to the current version at start (`false` skips it) |
+| `RESEND_API_URL`, `TWILIO_API_URL` | Rehearsal only | Point the two providers at a stand-in that records what would be sent |
+| `EDGE_INGEST_TOKEN`, `EDGE_INGEST_TENANT_ID` | Do not set | A legacy shared token for readings only; per-box credentials replace it |
 
-## Managing rules
+The **web** service has one variable, `GREECON_API_URL`.
 
-The Automation page's rule editor (create, approve, disable, delete) only works here — the static GitHub Pages demo has no server to save changes to. Rules persist in Postgres once `DATABASE_URL` is set and the migration above has run; without it, the API falls back to the same in-memory seed data as the static demo, and edits are lost on restart.
+## Releasing
+
+Both services redeploy on every push to the connected branch (`main`). The API stops a bad release before it serves:
+a failed migration or an unsafe setting ends start-up, and Railway keeps the previous deployment running. With a
+healthcheck path of `/health` Railway switches only when the new one answers. **Going back:** the service,
+**Deployments**, the earlier one, **Redeploy**. New versions only ever add to the database, so the previous one runs
+on it. GitHub Pages republishes the demo from the same push (`12-deployment-github-pages.md`).
+
+## The database
+
+Migrations (`apps/api/src/database/migrations/`) run at start, once each, recorded in `schema_migrations` with a
+checksum; a migration that was changed after it ran stops the start, and an older database made before the ledger is
+brought under it without replaying anything. The first start also closes any account that still carries a password this
+repository ever published (except the demo account) and creates the first administrator from `BOOTSTRAP_ADMIN_*`.
+
+The demo account `demo@greecon.earth` (password `demo123`, **operator**, in the demo tenant, which holds only simulated
+data and which a visitor can look at and try but cannot send a message from) is public by design. It is the only shared
+login that exists.
+
+Backups: the Postgres service's scheduled backups (what the plan allows), plus a weekly `pg_dump` copy kept off Railway,
+plus a monthly restore drill into a scratch service (`launch/05-runbooks.md`, R13).
+
+## Watching it
+
+An outside check on `/health` (it shows `"database":"connected"`), the platform's own morning message to Greecon's team
+and the fleet table on the Clients page (`launch/05-runbooks.md`). Railway's **Usage** page shows what each service costs; expect
+about EUR 20 to 40 a month at the start.
+
+## Moving on
+
+Nothing here ties the services to Railway: they are two containers and a Postgres. When a customer's rules name a hosting
+country or provider, or the sites number in the dozens, move to Google Cloud following `10-deployment-gcp.md`: the
+settings above are the same, `PUBLIC_API_URL` must keep its value so that boxes keep reporting, and the move is a
+change of where the DNS names point.

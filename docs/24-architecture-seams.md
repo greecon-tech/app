@@ -30,7 +30,7 @@ web: live pages rendered per request; the same pages as a static demo (GitHub Pa
 - **`apps/api`** (NestJS): an in-memory working set with write-through to Postgres, hydrated at
   start-up, one replica, a once-a-minute monitor that re-derives every site against the clock, and an
   in-memory request limiter.
-- **`apps/edge-agent`, `edge-driver-modbus`, `edge-simulator`**: the box's software.
+- **`apps/edge-agent`, `edge-simulator`**: the box's software (`edge-agent` is the whole program on a site; `edge-simulator` is for development).
 - **`apps/web`** (Next.js): server-rendered pages and a static twin for the demo.
 
 Structural rules that keep it simple: one narrow waist (the closed vocabulary); truth is computed in
