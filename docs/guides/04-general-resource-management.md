@@ -22,16 +22,16 @@ useful (with no setting, the platform says nothing).
 - It does not know about readings outside those sixteen. A customer-defined reading kind is planned,
   and will be added when several sites ask for the same one.
 - It does not control anything. Commands are simulations and the screen says so.
-- It does not send alerts to your phone; they appear in the app.
+- It sends email, and text messages for Act now only (see `00-overview.md`). It does not phone anyone and does not use WhatsApp or Viber.
 - It is not a safety system and does not replace hard-wired protection.
-- It does not yet export all your data in one click. That is planned, and is a requirement for any
-  customer who wants to leave.
+- It keeps no retention rule yet: readings are kept until the account is deleted on request. You can download
+  everything whenever you like (**Reports**), and ask in writing for it to be deleted.
 
 ## Setup
 
-1. Your Greecon contact creates your account and a site for each physical location.
+1. Your Greecon project manager onboards your account and a site for each physical location.
 2. Add each device and the readings it reports.
-3. Connect the edge device: `docs/14-edge-hardware-deployment.md`.
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it.
 4. Set the limits that suit your equipment.
 5. Use the Overview as your daily check, and Monitoring (under Sites) when you want every reading.
 

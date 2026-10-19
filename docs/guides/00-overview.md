@@ -41,11 +41,14 @@ never counts silence as good news.
 
 ## The same steps for every site
 
-1. Your Greecon contact creates your account and your first site. You receive a login and a temporary
-   password; change it on first login (Account, then Settings).
-2. Add each device and the readings it reports, from the site's page.
-3. Connect the real hardware: `docs/14-edge-hardware-deployment.md`.
-4. Set the limits that matter for your site (the **Limits** control on each reading point). Greecon
+1. Your Greecon project manager onboards your account, makes your site from a template for your kind of
+   site, and installs the box and the meters with an electrician. You receive a login and a temporary
+   password; you choose your own the first time you sign in.
+2. The project manager connects the devices and checks every reading against the real world, and hands
+   over a printed sheet saying where everything is (`docs/launch/02-project-manager-manual.md`).
+3. **Say who is told**, in the order they should hear, under **Who is told**, and send each person a test
+   message. Ask each to confirm it arrived. Nothing is commissioned until this is done.
+4. Agree the limits that matter for your site (the **Limits** control on each reading point). Greecon
    has a standard for a tank's low and critical level and a battery's low charge, and none for irrigation
    or solar surplus: it says nothing about those until you set them.
 5. Watch the Overview. Open **Sites** for each site's own page, with its readings, trends and equipment.
@@ -62,10 +65,27 @@ never counts silence as good news.
 | A sensor is reporting bad data | A reading's quality is marked bad | Inspect the sensor and its wiring. Commands that depend on it stay blocked until it recovers |
 
 Alerts are shown by priority: **Act now** (needs a person within minutes), **Check today**, and **For
-your information**. Today alerts appear in the app and are not yet sent to your phone, so someone has
-to open it. Sending alerts by message is the next thing planned.
+your information**. They also reach people, by the rules you can read on **Who is told**:
+
+- **Act now** is emailed to the first person on your list at once, texted ten minutes later if nobody has
+  acknowledged it, and sent to the next person thirty minutes after that, and so on down the list.
+  Acknowledging it in Greecon stops the chain and tells the others who took it.
+- **Check today** is one email to the first person, held until morning if it comes in quiet hours
+  (22:00 to 07:00 unless you change them).
+- **For your information** is only shown, never sent.
+- One message at 07:30 each day says whether everything is all right, and what needs a look if not.
+
+You choose the people and their order, and see what was sent and what the email or text service said
+about it. "Accepted for delivery" means the service took it; Greecon cannot know a person read it, which is
+why every person is asked to confirm a test message. Texts go only for Act now. There are no phone calls,
+WhatsApp or Viber messages yet.
+
+**Your data is yours.** Under **Reports** you can download every reading (hourly averages for any period,
+every single reading for up to 31 days), your alerts, and everything about how your account is set up, as
+files a spreadsheet opens. Each download is recorded in your audit log.
 
 ## Getting help
 
-Questions about setup, wiring or what a reading means belong with your Greecon contact, currently
-Eridon Manuka (eridon.manuka@greecon.earth).
+Questions about setup, wiring or what a reading means belong with your Greecon project manager, or
+`info@greecon.earth`. Greecon answers within four business hours, Monday to Saturday. There is no
+round-the-clock line yet: at night, **Act now** reaches the people you chose, not Greecon.

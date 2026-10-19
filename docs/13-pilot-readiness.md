@@ -5,6 +5,7 @@
 > was fixed since and what is still open is `18-reality-audit.md`. Where this file says a command was
 > "dispatched" or "real", it means accepted by the API and simulated: no command has ever been written
 > to equipment (`23-safety-and-security-case.md`).
+> The how-to parts of this log for setting up a site, connecting a box and deploying are replaced by `docs/launch/` and `docs/14`, `docs/11`, `docs/16`, which describe what runs now (there is no `edge-driver-modbus`, `edge.env`, `EDGE_TOKEN` or "Add gateway" form any more).
 
 This is a running audit of the platform against what a real pilot deployment needs, in the
 "what's the gap, and how do we close it" format. Items are grouped by status: fixed this pass,

@@ -12,7 +12,8 @@ walking round, that the water, the pumps and the plant are all right. Read `00-o
 - **Tells you how old every reading is**, and says Unknown when the plant has stopped sending, which
   matters most when the hotel is closed.
 - **Lets you set each tank's own low and critical levels** (Limits, on the site's page).
-- **Records who changed what**, in the audit log.
+- **Records who changed what**, in the audit log, and tells the people you choose when something needs them, by email and (for Act now) text.
+- **Shows what your solar kept on site**, at your own electricity price, when you give the platform your bills' prices.
 
 ## What it does not do yet
 
@@ -26,7 +27,7 @@ walking round, that the water, the pumps and the plant are all right. Read `00-o
   required samples and the regulator's rules.
 - It does not start, stop or change anything. Blowers, valves, dosing and bypass gates are never
   something Greecon will control remotely.
-- It does not send alerts to your phone; they appear in the app.
+- It sends email, and text messages for Act now only (see `00-overview.md`). It does not phone anyone and does not use WhatsApp or Viber.
 - It is not a safety system. Float switches, overflow protection, motor protection and the plant's own
   alarms stay as they are.
 
@@ -39,11 +40,11 @@ applies to your site, is for your lawyer and the regulator: this guide is not le
 
 ## Setup
 
-1. Your Greecon contact creates your account and a site for the plant (a separate site for each
+1. Your Greecon project manager onboards your account and a site for the plant (a separate site for each
    property).
 2. Add each tank level sensor, flow meter, pressure gauge and pump controller, and the pump's
    running-status signal if you want the no-flow alert.
-3. Connect the edge device: `docs/14-edge-hardware-deployment.md`.
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it.
 4. Set each tank's low and critical level to what is right for that tank (the standards are 35% and
    15%). If the treated water is stored and collected by vacuum truck, the storage level is your main
    operating signal, so a "low" limit that is really "high" for a storage tank may need a different

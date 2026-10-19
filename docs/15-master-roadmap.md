@@ -7,6 +7,7 @@
 > "not building" table in 25 with the evidence that would change that, and a site's limits are set
 > by the site (`adr/0003-limits-belong-to-the-site-the.md`), so the "one fixed `irrigate_below: 28`"
 > below no longer exists. Phase 4's polish is replaced by the rules in `20-design-and-interaction.md`.
+> The launch decisions are in `27-launch-decisions.md` and the practical pages in `launch/`.
 
 This is the "what would it actually take" plan across everything the platform needs to stop being
 a pilot demo and become a genuinely best-in-class operational platform: reliability, enterprise

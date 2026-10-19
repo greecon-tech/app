@@ -404,7 +404,8 @@ Compare, in this order, and write the pair of numbers on the handover.
 | **Soil probe** | In the air (low), in a glass of water (high), in the soil (plausible) | Three different readings |
 | **4 to 20 mA channels** | With a loop calibrator, send 4, 12 and 20 mA | Reading at the bottom, the middle and the top |
 | **A test message** | Each person on the list | Arrived |
-| **Power cut** | Unplug the box for 30 seconds, plug it in | Back reporting within 3 minutes with no readings lost |
+| **Power cut** | Unplug the box for 30 seconds, plug it in | Back reporting within 3 minutes, and the box says nothing about readings lost |
+| **Internet cut** *(the first install, and any time the box or its software is new)* | Pull the box's network cable for ten minutes, then plug it back | `greecon-edge status` shows a queue while it is out, and a few minutes after it returns the queue is empty and the readings from the gap are in the downloads. **Write the result down: it is the evidence for the statement that the box keeps its readings.** |
 
 Do not **start, stop or open** any equipment yourself. The owner's own person does, because they know what else it affects.
 

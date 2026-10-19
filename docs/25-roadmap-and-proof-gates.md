@@ -60,6 +60,20 @@ cannot be honest without:
 | Albanian interface and alert text, reviewed by a native editor | Albanian-speaking owners and staff; SMS length depends on it | `docs/21` |
 | Sector guides rewritten to what runs today (done in this change) | The guides promised features that did not exist | `docs/guides/` |
 
+**Status on 19 October 2026** (the decisions behind it are in [27](27-launch-decisions.md); the evidence is in [18](18-reality-audit.md)):
+
+| Work | State |
+|---|---|
+| Alert delivery (email, text for Act now, the morning message, acknowledgement, escalation, a log) | **Built and tested.** Not yet tried on real Albanian networks (a step in [launch/01](launch/01-founder-go-live.md)); a comparison of two text providers was not done: Twilio only |
+| Gateway heartbeat | **Built**, with a morning check and a fleet table for Greecon's own team |
+| Edge buffer of at least 72 hours | **Built and tested in software**; to be shown on a real box ([launch/02](launch/02-project-manager-manual.md), "Internet cut") |
+| Customer export | **Built** (readings, alerts, the account's setup, each recorded in the audit trail) |
+| Two-factor sign-in | **Deferred** to after the fifth site and before any control, with compensating controls ([27](27-launch-decisions.md), L15). Distinct demo passwords: **done** (one demo login only). Self-service reset: **not built**; a locked-out person is reset by Greecon's owner after a call |
+| `security.txt`, vulnerability policy, incident runbook | **Built** (`security.txt`, [launch/05](launch/05-runbooks.md), R12). A bill of materials and secret scanning in the build: **not built**. A restore drill: written, **not yet done** |
+| Hotel wastewater evidence | **Not built**, deliberately ([27](27-launch-decisions.md)) |
+| Albanian interface and alert text | **Not built**: the founder chose English only for now |
+| Guides rewritten to what runs | **Done**, and again for the launch |
+
 None of these needs a customer to justify it. Everything else waits for evidence.
 
 **Experts to engage before the first pilot** (each report lists its questions): a lawyer (the 15

@@ -14,6 +14,18 @@ Mosquitto, the edge simulator, and Grafana are local-development-only for now (s
 
 ## Network boundary
 
+**Boxes change this section.** Everything below was written when only the web service called the API. A box at a customer's
+site reports to the API from the internet (`docs/14-edge-hardware-deployment.md`), so on Google Cloud, as on Railway
+(`docs/11-deployment-railway.md`), the API must be reachable from outside. That is safe now: it rejects every request that does not carry a
+verified session, a box's own credential or a one-time enrolment code, and a box's credential opens only the five routes it needs
+(`docs/07-security-and-rbac.md`). So the API can be public, and the web service then does not need to attach a Cloud
+Run identity token. Keep the address boxes use (`PUBLIC_API_URL`, `https://api.greecon.earth`) pointing at it through any move, because every
+box has it written in.
+
+The paragraph below describes the earlier, private arrangement and applies only if a customer's rules insist on it (then
+boxes would need a private tunnel to the API).
+
+
 The API Cloud Run service is **private** — only the web service's own runtime identity may invoke it (`roles/run.invoker`, scoped to that one service account). The web service is the only public endpoint. This still matters even now that real per-user login exists (`docs/07-security-and-rbac.md`): the login-less header fallback (`x-user-role`) only stays safe because a caller from the open internet can never reach the API to use it in the first place. Since the web app's Next.js server components are the only caller, and they attach a Google-signed Cloud Run identity token to every request (`apps/web/src/lib/api.ts`) alongside the real user's session token, a pilot visitor never gets the chance to set that header themselves.
 
 Set `JWT_SECRET` as a Secret Manager entry alongside the database URL — never as a plain Cloud Run environment variable — since it signs every login session.

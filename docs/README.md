@@ -8,18 +8,20 @@ Where to start depends on the question.
 | What is true of the platform today, and what is not | [18 Reality audit](18-reality-audit.md) |
 | How to use it, by kind of site | [guides](guides/00-overview.md) |
 | What to build next, and what would prove it | [25 Roadmap and proof gates](25-roadmap-and-proof-gates.md) |
+| **How to put Greecon on the market with a project manager** | [launch/](launch/README.md): go-live, the project manager's manual, hardware, the sales kit, runbooks |
+| What was decided for the launch, and why | [27 Launch decisions](27-launch-decisions.md) |
 | How far to trust any of this | [26 Research register](26-research-register.md) |
 
 ## The blueprint (written October 2026, from nine research reports)
 
-These nine documents are the product's reasoning. They are desk research and engineering judgement,
+Documents 17 to 26 are the product's reasoning. They are desk research and engineering judgement,
 not the verdict of a lawyer, a process engineer, an agronomist or a customer. Each says what it
-rests on and what a person still has to check.
+rests on and what a person still has to check. Document 27 records the decisions taken to launch.
 
 | Doc | What it holds |
 |---|---|
 | [17 Constitution](17-constitution.md) | Purpose, principles, rules R1 to R9, how a feature earns its place |
-| [18 Reality audit](18-reality-audit.md) | The ledger: 28 findings fixed with evidence, 12 gaps still open |
+| [18 Reality audit](18-reality-audit.md) | The ledger: what was found, what was fixed with the evidence, what is still open |
 | [19 Domain playbook](19-domain-playbook.md) | Water and wastewater, agriculture, energy: what operators need, what the platform shows, what it will not claim |
 | [20 Design and interaction](20-design-and-interaction.md) | The four states, the three priorities, answer-first screens, safe interaction, accessibility |
 | [21 Communication system](21-communication-system.md) | Voice, alert wording and channel limits (Albanian SMS is 70 characters), the claims register, the glossary |
@@ -28,9 +30,11 @@ rests on and what a person still has to check.
 | [24 Architecture and seams](24-architecture-seams.md) | What exists, the extension points with written triggers, growth stages |
 | [25 Roadmap and proof gates](25-roadmap-and-proof-gates.md) | The beachhead and its disproof, the sequence, the metrics, what is not being built |
 | [26 Research register](26-research-register.md) | The nine reports, what each changed, how far to trust it |
+| [27 Launch decisions](27-launch-decisions.md) | The decisions made to launch (first customers, the pilot and its price, who does what, what waits), with what would change each |
 
 Supporting material:
 
+- [launch/](launch/README.md): the launch kit for the founder and the project manager, written for people who are not engineers.
 - [adr/](adr/README.md): one page per decision that touches safety, security, data or claims. Four
   are accepted and built; fourteen are proposals from the research.
 - [research/](research/): the nine reports in full, with their sources and open questions.
@@ -47,15 +51,15 @@ earlier one says so at the top.
 | [01 Architecture](01-architecture.md) | Components and how they connect |
 | [02 Data model](02-data-model.md) | Tables and the telemetry store |
 | [03 GAIA internal boundaries](03-gaia-internal-boundaries.md) | What stays out of the browser and out of public copy |
-| [04 Edge runtime](04-edge-runtime.md) | The gateway process |
+| [04 Edge runtime](04-edge-runtime.md) | The box's responsibilities: what exists, and the design intent for control |
 | [05 API design](05-api-design.md) | Endpoints and contracts |
 | [06 Frontend design system](06-frontend-design-system.md) | Brand, type, palette |
 | [07 Security and RBAC](07-security-and-rbac.md) | Sign-in, roles, tenants |
 | [08 Local development](08-local-development.md) | Running it on a laptop |
 | [09 Testing and verification](09-testing-and-verification.md) | What is tested and how |
 | [10 Deployment on Google Cloud](10-deployment-gcp.md), [11 on Railway](11-deployment-railway.md), [12 GitHub Pages demo](12-deployment-github-pages.md) | Hosting |
-| [13 Pilot readiness](13-pilot-readiness.md) | The earlier gap log (history; the current ledger is 18) |
-| [14 Edge hardware deployment](14-edge-hardware-deployment.md), [16 Modbus driver](16-modbus-driver.md) | Connecting real equipment |
+| [13 Pilot readiness](13-pilot-readiness.md) | The earlier gap log (history; the current ledger is 18; setup and deployment how-tos are in `launch/`) |
+| [14 Edge hardware deployment](14-edge-hardware-deployment.md), [16 Reading Modbus devices](16-modbus-driver.md) | The box, its installer and how it reads equipment |
 | [15 Master roadmap](15-master-roadmap.md) | The earlier plan (history; the current one is 25) |
 
 ## Keeping the documents true

@@ -219,12 +219,15 @@ approved which command.
 
 ## 8. What we say about ourselves
 
-True today: no customers, no product on the market, simulated data only, no certification, a pilot
-plan not yet started. The founder confirms these before any statement is used.
+True today (19 October 2026): no signed customer; the platform is built and tested end to end with simulated
+equipment and a pretend meter, and with a stand-in for the email and text providers; no real meter, no real text
+delivery to Albanian networks and no real Railway deployment has been tested yet; no certification; the first paid
+pilots are about to start. The founder confirms these before any statement is used, and updates this paragraph the
+day it stops being true.
 
 | Audience | A statement that is true today | Must not imply |
 |---|---|---|
-| Customers | "Greecon is an early platform that watches energy, water and agriculture equipment and tells you what needs attention. Today it runs on simulated data and does not control real equipment. We are looking for a few sites for a supervised pilot: read-only monitoring and alerts first, control only with your written agreement. Greecon is not a safety system; the protection in your equipment stays in place." | Live sites, savings, certification, guaranteed alerts, 24-hour support unless staffed |
+| Customers | "Greecon is an early platform that watches energy, water and agriculture equipment and tells you what needs attention. It has been tested with simulated equipment and we are installing the first real sites now, as paid, read-only pilots: monitoring and alerts first, control only with your written agreement, and not yet. Greecon is not a safety system; the protection in your equipment stays in place." | Live sites beyond the pilots, savings, certification, guaranteed alerts, 24-hour support unless staffed |
 | Installers | "We are designing the edge box and the commissioning steps with installers. There is no production hardware release and no support commitment yet. We want to learn how long a commissioning takes, what fails on site and which documents you need." | A partner programme, margins, exclusivity, a release date |
 | Regulators | "Greecon Sh.p.k. is an early-stage company at Durana Tech Park. We have placed no product on the market. We design for Law 124/2024, for the cybersecurity duties customers will pass on under Law 25/2024 and, for the gateway, for the Cyber Resilience Act. We will notify within the legal clocks." | Compliance, approval, endorsement |
 | Investors | "Greecon is pre-revenue with no customers. A pilot plan will test whether owners of small and mid-size sites pay for calm monitoring and supervised automation. Main risks: customers do not pay, installation and support cost more than planned, safety, security and legal work takes longer. We give no forecasts." | Traction, pipeline, revenue, AI differentiation |
@@ -247,3 +250,22 @@ export.
 sign-standard words as priorities; promising response times nobody staffs; naming compliance or
 certification Greecon lacks; hand-formatted numbers; a hard-coded "OK" or "resolved"; engine
 internals in messages, documents or press.
+
+## 10. The registered sentences (October 2026)
+
+The claims register for the first pilots. Sales, the leaflet and the demo use only these (with the table in section 5), and a
+second person approves any addition. Each has the evidence a reader can run or read, an owner and a review date.
+
+| ID | The sentence | Evidence | Owner | Reviewed | Next |
+|---|---|---|---|---|---|
+| C1 | "Greecon watches your equipment and tells you. The protection built into your equipment remains the safety layer." | `23`; the box's reader has no write path (`apps/edge-agent/src/modbus/reader.ts`); commands are simulated (`adr/0004`) | Founder | 2026-10-19 | 2027-04-19 |
+| C2 | "It only reads: it never switches anything." | As C1; `platform.service.spec.ts` (every command is `executionMode: simulated`) | Founder | 2026-10-19 | 2027-04-19 |
+| C3 | "It shows what your solar kept on site, at your own prices, from real readings." | `compute-value.spec.ts`, `energy-ledger.spec.ts`; the screen's own "How this is worked out"; says what is missing when a price is not entered | Founder | 2026-10-19 | 2027-04-19 |
+| C4 | "Act now is emailed at once, texted ten minutes later if nobody has acknowledged it, and goes to the next person thirty minutes after that." | `plan.spec.ts`, `notifications.integration.spec.ts`, `scripts/e2e/pm-e2e.cjs`; **real text delivery to Albanian networks not yet tested** | Founder | 2026-10-19 | After the first real text test |
+| C5 | "Your data is yours: you can download every reading, alert and your account's setup at any time." | `exports.*.spec.ts`; `smoke-api.mjs`; each download in the audit trail | Founder | 2026-10-19 | 2027-04-19 |
+| C6 | "The box keeps reading when the internet is down and sends what it kept, in order, when it returns, for about three days." | `offline-buffer.spec.ts`, `outbox.spec.ts`, `runtime.spec.ts`; **tested in software, not on a box with the cable pulled**: do that at the first install ([launch/02, section 9, "Internet cut"](launch/02-project-manager-manual.md#9-commissioning-checks-by-kind-of-site)) | Project manager | 2026-10-19 | After the first install |
+| C7 | "Greecon's team opens your account only to set it up, and that is written in your audit trail under their name." | `platform.staff.postgres.spec.ts`, `smoke-api.mjs`, `pm-e2e.cjs` | Founder | 2026-10-19 | 2027-04-19 |
+| C8 | "We answer within four business hours, Monday to Saturday." | A staffing commitment, not a measurement. True only while the project manager is available; the founder confirms | Founder | 2026-10-19 | Each month |
+| C9 | "This demo uses simulated data." | The label on every demo screen | Founder | 2026-10-19 | Each release |
+| C10 | "Report a security problem to info@greecon.earth." | `apps/web/public/.well-known/security.txt`; `launch/05-runbooks.md`, R12 | Founder | 2026-10-19 | 2027-09-30 (the file's expiry) |
+

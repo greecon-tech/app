@@ -24,7 +24,7 @@ the screen and what each alert means.
   and the checks, and the screen says "Simulated only".
 - It does not give an irrigation amount or duration, and it does not use weather forecasts or crop
   water-use calculations.
-- It does not send alerts to your phone; they appear in the app.
+- It sends email, and text messages for Act now only (see `00-overview.md`). It does not phone anyone and does not use WhatsApp or Viber.
 - It does not yet record irrigation events or water use per field for an agency or buyer. If you apply
   for investment support (such as IPARD), ask the agency what evidence of metering it accepts, and keep
   your own records meanwhile.
@@ -32,10 +32,10 @@ the screen and what each alert means.
 
 ## Setup
 
-1. Your Greecon contact creates your account and a site for each physical location (a field and a
+1. Your Greecon project manager onboards your account and a site for each physical location (a field and a
    greenhouse are usually two sites).
 2. Add each sensor or controller and what it reports, from the site's page.
-3. Connect the edge device: `docs/14-edge-hardware-deployment.md`. Until hardware is connected you can
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it. Until hardware is connected you can
    set everything up and look at the screens with no live readings; the site reads **Unknown**.
 4. Set **Start irrigating below** on each soil sensor, and the tank's low and critical levels if the
    standard (35% and 15%) does not suit your tank. A starting value is a starting value: check it by

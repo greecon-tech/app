@@ -24,13 +24,13 @@ For a company operating a rooftop array, a ground-mounted plant or an agrivoltai
 - It does not detect faults by itself beyond the alerts listed in the overview.
 - It does not replace your inverter's protection, your battery system's own protection, or your
   distribution operator's requirements. It is not a safety system.
-- It does not send alerts to your phone; they appear in the app.
+- It sends email, and text messages for Act now only (see `00-overview.md`). It does not phone anyone and does not use WhatsApp or Viber.
 
 ## Setup
 
-1. Your Greecon contact creates your account and one site for each plant.
+1. Your Greecon project manager onboards your account and one site for each plant.
 2. Add each inverter, meter and battery controller and what it reports.
-3. Connect the edge device: `docs/14-edge-hardware-deployment.md`. Reading an inverter over Modbus is
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it. Reading an inverter over Modbus is
    usually off by default and turning it on is your decision and your installer's: ask them first, and
    check what it does to your warranty.
 4. Set the limits that suit the plant: the battery's low level, and the smallest useful surplus if you
