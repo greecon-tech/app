@@ -260,6 +260,7 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 - [ ] `https://greecon-tech.github.io/app/` opens the demo
 - [ ] The outside check is watching both addresses and has my phone number
 - [ ] A backup exists (the Backups tab shows one, or I took one by hand and put it in the shared drive)
+- [ ] `https://app.greecon.earth/privacy` opens without signing in, and says what Greecon keeps (the lawyer reads it before the first customer signs)
 - [ ] I sent myself a "Request access" from the sign-in page and it arrived at `info@greecon.earth` and appeared under **Requests** on **Clients**
 - [ ] The rehearsal was done, and its notes are fixed or written down
 

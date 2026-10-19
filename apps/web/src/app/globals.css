@@ -285,6 +285,11 @@ label {
   color: var(--faint);
 }
 
+.sidebar-foot__links {
+  display: block;
+  margin-top: 4px;
+}
+
 .eyebrow,
 .muted,
 .topbar__subtitle {
@@ -1001,6 +1006,27 @@ tbody tr:hover {
   margin: 0;
   color: var(--critical-fg);
   font-size: 0.85rem;
+}
+
+/* The privacy page: plain reading, no application chrome. */
+.privacy {
+  display: block;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+.privacy h1 {
+  margin: 4px 0 12px;
+}
+
+.privacy h2 {
+  margin: 28px 0 6px;
+  font-size: 1.05rem;
+}
+
+.privacy ul {
+  padding-left: 1.2rem;
 }
 
 /* Greecon's own team, in the Clients console: the list, then the form that adds to it. */

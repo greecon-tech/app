@@ -31,7 +31,7 @@ The practical pages that follow from these decisions are in [launch/](launch/REA
 | **L16** | **Hosting: Railway, in a European region,** with `api.greecon.earth` and `app.greecon.earth`. **`api.greecon.earth` never changes once a box exists.** The paid plan once a customer is live (scheduled backups). Google Cloud later | A box remembers the platform's address; Railway is the least to set up for a founder alone | More than about 50 sites, or a customer whose rules name a hosting country or provider |
 | **L17** | **Operations: an outside uptime check, the fleet table, and Greecon's own morning message.** No paging system | Greecon must hear of a silent box before the customer does; at five sites a morning look is enough | About 15 sites: add an immediate message for a silent box |
 | **L18** | **The customer's data is theirs and downloadable** (readings, alerts, account setup). Deletion on written request, by the founder, after they have their data, by one documented statement. **No retention rule is built yet** | Required by Law 124/2024 and the EU Data Act; the answer to lock-in | The database nears its volume, or at about ten sites: decide how long raw readings are kept |
-| **L19** | **Before the first signature: a lawyer reads the order form and the data terms, and an electrician agrees a written price** | Not optional ([22](22-legal-and-compliance-map.md), section 6) | Nothing |
+| **L19** | **Before the first signature: a lawyer reads the order form, the data terms and the privacy page (`/privacy`), the accountant says how to invoice, and an electrician agrees a written price** | Not optional ([22](22-legal-and-compliance-map.md), section 6) | Nothing |
 
 ## What was built to make these decisions possible
 
@@ -43,6 +43,7 @@ this order, and each is tested ([18](18-reality-audit.md) has the evidence):
 - **The box:** one program, three days of buffer, a heartbeat every 30 seconds, updates with rollback.
 - **The customer's data:** downloads of readings, alerts and the account's setup, each recorded in the audit trail.
 - **Greecon's own team:** a login for each person, who is told about silent boxes each morning, and one table of every customer's sites. Only the owner of Greecon's account can add people or reset a customer's password; a person turned off loses their session on their next click.
+- **A public privacy page** (`/privacy`), linked from the sign-in page and every screen: what is kept, why, who sees it, how long, and the person's rights, written to be true of the platform as it is and read by a lawyer before the first signature.
 - **Smaller things found on the way:** one account per email address (sign-in looks the account up by it); readings that share a second are ordered by name; a meter note that gave one maker's speed for another's.
 
 ## Not verified, and why it matters

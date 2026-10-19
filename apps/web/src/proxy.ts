@@ -47,5 +47,5 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ["/((?!login|request-access|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
+  matcher: ["/((?!login|request-access|privacy|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
 };

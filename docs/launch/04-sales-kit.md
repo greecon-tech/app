@@ -274,7 +274,8 @@ or to commercial solar), not push harder.
 
 ## 11. Before the first signature
 
-- [ ] A lawyer has read the order form and the data processing terms ([22](../22-legal-and-compliance-map.md), section 6).
+- [ ] A lawyer has read the order form, the data processing terms and the privacy page at `/privacy` ([22](../22-legal-and-compliance-map.md), section 6).
+- [ ] The accountant has said how the pilot fee and the monthly fee are invoiced (Albanian invoicing and VAT), and how payment is taken.
 - [ ] The founder has decided who pays for the hardware during the pilot (section 7).
 - [ ] The rehearsal was done ([02, section 13](02-project-manager-manual.md#13-rehearsal-the-whole-job-on-a-desk)).
 - [ ] A quote for each part has replaced the planning prices in [03](03-hardware-and-wiring.md).

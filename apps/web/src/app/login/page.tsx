@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         ) : null}
         <LoginForm />
         <p className="muted">
-          New to Greecon? <Link href="/request-access">Request access</Link>
+          New to Greecon? <Link href="/request-access">Request access</Link> · <Link href="/privacy">Privacy</Link>
         </p>
       </section>
     </main>
