@@ -1,5 +1,13 @@
 # Master Roadmap — Toward Production-Grade
 
+> **Status (2026-10-18): history.** This was the plan before the October 2026 research. The current
+> sequence, with proof gates and the list of what is deliberately not being built, is
+> `25-roadmap-and-proof-gates.md`; where the two differ, 25 wins. Phase 0 and most of Phase 1 are
+> done (`18-reality-audit.md`). Phase 3 is no longer a phase: AI-driven optimisation sits in the
+> "not building" table in 25 with the evidence that would change that, and a site's limits are set
+> by the site (`adr/0003-limits-belong-to-the-site-the.md`), so the "one fixed `irrigate_below: 28`"
+> below no longer exists. Phase 4's polish is replaced by the rules in `20-design-and-interaction.md`.
+
 This is the "what would it actually take" plan across everything the platform needs to stop being
 a pilot demo and become a genuinely best-in-class operational platform: reliability, enterprise
 readiness, AI-driven optimization, and product polish. It supersedes the narrower scope of

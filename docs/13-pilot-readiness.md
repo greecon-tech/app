@@ -1,5 +1,11 @@
 # Pilot Readiness — Gaps and How-To Fixes
 
+> **Status (2026-10-18): history.** This is the log of the earlier pilot-readiness passes and stays as
+> the record of how each piece was verified. The current ledger of what is true of the platform, what
+> was fixed since and what is still open is `18-reality-audit.md`. Where this file says a command was
+> "dispatched" or "real", it means accepted by the API and simulated: no command has ever been written
+> to equipment (`23-safety-and-security-case.md`).
+
 This is a running audit of the platform against what a real pilot deployment needs, in the
 "what's the gap, and how do we close it" format. Items are grouped by status: fixed this pass,
 and still open with a concrete next step. Update this file as gaps are closed or new ones are

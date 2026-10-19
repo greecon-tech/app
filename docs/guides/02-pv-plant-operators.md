@@ -1,57 +1,54 @@
-# Guide: Companies With a PV Plant
+# Guide: Companies with a solar (PV) plant
 
-For a company operating a solar (PV) generation site — a rooftop array, a ground-mounted plant, or
-an agrivoltaic site combining solar with crops underneath.
+For a company operating a rooftop array, a ground-mounted plant or an agrivoltaic site. Read
+`00-overview.md` first.
 
-## What the platform gives you
+## What the platform does for you today
 
-- **Generation and consumption readings**: solar power output, site consumption, grid import and
-  export (`energy.solar.power.kw`, `energy.consumption.kw`, `energy.grid.import.kw`,
-  `energy.grid.export.kw`).
-- **Battery readings**, if the site has storage: state of charge and charge/discharge power
-  (`energy.battery.soc.percent`, `energy.battery.power.kw`).
-- **Derived operational state** — the platform computes whether the site currently has surplus
-  generation available or the battery is constrained (`energy.surplus_available`,
-  `energy.battery.constrained`), rather than leaving you to work that out from raw numbers.
-- **Alerts** on generation drop-off, grid export anomalies, or battery state moving outside a range
-  you set.
-- **Automation rules** that can act on derived state — for example, routing surplus generation to a
-  pump or irrigation system on an agrivoltaic site, logged with exactly when and why each rule fired.
-- **Reports** for the production and performance evidence a plant operator typically needs to
-  produce — see Reports in the app, and `docs/13-pilot-readiness.md` for what's covered today.
+- **Shows generation and consumption readings**: solar power, site consumption, grid import and export.
+- **Shows battery readings**, if there is storage: charge and charge or discharge power, and a "battery
+  charge is low" alert (standard 25%; set your own if your system keeps a larger reserve).
+- **Tells you how old every reading is**, and says Unknown when the site has stopped sending. A short
+  loss of connection does not alarm: a reading must be older than its limit first.
+- **Reports solar surplus only when you say what a useful surplus is.** Spare solar power means something
+  only against a load that could use it, so Greecon has no built-in number. On the site's page set
+  **Smallest useful surplus** on the solar reading; until you do it makes no claim about surplus.
 
-## Before you start
+## What it does not do yet
 
-- A site name for each physical plant (one company with several plants should create one site per
-  plant, not one site for all of them).
-- An inventory of what each site actually meters: inverters, the grid-tie meter, battery system if
-  present, and (for an agrivoltaic site) the agricultural equipment the panels sit above.
-- If you'll be using an edge device, see `docs/14-edge-hardware-deployment.md`.
+- It does not compute energy from your meter's counters, specific yield, performance ratio or
+  availability, and it does not check whether the plant made what it should. Those need meter-counter
+  support and, for performance ratio, an irradiance sensor.
+- It has no profiles for particular inverters beyond the generic Modbus reader, and it reads only: it
+  never changes an inverter, a battery or an export limit.
+- It does not detect faults by itself beyond the alerts listed in the overview.
+- It does not replace your inverter's protection, your battery system's own protection, or your
+  distribution operator's requirements. It is not a safety system.
+- It does not send alerts to your phone; they appear in the app.
 
 ## Setup
 
-1. **Your Greecon contact creates your account and your first site**, one per plant. You'll receive
-   a login and a temporary password — change it on first login (Settings → Account Security).
-2. **Add your devices and reading points** from the site's page: each inverter, meter, and (if
-   present) battery controller, and the specific measurement each one reports.
-3. **Connect the real hardware.** See `docs/14-edge-hardware-deployment.md` for wiring the on-site
-   edge device that reads your meters and sends readings to Greecon.
-4. **Set alert thresholds** for the readings that matter most — a generation drop-off during
-   daylight hours is usually the first one worth catching, since it's often the earliest sign of an
-   inverter fault or a soiled/shaded panel.
-5. **Watch Monitoring and Analytics** for live and historical production once hardware is
-   connected, and use Reports when you need a production record for a stakeholder or regulator.
+1. Your Greecon contact creates your account and one site for each plant.
+2. Add each inverter, meter and battery controller and what it reports.
+3. Connect the edge device: `docs/14-edge-hardware-deployment.md`. Reading an inverter over Modbus is
+   usually off by default and turning it on is your decision and your installer's: ask them first, and
+   check what it does to your warranty.
+4. Set the limits that suit the plant: the battery's low level, and the smallest useful surplus if you
+   have a load to run from it.
+5. Keep the bill and the distribution operator's meter as the legal record. Greecon's readings are your own
+   view, not a billing meter.
 
-## What to check day to day
+## Day to day
 
-- **Monitoring** for current generation, consumption, and grid exchange across every plant you
-  operate.
-- **Alerts** for anything needing attention, each one labeled in plain language with an icon — never
-  color alone.
-- **Analytics** for production trends — comparing a day's generation against the same period last
-  week or last month is usually the fastest way to notice a real problem versus ordinary weather
-  variation.
+Open the Overview. If a site says Unknown, check the data logger's power and network. A solar reading
+marked **Out of date** is the last value received, not the present.
+
+## About tariffs and net billing
+
+Rules for self-producers in Albania are changing (a switch to net billing has been reported for 2027,
+and the sources disagree on dates). Greecon holds no tariff or settlement rules and makes no claim about
+what you will be paid. Ask your distribution operator.
 
 ## Getting help
 
-Questions about setup, metering, or inverter integration belong with your Greecon contact.
+Questions about setup, meters or what a reading means belong with your Greecon contact.

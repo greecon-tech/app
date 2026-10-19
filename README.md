@@ -11,7 +11,7 @@ The platform is organized as a TypeScript monorepo:
 - `packages/gaia-core` - internal safety, state, and rule primitives. Do not expose confidential GAIA internals to browser bundles or public copy.
 - `infra/docker` - local Postgres/TimescaleDB, Mosquitto, Grafana, API, web, and edge simulator setup.
 - `infra/terraform` - Google Cloud deployment foundation placeholders.
-- `docs` - architecture, data, security, edge, frontend, and deployment documentation.
+- `docs` - architecture, data, security, edge, frontend, and deployment documentation, the product's constitution, reality audit, research and decision records. Start with `docs/README.md`.
 
 ## Local Development
 

@@ -1,63 +1,46 @@
-# Guide: Other Natural-Resource Operations
+# Guide: Any other site that manages water, energy or another resource
 
-For any corporation managing water, energy, or agricultural resources that doesn't fit one of the
-other three guides — a municipal pump station, a food-processing plant's utilities, a campus energy
-system, a cooperative managing shared irrigation infrastructure, and similar. The platform's design
-goal is the same regardless of sector: unify physical infrastructure that was previously monitored
-(or not monitored at all) through separate, disconnected systems into one operational view.
+For a municipal pump station, a food-processing plant's utilities, a campus energy system and similar
+sites that do not fit the other three guides. Read `00-overview.md` first.
 
-## What the platform gives you
+## What the platform does for you today
 
-The same underlying building blocks described in the other three guides, assembled to fit your own
-operation:
+The platform has sixteen kinds of reading: tank level, flow, pressure, pump status and command; solar
+power, consumption, battery charge and power, grid import and export; soil moisture, air temperature,
+humidity and an irrigation command; and gateway online. It shows them with their age, derives a small
+set of states from them (tank critical or low, a pump running with no flow, battery low, readings out of
+date, a sensor reporting bad data), raises an alert for each, and computes one answer for the site: Stable,
+Attention needed, Action required or Unknown.
 
-- **Energy readings**: solar generation, consumption, battery, and grid import/export.
-- **Water readings**: tank level, flow, pressure, and pump status/command, with automatic
-  tank-critical, tank-low, and pump-dry-run-risk flags.
-- **Agriculture readings**: soil moisture, air temperature, humidity, and irrigation commands.
-- **Alerts**, paired with plain-language labels and icons rather than color alone, on any reading
-  crossing a threshold you set.
-- **Automation rules** that act within safety limits you approve, each with its own log of exactly
-  when and why it fired.
-- **Multi-site oversight** if your operation spans more than one physical location — each site
-  keeps its own devices, readings, and thresholds, visible together from one account.
-- **Audit log and reports** for whatever operational evidence your own compliance or stakeholder
-  reporting requires.
+Limits that vary from site to site are yours to set, per reading, from the site's page: a tank's critical
+and low levels, a battery's low charge, how long a reading may go without renewal before it is shown as
+out of date, and, for soil moisture and solar surplus, the value at which irrigation is due or a surplus is
+useful (with no setting, the platform says nothing).
 
-If your operation needs a reading category not listed above — anything beyond energy, water, and
-agriculture — say so to your Greecon contact before assuming it's covered. The platform's current
-reading set (`CanonicalPointName` in the shared contract) is fixed to what's listed here; extending
-it to a new resource type is a real scoping conversation, not a settings change.
+## What it does not do yet
 
-## Before you start
-
-- A site name for each physical location you want monitored.
-- An inventory of what each site already meters or controls, and where each sensor or controller
-  sits physically.
-- If you'll be using an edge device, see `docs/14-edge-hardware-deployment.md` for what it needs.
+- It does not know about readings outside those sixteen. A customer-defined reading kind is planned,
+  and will be added when several sites ask for the same one.
+- It does not control anything. Commands are simulations and the screen says so.
+- It does not send alerts to your phone; they appear in the app.
+- It is not a safety system and does not replace hard-wired protection.
+- It does not yet export all your data in one click. That is planned, and is a requirement for any
+  customer who wants to leave.
 
 ## Setup
 
-1. **Your Greecon contact creates your account and your first site.** You'll receive a login and a
-   temporary password — change it on first login (Settings → Account Security).
-2. **Add your devices and reading points** from each site's page: every sensor and controller, and
-   the specific measurement each one reports. Repeat per site if you operate more than one.
-3. **Connect the real hardware.** See `docs/14-edge-hardware-deployment.md` for wiring the on-site
-   edge device that reads your equipment and sends readings to Greecon.
-4. **Set safety limits and alert thresholds** for each site before relying on any automation rule —
-   this is what keeps automated action inside limits you've approved.
-5. **Watch Monitoring and Analytics** once hardware is connected, and prioritize the alerts most
-   likely to prevent real damage or downtime for your specific operation.
+1. Your Greecon contact creates your account and a site for each physical location.
+2. Add each device and the readings it reports.
+3. Connect the edge device: `docs/14-edge-hardware-deployment.md`.
+4. Set the limits that suit your equipment.
+5. Use the Overview as your daily check, and Monitoring (under Sites) when you want every reading.
 
-## What to check day to day
+## If your needs are different
 
-- **Monitoring** for the current state of every site at a glance.
-- **Alerts** for anything needing attention.
-- **Analytics** for trends across the time ranges available in the app.
-- **Audit** and **Reports** for a record of manual overrides, automated actions, and exported
-  evidence, whenever a stakeholder or regulator asks for one.
+Say so to your Greecon contact. A feature is added when real sites need it and the need is written
+down, and the way it works is decided with you: that is how the platform is meant to grow
+(`docs/17-constitution.md`).
 
 ## Getting help
 
-Questions about what the platform currently covers for your specific sector, or what to scope for
-a future extension, belong with your Greecon contact.
+Questions about setup or what a reading means belong with your Greecon contact.

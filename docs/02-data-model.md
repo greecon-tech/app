@@ -31,7 +31,12 @@ The database foundation targets PostgreSQL with TimescaleDB for telemetry. The s
 
 Every telemetry reading carries UTC timestamp, tenant ID, site ID, optional asset ID, device ID, point ID, canonical point name, value, unit, quality flag, source, and ingestion timestamp.
 
-`telemetry_readings` is a TimescaleDB hypertable partitioned by `timestamp_utc`.
+`telemetry_readings` is a TimescaleDB hypertable partitioned by `timestamp_utc` where the extension is
+installed (the local Docker setup). On managed Postgres such as Railway and Cloud SQL it is an ordinary
+table: the migration decides when it runs. The storage direction for growth (plain Postgres with
+partitions and our own rollups behind a `SeriesStore` interface, not a time-series licence) is proposed
+in `adr/0008-storage-engine-and-the-seriesstore-seam.md`, with the measurements that would trigger it in
+`24-architecture-seams.md`.
 
 ## Indexing
 
@@ -39,4 +44,4 @@ The migration adds indexes for tenant, site, asset, device, point, timestamp, se
 
 ## Repository Decision
 
-The MVP API uses an in-memory demo repository behind service methods so the interface and safety behavior can be tested without a local database. The SQL schema is already present for the durable repository phase. No ORM is introduced yet; this keeps the schema explicit and avoids early abstraction cost.
+The API keeps its working set in memory and, when `DATABASE_URL` is set, loads it from Postgres at start-up and writes every change through. With no database it runs on the seeded demo set, which is how the tests and the static demo work. No ORM is used; the schema stays explicit. The limits of this arrangement (one replica, memory-bound) and what would change it are in `24-architecture-seams.md`.
