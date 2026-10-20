@@ -100,6 +100,18 @@ describe("an escalation", () => {
       `Act now, not acknowledged: Tank level is critical, Hotel Adriatik. Besa Krasniqi was told 14:05. You are next. Check the water supply and refill the tank as soon as it is safe to do so. ${LINK}`
     );
   });
+
+  it("does not say the person before has not answered when they were never told: it says only that this person is next", () => {
+    const { subject, body } = escalationEmail(facts, undefined, LINK);
+    expect(subject).toBe("Act now, not acknowledged: Tank level is critical, Hotel Adriatik");
+    expect(body).toContain("You are next on the list.");
+    expect(body).not.toContain("was told");
+    expect(body).not.toContain("has not answered");
+    expect(body).toContain("First step: Check the water supply");
+    expect(escalationSms(facts, undefined, LINK)).toBe(
+      `Act now, not acknowledged: Tank level is critical, Hotel Adriatik. You are next. Check the water supply and refill the tank as soon as it is safe to do so. ${LINK}`
+    );
+  });
 });
 
 describe("an Act now text", () => {

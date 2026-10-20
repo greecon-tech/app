@@ -7,7 +7,7 @@ import { NotificationConfig } from "./config";
 import { DigestFacts } from "./messages";
 import { NotificationsService, AlertSource, AlertView } from "./notifications.service";
 import { MemoryOutboxStore } from "./outbox";
-import { AlertEvent } from "./plan";
+import { AlertEvent, PlannedMessage } from "./plan";
 
 const T1 = "t-1";
 const T2 = "t-2";
@@ -17,6 +17,10 @@ const NOON = Date.parse("2026-10-19T10:00:00Z"); // 12:00 in Europe/Tirane (UTC+
 class FakeSource implements AlertSource {
   alerts = new Map<string, AlertView>();
   stable = true;
+  /** Accounts the platform has suspended. */
+  suspended = new Set<string>();
+  /** Greecon's own account, whose morning message names the customers whose alert messages are not arriving. */
+  operator = new Set<string>();
   listener: ((events: AlertEvent[]) => void) | undefined;
   alertById(tenantId: string, alertId: string): AlertView | undefined {
     const alert = this.alerts.get(alertId);
@@ -36,6 +40,12 @@ class FakeSource implements AlertSource {
   }
   setAlertListener(listener: ((events: AlertEvent[]) => void) | undefined): void {
     this.listener = listener;
+  }
+  isTenantActive(tenantId: string): boolean {
+    return !this.suspended.has(tenantId);
+  }
+  isOperatorTenant(tenantId: string): boolean {
+    return this.operator.has(tenantId);
   }
   add(overrides: Partial<AlertView> = {}): AlertView {
     const alert: AlertView = {
@@ -179,8 +189,11 @@ describe("telling people", () => {
       source.alerts.set(alert.id, { ...alert, status: "resolved", resolvedAtUtc: new Date(clearedAt).toISOString() });
       await service.onAlertEvents([{ type: "resolved", atMs: clearedAt, alert, siteName: "Hotel Adriatik" }], clearedAt);
       expect(await service.tick(clearedAt)).toMatchObject({ sent: 0, skipped: 0 });
-      expect(await service.tick(clearedAt + 14 * MIN)).toMatchObject({ sent: 0, skipped: 1 }); // Besa's text, due at 12:10, is no longer wanted
-      expect(await service.tick(clearedAt + 15 * MIN)).toMatchObject({ sent: 1 });
+      // Besa's text, due at 12:10, falls due while the condition may still come back: it waits, and is not dropped yet.
+      expect(await service.tick(clearedAt + 14 * MIN)).toMatchObject({ sent: 0, skipped: 0, retried: 1 });
+      // Fifteen minutes clear: the same alert can no longer return, so the text is dropped, and the resolved note goes.
+      expect(await service.tick(clearedAt + 15 * MIN)).toMatchObject({ sent: 1, skipped: 1 });
+      expect(outbox.rows.find((row) => row.channel === "sms" && row.contactName.startsWith("Besa"))).toMatchObject({ status: "skipped", error: "The condition cleared before this was sent." });
       expect(fake.sent[0]?.subject).toBe("Resolved: Tank level is critical, Hotel Adriatik");
       expect(fake.sent[0]?.body).toContain("no longer show it (since 12:05)");
       expect(sentTo()).toEqual(["email:besa@hotel.example"]);
@@ -282,47 +295,209 @@ describe("telling people", () => {
       expect(outbox.rows[1]).toMatchObject({ status: "failed", error: "Not sent: text messages are not set up on this Greecon platform." });
     });
 
-    it("tries again, a little later each time, when the service is having trouble", async () => {
+    it("keeps trying an alert message, five minutes on, as a new line in the log, when the service is having trouble", async () => {
       fake.results = [{ ok: false, transient: true, error: "The email service answered 503: unavailable" }];
       await service.onAlertEvents([opened(source.add())], NOON);
-      expect(await service.tick(NOON)).toMatchObject({ retried: 1, sent: 0 });
-      expect(outbox.rows[0]).toMatchObject({ status: "planned", attempts: 1, error: "The email service answered 503: unavailable", dueAtMs: NOON + MIN });
-      expect(await service.tick(NOON + 30_000)).toMatchObject({ sent: 0 });
-      expect(await service.tick(NOON + MIN)).toMatchObject({ sent: 1 });
-      expect(outbox.rows[0]).toMatchObject({ status: "sent", destination: "besa@hotel.example" });
+      expect(await service.tick(NOON)).toMatchObject({ failed: 1, sent: 0 });
+
+      // One line for the failure, with its reason, and the same message planned again for five minutes on.
+      expect(outbox.rows[0]).toMatchObject({ status: "failed", error: "The email service answered 503: unavailable", destination: "besa@hotel.example" });
+      const again = outbox.rows.find((row) => row.dedupeKey.endsWith("#retry1"));
+      expect(again).toMatchObject({ status: "planned", kind: "alert", priority: "act_now", dueAtMs: NOON + 5 * MIN, body: outbox.rows[0]?.body });
+      expect(await service.tick(NOON + 4 * MIN)).toMatchObject({ sent: 0 });
+      expect(await service.tick(NOON + 5 * MIN)).toMatchObject({ sent: 1 });
+      expect(outbox.rows.find((row) => row.id === again?.id)).toMatchObject({ status: "sent", destination: "besa@hotel.example" });
+      expect(outbox.rows[0]?.status).toBe("failed"); // the failure stays in the log
     });
 
-    it("gives up after five tries and keeps the reason", async () => {
+    it("never gives up on an alert message while the alert stands: twelve tries an hour apart from the first, then one every half hour", async () => {
       const down: EmailChannel = { send: async () => ({ ok: false, transient: true, error: "The email service could not be reached: timeout" }) };
       service = build({ email: down, problems: [] });
       await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
       await service.onAlertEvents([opened(source.add())], NOON);
-      let now = NOON;
-      const outcomes: string[] = [];
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const counts = await service.tick(now);
-        outcomes.push(counts.retried === 1 ? "retried" : counts.failed === 1 ? "failed" : "nothing");
-        now += 10 * MIN;
+      const triedAt: number[] = [];
+      for (let minute = 0; minute <= 150; minute += 1) {
+        const counts = await service.tick(NOON + minute * MIN);
+        if (counts.failed === 1) triedAt.push(minute);
       }
-      expect(outcomes).toEqual(["retried", "retried", "retried", "retried", "failed"]);
-      expect(outbox.rows[0]).toMatchObject({ status: "failed", attempts: 4, error: "The email service could not be reached: timeout" });
+      expect(triedAt).toEqual([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 85, 115, 145]);
+      // Never more than twelve in any hour.
+      for (const start of triedAt) expect(triedAt.filter((minute) => minute >= start && minute < start + 60).length).toBeLessThanOrEqual(12);
+      // A line for every failure, each with the reason, and the next try waiting.
+      expect(outbox.rows.filter((row) => row.status === "failed")).toHaveLength(triedAt.length);
+      expect(outbox.rows.filter((row) => row.status === "failed").every((row) => row.error === "The email service could not be reached: timeout")).toBe(true);
+      expect(outbox.rows.filter((row) => row.status === "planned")).toHaveLength(1);
     });
 
-    it("does not try again when it will fail the same way", async () => {
+    it("tries again even when it will fail the same way, because an address can be mended while the alert is open", async () => {
       fake.results = [{ ok: false, transient: false, error: "The email service answered 422: Invalid `to` field." }];
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel,example" }]);
       await service.onAlertEvents([opened(source.add())], NOON);
       expect(await service.tick(NOON)).toMatchObject({ failed: 1, retried: 0 });
       expect(outbox.rows[0]?.status).toBe("failed");
+
+      const [first] = config.contacts(T1);
+      await config.setContacts(T1, [{ id: first?.id, name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      expect(await service.tick(NOON + 5 * MIN)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
     });
 
-    it("sends nothing more than a limit an hour, so a flapping condition cannot become a flood", async () => {
-      for (let index = 0; index < 61; index += 1) {
-        await service.onAlertEvents([opened(source.add({ createdAtUtc: new Date(NOON).toISOString() }), NOON + index)], NOON);
+    it("stops trying once the alert is acknowledged, or has cleared for good", async () => {
+      const down: EmailChannel = { send: async () => ({ ok: false, transient: true, error: "The email service answered 503: unavailable" }) };
+      service = build({ email: down, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON);
+      source.alerts.set(alert.id, { ...alert, status: "acknowledged" });
+      expect(await service.tick(NOON + 5 * MIN)).toMatchObject({ skipped: 1, failed: 0 });
+      expect(outbox.rows.find((row) => row.dedupeKey.endsWith("#retry1"))).toMatchObject({ status: "skipped", error: "Someone acknowledged the alert before this was sent." });
+      expect(await service.tick(NOON + 60 * MIN)).toMatchObject({ failed: 0, retried: 0 });
+      expect(outbox.rows).toHaveLength(2);
+
+      // And no further try is planned for a message that failed just as the alert was acknowledged.
+      const other = source.add({ id: "a-9", title: "Pump is running dry" });
+      await service.onAlertEvents([opened(other, NOON + 61 * MIN)], NOON + 61 * MIN);
+      source.alerts.set(other.id, { ...other, status: "acknowledged" });
+      await service.tick(NOON + 61 * MIN);
+      expect(outbox.rows.filter((row) => row.alertId === other.id)).toHaveLength(1);
+    });
+
+    it("tells the screen that alert messages did not arrive, how many, and why the last one failed", async () => {
+      const down: EmailChannel = { send: async () => ({ ok: false, transient: false, error: "The email service answered 401: invalid API key." }) };
+      service = build({ email: down, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      expect((await service.status(T1, NOON)).words.join(" ")).not.toContain("could not be delivered");
+
+      await service.onAlertEvents([opened(source.add()), opened(source.add({ title: "Pump is running dry" }))], NOON);
+      await service.tick(NOON);
+      const words = (await service.status(T1, NOON + MIN)).words;
+      expect(words.at(-1)).toBe("2 alert messages could not be delivered, the last because: The email service answered 401: invalid API key. Greecon keeps trying while the alert is open.");
+      // Another account's screen says nothing of it.
+      expect((await service.status(T2, NOON + MIN)).words.join(" ")).not.toContain("could not be delivered");
+      // Once the alerts are no longer open there is nothing to say.
+      for (const alert of source.alerts.values()) source.alerts.set(alert.id, { ...alert, status: "acknowledged" });
+      expect((await service.status(T1, NOON + 2 * MIN)).words.join(" ")).not.toContain("could not be delivered");
+    });
+  });
+
+  describe("the most one account is sent in an hour", () => {
+    // One person, reached one way, so that each Act now alert is exactly one message and a run of them counts exactly.
+    const emailOnly = [{ name: "Besa Krasniqi", email: "besa@hotel.example" }];
+    const textOnly = [{ name: "Night porter", phone: "+355693333333" }];
+    const raise = async (count: number, overrides: Partial<AlertView> = {}) => {
+      for (let index = 0; index < count; index += 1) {
+        await service.onAlertEvents([opened(source.add({ createdAtUtc: new Date(NOON).toISOString(), ...overrides }), NOON + index)], NOON);
       }
+    };
+    const held = () => outbox.rows.filter((row) => row.status === "planned");
+
+    it("stops Check today emails at a limit an hour, so a flapping condition cannot become a flood", async () => {
+      await config.setContacts(T1, emailOnly);
+      await raise(61, { severity: "warning", title: "Tank level is low" });
       const counts = await service.tick(NOON + 100);
-      expect(counts.sent).toBe(60);
-      expect(counts.failed).toBe(1);
+      expect(counts).toMatchObject({ sent: 60, failed: 1, retried: 0 });
       expect(outbox.rows.find((row) => row.status === "failed")?.error).toBe("Not sent: this account has already been sent 60 emails in the last hour.");
+    });
+
+    it("has a ceiling of its own for Act now emails, and holds what is past it instead of dropping it", async () => {
+      await config.setContacts(T1, emailOnly);
+      await raise(121);
+      const counts = await service.tick(NOON + 200);
+      expect(counts).toMatchObject({ sent: 120, retried: 1, failed: 0, skipped: 0 });
+
+      // Waiting its turn: still planned, no try used up, and the log says why.
+      expect(held()).toHaveLength(1);
+      const waitingId = held()[0]?.id;
+      expect(held()[0]).toMatchObject({ attempts: 0, dueAtMs: NOON + 200 + 2 * MIN });
+      expect(held()[0]?.error).toBe("Held: this account has already been sent 120 Act now emails in the last hour. It is sent as soon as the hour allows.");
+
+      // Asked again while the hour is still full, it waits again, however many times.
+      for (let round = 1; round <= 5; round += 1) {
+        expect(await service.tick(NOON + 200 + round * 5 * MIN)).toMatchObject({ sent: 0, retried: 1, failed: 0 });
+      }
+      expect(held()[0]?.attempts).toBe(0);
+
+      // When the hour has passed it goes out.
+      expect(await service.tick(NOON + 200 + 61 * MIN)).toMatchObject({ sent: 1, retried: 0, failed: 0 });
+      expect(outbox.rows.every((row) => row.status === "sent")).toBe(true);
+      expect(outbox.rows.find((row) => row.id === waitingId)).toMatchObject({ status: "sent", error: undefined });
+    });
+
+    it("has a ceiling of its own for Act now texts, and holds the next one", async () => {
+      await config.setContacts(T1, textOnly);
+      await raise(61);
+      const counts = await service.tick(NOON + 200);
+      expect(counts).toMatchObject({ sent: 60, retried: 1, failed: 0 });
+      expect(held()[0]?.error).toBe("Held: this account has already been sent 60 Act now text messages in the last hour. It is sent as soon as the hour allows.");
+      expect(await service.tick(NOON + 200 + 61 * MIN)).toMatchObject({ sent: 1 });
+    });
+
+    it("still skips a held message if the alert is acknowledged, or clears, while it waits", async () => {
+      await config.setContacts(T1, emailOnly);
+      await raise(121);
+      await service.tick(NOON + 200);
+      const waiting = held()[0];
+      const alertId = waiting?.alertId as string;
+      source.alerts.set(alertId, { ...(source.alerts.get(alertId) as AlertView), status: "acknowledged" });
+      expect(await service.tick(NOON + 200 + 5 * MIN)).toMatchObject({ sent: 0, skipped: 1, retried: 0 });
+      expect(outbox.rows.find((row) => row.id === waiting?.id)).toMatchObject({ status: "skipped", error: "Someone acknowledged the alert before this was sent." });
+    });
+
+    it("is not used up by Check today emails: after sixty of them, a hundred Act now alerts are still all sent", async () => {
+      await config.setContacts(T1, emailOnly);
+      await raise(61, { severity: "warning", title: "Tank level is low" });
+      await service.tick(NOON + 100);
+      expect(fake.sent).toHaveLength(60);
+
+      for (let index = 0; index < 100; index += 1) await service.onAlertEvents([opened(source.add({ title: `Pump ${index} is running dry` }), NOON + 200 + index)], NOON + 200);
+      expect(await service.tick(NOON + 300)).toMatchObject({ sent: 100, failed: 0, retried: 0 });
+      expect(fake.sent).toHaveLength(160);
+      expect(fake.sent.at(-1)?.subject).toContain("Act now");
+    });
+
+    it("is not used up by notes that someone acknowledged an alert or that it cleared", async () => {
+      await config.setContacts(T1, emailOnly);
+      const [besaOnTheList] = config.contacts(T1);
+      const notes = Array.from({ length: 61 }, (_, index) => ({
+        alertId: `old-${index}`,
+        contactId: besaOnTheList?.id,
+        contactName: "Besa Krasniqi",
+        channel: "email" as const,
+        kind: "acknowledged" as const,
+        priority: "act_now" as const,
+        subject: "Acknowledged",
+        body: "Someone is on it.",
+        dueAtMs: NOON,
+        dedupeKey: `acknowledged:old-${index}:${NOON}:besa:email`
+      }));
+      await outbox.plan(T1, notes, NOON);
+      // The notes have their own limit and meet it...
+      expect(await service.tick(NOON)).toMatchObject({ sent: 60, failed: 1 });
+      expect(outbox.rows.find((row) => row.status === "failed")?.error).toBe("Not sent: this account has already been sent 60 emails in the last hour.");
+      // ...which says nothing about an Act now message, and an Act now message says nothing about them.
+      await service.onAlertEvents([opened(source.add(), NOON + 100)], NOON + 100);
+      expect(await service.tick(NOON + 200)).toMatchObject({ sent: 1, failed: 0, retried: 0 });
+    });
+
+    it("does not count Act now messages against the Check today limit", async () => {
+      await config.setContacts(T1, emailOnly);
+      await raise(100);
+      await service.tick(NOON + 100);
+      expect(fake.sent).toHaveLength(100);
+
+      await service.onAlertEvents([opened(source.add({ severity: "warning", title: "Tank level is low" }), NOON + 200)], NOON + 200);
+      expect(await service.tick(NOON + 300)).toMatchObject({ sent: 1, failed: 0 });
+    });
+
+    it("counts each account on its own", async () => {
+      await config.setContacts(T1, emailOnly);
+      await config.setContacts(T2, [{ name: "Vlora Owner", email: "owner@vlora.example" }]);
+      await raise(121);
+      await service.tick(NOON + 200);
+      await service.onAlertEvents([opened(source.add({ tenantId: T2 }), NOON + 300)], NOON + 300);
+      expect(await service.tick(NOON + 3 * MIN)).toMatchObject({ sent: 1, retried: 1 }); // the other account's alert goes; this account's held one waits again
+      expect(sentTo().at(-1)).toBe("email:owner@vlora.example");
     });
   });
 
@@ -375,11 +550,15 @@ describe("telling people", () => {
       service = build({ problems: [] });
       source.add();
       await service.tick(NOON);
-      expect(outbox.rows).toHaveLength(4); // an email and a text for each of the two people
+      expect(outbox.rows).toHaveLength(5); // an email and a text for each of the two people, and the first email planned again
       service = build();
       await service.tick(NOON + 2 * MIN);
       expect(fake.sent).toEqual([]);
-      expect(outbox.rows).toHaveLength(4);
+      expect(outbox.rows).toHaveLength(5);
+      // The first email is sent when the platform can send it, five minutes after it failed, and still nothing is planned twice.
+      await service.tick(NOON + 5 * MIN);
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+      expect(outbox.rows).toHaveLength(5);
     });
 
     it("is not told about when it is only information, or acknowledged, or resolved", async () => {
@@ -388,6 +567,500 @@ describe("telling people", () => {
       source.add({ status: "resolved" });
       await service.tick(NOON);
       expect(fake.sent).toEqual([]);
+    });
+  });
+
+  describe("a customer who has been suspended", () => {
+    const at = (iso: string) => Date.parse(iso);
+    const SUSPENDED = "The account is suspended, so nothing is sent for it.";
+
+    it("is planned for nothing, however its alerts change, and is sent nothing", async () => {
+      source.suspended.add(T1);
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON); // the box has gone quiet; it is turned away, so this is what happens
+      expect(outbox.rows).toEqual([]);
+      // An open alert nobody planned for is noticed on the next round, as for any account; here it is not.
+      expect(await service.tick(NOON + MIN)).toMatchObject({ sent: 0, failed: 0 });
+      expect(outbox.rows).toEqual([]);
+      await service.onAlertEvents([{ type: "resolved", atMs: NOON + 2 * MIN, alert, siteName: "Hotel Adriatik" }], NOON + 2 * MIN);
+      expect(outbox.rows).toEqual([]);
+      expect(fake.sent).toEqual([]);
+    });
+
+    it("gets no morning message", async () => {
+      source.suspended.add(T1);
+      await service.tick(at("2026-10-19T05:30:00Z")); // 07:30
+      expect(fake.sent).toEqual([]);
+      expect(outbox.rows).toEqual([]);
+    });
+
+    it("has what was already planned dropped, with the reason, from the moment it is suspended", async () => {
+      await service.onAlertEvents([opened(source.add())], NOON);
+      await service.tick(NOON); // the first email goes
+      expect(fake.sent).toHaveLength(1);
+
+      source.suspended.add(T1);
+      expect(await service.tick(NOON + 30 * MIN)).toMatchObject({ sent: 0, skipped: 3 }); // the text, and the second person
+      expect(fake.sent).toHaveLength(1);
+      const dropped = outbox.rows.filter((row) => row.status === "skipped");
+      expect(dropped).toHaveLength(3);
+      expect(dropped.every((row) => row.error === SUSPENDED)).toBe(true);
+    });
+
+    it("drops even a test message", async () => {
+      const [first] = config.contacts(T1);
+      source.suspended.add(T1);
+      const entries = await service.sendTest(T1, first?.id as string, NOON);
+      expect(fake.sent).toEqual([]);
+      expect(entries.map((entry) => entry.status)).toEqual(["skipped", "skipped"]);
+      expect(entries.map((entry) => entry.error)).toEqual([SUSPENDED, SUSPENDED]);
+    });
+
+    it("is told again as soon as it is active, about what happens from then on", async () => {
+      source.suspended.add(T1);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      expect(outbox.rows).toEqual([]);
+
+      source.suspended.delete(T1);
+      await service.onAlertEvents([opened(source.add({ title: "Pump is running dry" }), NOON + 5 * MIN)], NOON + 5 * MIN);
+      await service.tick(NOON + 5 * MIN);
+      expect(sentTo()).toContain("email:besa@hotel.example");
+    });
+
+    it("does not stop another account from being told", async () => {
+      await config.setContacts(T2, [{ name: "Vlora Owner", email: "owner@vlora.example" }]);
+      source.suspended.add(T1);
+      await service.onAlertEvents([opened(source.add()), opened(source.add({ tenantId: T2 }))], NOON);
+      await service.tick(NOON);
+      expect(sentTo()).toEqual(["email:owner@vlora.example"]);
+    });
+  });
+
+
+  describe("a condition that clears and comes back", () => {
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const clear = async (alert: AlertView, atMs: number, extra: Partial<AlertView> = {}) => {
+      source.alerts.set(alert.id, { ...alert, ...extra, status: "resolved", resolvedAtUtc: iso(atMs) });
+      await service.onAlertEvents([{ type: "resolved", atMs, alert, siteName: "Hotel Adriatik" }], atMs);
+    };
+    const returns = async (alert: AlertView, atMs: number, extra: Partial<AlertView> = {}) => {
+      const back = { ...alert, ...extra, status: "open" as const };
+      source.alerts.set(alert.id, back);
+      await service.onAlertEvents([{ type: "reopened", atMs, alert: back, siteName: "Hotel Adriatik" }], atMs);
+    };
+
+    it("still texts the person when it comes back inside the flap window, though the text fell due while it was clear", async () => {
+      await config.setContacts(T1, [besa]);
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON); // the email, 12:00
+      await clear(alert, NOON + 5 * MIN);
+
+      // Her text falls due at 12:10, five minutes into the gap: it waits, with the reason in the log.
+      expect(await service.tick(NOON + 10 * MIN)).toMatchObject({ sent: 0, skipped: 0, retried: 1 });
+      const text = outbox.rows.find((row) => row.channel === "sms");
+      expect(text).toMatchObject({ status: "planned", dueAtMs: NOON + 11 * MIN, attempts: 0 });
+      expect(text?.error).toBe("Held: the condition cleared a moment ago and may come back. This is sent if it does.");
+      expect(await service.tick(NOON + 11 * MIN)).toMatchObject({ sent: 0, retried: 1 });
+
+      // It comes back at 12:12, the same alert: she is texted, though the alert is open and she was never told it was.
+      await returns(alert, NOON + 12 * MIN);
+      expect(await service.tick(NOON + 12 * MIN)).toMatchObject({ sent: 1, skipped: 0 });
+      expect(sentTo()).toEqual(["email:besa@hotel.example", "sms:+355691111111"]);
+    });
+
+    it("does not page the first person again for a wobble nobody had acknowledged", async () => {
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON);
+      await clear(alert, NOON + 5 * MIN);
+      await returns(alert, NOON + 8 * MIN);
+      fake.sent.length = 0;
+      await service.tick(NOON + 9 * MIN);
+      expect(fake.sent).toEqual([]);
+      const steps = outbox.rows.filter((row) => row.kind === "alert" || row.kind === "escalation");
+      expect(steps).toHaveLength(4);
+      expect(steps.every((row) => row.dedupeKey.includes(":g0:"))).toBe(true);
+    });
+
+    it("starts again from the first person when it comes back after someone had acknowledged it, and does not tell the second person the first has not answered", async () => {
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON); // Besa is emailed at 12:00
+
+      // Besa acknowledges at 12:02. It clears at 12:10 (her text, due then, waits) and comes back at 12:21.
+      const acknowledged = { acknowledgedAtUtc: iso(NOON + 2 * MIN) };
+      source.alerts.set(alert.id, { ...alert, ...acknowledged, status: "acknowledged" });
+      await service.onAlertEvents([{ type: "acknowledged", atMs: NOON + 2 * MIN, alert: { ...alert, ...acknowledged }, siteName: "Hotel Adriatik", by: "Besa Krasniqi", byEmail: besa.email }], NOON + 2 * MIN);
+      await clear(alert, NOON + 10 * MIN, acknowledged);
+      await service.tick(NOON + 10 * MIN);
+      fake.sent.length = 0;
+      await returns(alert, NOON + 21 * MIN, acknowledged);
+
+      // She is told it is back, at once; what was still waiting from the first round is dropped.
+      await service.tick(NOON + 21 * MIN);
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+      expect(fake.sent[0]?.subject).toBe("Act now: Tank level is critical, Hotel Adriatik");
+      const dropped = outbox.rows.filter((row) => row.status === "skipped" && row.error?.startsWith("The condition came back after someone had acknowledged it"));
+      expect(dropped.map((row) => `${row.contactName.split(" ")[0]} ${row.channel}`).sort()).toEqual(["Arben email", "Arben sms", "Besa sms"]);
+
+      // The second round runs as the first did: her text at ten minutes, Arben at thirty, and what he is told is true of this round.
+      await service.tick(NOON + 31 * MIN);
+      expect(sentTo()).toEqual(["email:besa@hotel.example", "sms:+355691111111"]);
+      await service.tick(NOON + 51 * MIN);
+      expect(sentTo().slice(2).sort()).toEqual(["email:arben@hotel.example", "sms:+355692222222"]);
+      const escalation = fake.sent.find((message) => message.to === "arben@hotel.example");
+      expect(escalation?.body).toContain("Besa Krasniqi was told at 12:21 and has not answered. You are next.");
+      expect(escalation?.body).not.toContain("was told at 12:00");
+      expect(outbox.rows.filter((row) => row.status === "sent").every((row) => row.dedupeKey.includes(":g0:") || row.dedupeKey.includes(":g1:"))).toBe(true);
+    });
+
+    it("puts back, when the same alert comes back, a step that was dropped as cleared", async () => {
+      await config.setContacts(T1, [besa]);
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON);
+      // Its condition had been clear for a quarter of an hour when the text fell due, so the text was dropped...
+      await clear(alert, NOON - 6 * MIN);
+      expect(await service.tick(NOON + 10 * MIN)).toMatchObject({ skipped: 1 });
+      expect(outbox.rows.find((row) => row.channel === "sms")).toMatchObject({ status: "skipped", error: "The condition cleared before this was sent." });
+
+      // ...and then the same alert returned: the text is sent after all.
+      await returns(alert, NOON + 11 * MIN);
+      expect(outbox.rows.find((row) => row.channel === "sms")).toMatchObject({ status: "planned", error: "The condition came back, so this is sent after all." });
+      expect(await service.tick(NOON + 11 * MIN)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toContain("sms:+355691111111");
+      expect(outbox.rows.find((row) => row.channel === "sms")).toMatchObject({ status: "sent" });
+    });
+  });
+
+  describe("what an escalation says of the person before", () => {
+    it("says they were told, and have not answered, when they were", async () => {
+      await service.onAlertEvents([opened(source.add())], NOON);
+      await service.tick(NOON);
+      await service.tick(NOON + 30 * MIN);
+      const email = fake.sent.find((message) => message.to === "arben@hotel.example");
+      const text = fake.sent.find((message) => message.to === "+355692222222");
+      expect(email?.body).toContain("Besa Krasniqi was told at 12:00 and has not answered. You are next.");
+      expect(text?.body).toContain("Besa Krasniqi was told 12:00. You are next.");
+    });
+
+    it("does not say so when the first person was never told: their messages failed, so they cannot have 'not answered'", async () => {
+      // Besa can be reached only by email, and that address bounces; Arben's work.
+      const sent: Sent[] = [];
+      const email: EmailChannel = {
+        send: async (message: OutgoingEmail) => {
+          if (message.to === "besa@hotel.example") return { ok: false, transient: false, error: "The email service answered 422: the mailbox does not exist." };
+          sent.push({ channel: "email", to: message.to, subject: message.subject, body: message.body });
+          return { ok: true, providerId: "em" };
+        }
+      };
+      const sms: SmsChannel = {
+        send: async (message) => {
+          sent.push({ channel: "sms", to: message.to, body: message.body });
+          return { ok: true, providerId: "sm" };
+        }
+      };
+      service = build({ email, sms, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }, arben]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      await service.tick(NOON);
+      await service.tick(NOON + 30 * MIN);
+
+      const email2 = sent.find((message) => message.to === "arben@hotel.example");
+      const text2 = sent.find((message) => message.to === "+355692222222");
+      expect(email2?.body).toContain("You are next on the list.");
+      expect(email2?.body).not.toContain("has not answered");
+      expect(email2?.body).not.toContain("was told");
+      expect(text2?.body).toContain("You are next.");
+      expect(text2?.body).not.toContain("was told");
+    });
+  });
+
+  describe("an escalation after the list has been reordered", () => {
+    it("says only that the person is next when nobody is before them on the list any more", async () => {
+      await service.onAlertEvents([opened(source.add())], NOON);
+      await service.tick(NOON);
+      const [first, second] = config.contacts(T1);
+      await config.setContacts(T1, [
+        { id: second?.id, name: second?.name as string, email: second?.email, phone: second?.phone },
+        { id: first?.id, name: first?.name as string, email: first?.email, phone: first?.phone }
+      ]);
+      await service.tick(NOON + 30 * MIN);
+      const escalation = fake.sent.find((message) => message.to === "arben@hotel.example" && message.subject?.startsWith("Act now, not acknowledged"));
+      expect(escalation?.body).toContain("You are next on the list.");
+      expect(escalation?.body).not.toContain("was told");
+    });
+  });
+
+  describe("a chain of messages that has to be whole", () => {
+    it("completes one that was only partly planned, timing the missing steps from when the chain began", async () => {
+      const alert = source.add();
+      const [onlyTheFirst] = (await import("./plan")).planAlertEvent(opened(alert), { contacts: config.contacts(T1), settings: config.settings(T1), generation: 0 });
+      await outbox.plan(T1, [onlyTheFirst as PlannedMessage], NOON); // the database dropped after the first row
+      expect(outbox.rows).toHaveLength(1);
+
+      await service.tick(NOON + 3 * MIN);
+      expect(outbox.rows).toHaveLength(4);
+      const due = outbox.rows.map((row) => `${row.contactName.split(" ")[0]} ${row.channel} +${(row.dueAtMs - NOON) / MIN}`).sort();
+      expect(due).toEqual(["Arben email +30", "Arben sms +30", "Besa email +0", "Besa sms +10"]);
+      await service.tick(NOON + 30 * MIN);
+      expect(sentTo().sort()).toEqual(["email:arben@hotel.example", "email:besa@hotel.example", "sms:+355691111111", "sms:+355692222222"]);
+    });
+
+    it("does not make a second chain when a round that noticed the alert and the event that announced it both plan it", async () => {
+      const alert = source.add();
+      await service.tick(NOON + 30_000); // a round notices the open alert nobody was told of, and plans its chain from now
+      expect(outbox.rows).toHaveLength(4);
+      await service.onAlertEvents([opened(alert, NOON)], NOON + 40_000); // then the event that was announced earlier is planned too
+      expect(outbox.rows).toHaveLength(4);
+      await service.tick(NOON + 60 * MIN);
+      expect(sentTo().filter((to) => to === "email:besa@hotel.example")).toHaveLength(1);
+    });
+
+    it("plans for a person added to the list while the alert stands, in their place in the order, and only once", async () => {
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON);
+      const plumber = { name: "Night plumber", phone: "+355693333333" };
+      await config.setContacts(T1, [...config.contacts(T1), plumber]);
+      await service.tick(NOON + 5 * MIN);
+      const theirs = () => outbox.rows.filter((row) => row.contactName === "Night plumber");
+      expect(theirs().map((row) => `${row.channel} +${(row.dueAtMs - NOON) / MIN}`)).toEqual(["sms +60"]);
+      await service.tick(NOON + 6 * MIN);
+      expect(theirs()).toHaveLength(1);
+      expect(outbox.rows).toHaveLength(5);
+    });
+  });
+
+  describe("a round of work that cannot be planned, or is held up", () => {
+    class FailingOutbox extends MemoryOutboxStore {
+      brokenAlert: string | undefined;
+      override async chains(tenantId: string, alertId: string) {
+        if (alertId === this.brokenAlert) throw new Error("the database dropped");
+        return super.chains(tenantId, alertId);
+      }
+    }
+
+    it("does not let one alert that cannot be checked stop the messages that are due", async () => {
+      const failing = new FailingOutbox();
+      service = build(undefined, { outbox: failing, config });
+      await config.setContacts(T2, [{ name: "Vlora Owner", email: "owner@vlora.example" }]);
+      const broken = source.add({ id: "a-broken" });
+      failing.brokenAlert = broken.id;
+      source.add({ tenantId: T2, id: "a-fine" });
+      expect(await service.tick(NOON)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toEqual(["email:owner@vlora.example"]);
+    });
+
+    it("sends what is due even when the open alerts cannot be listed at all", async () => {
+      await service.onAlertEvents([opened(source.add())], NOON);
+      source.openAlertsAcrossTenants = () => {
+        throw new Error("the platform could not list its alerts");
+      };
+      expect(await service.tick(NOON)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+    });
+
+    it("does not let one account's morning message that cannot be planned stop another's, or the messages that are due", async () => {
+      const bad = source.digestOf.bind(source);
+      source.digestOf = (tenantId: string, nowMs: number) => {
+        if (tenantId === T1) throw new Error("the report would not build");
+        return bad(tenantId, nowMs);
+      };
+      await config.setContacts(T2, [{ name: "Vlora Owner", email: "owner@vlora.example" }]);
+      source.add({ tenantId: T2 });
+      // Both the morning and an alert fall due in the same round.
+      const morning = Date.parse("2026-10-19T05:30:00Z");
+      source.alerts.get("a-1")!.createdAtUtc = new Date(morning).toISOString();
+      expect(await service.tick(morning)).toMatchObject({ sent: 2 }); // the alert, and Vlora's morning message
+      expect(sentTo().sort()).toEqual(["email:owner@vlora.example", "email:owner@vlora.example"]);
+    });
+
+    it("turns away a message that goes wrong in a way nobody foresaw, puts it back, and sends the rest", async () => {
+      const email: EmailChannel = {
+        send: async (message: OutgoingEmail) => {
+          if (message.to === "besa@hotel.example") throw new Error("the connection fell over");
+          fake.sent.push({ channel: "email", to: message.to, subject: message.subject, body: message.body });
+          return { ok: true, providerId: "em" };
+        }
+      };
+      service = build({ email, sms: fake.sms, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }, { name: "Arben Hoxha", email: "arben@hotel.example" }]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      expect(await service.tick(NOON + 30 * MIN)).toMatchObject({ sent: 1, retried: 1 });
+      expect(sentTo()).toEqual(["email:arben@hotel.example"]);
+      expect(outbox.rows.find((row) => row.contactName.startsWith("Besa"))).toMatchObject({ status: "planned", error: "Not sent yet: the connection fell over" });
+    });
+  });
+
+  describe("sending to several people at once", () => {
+    const people = ["Ana", "Besa", "Cena", "Drita", "Elda"].map((name) => ({ name, email: `${name.toLowerCase()}@hotel.example` }));
+
+    it("does not let a provider that hangs on one person hold up everyone else", async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const started: string[] = [];
+      const done: string[] = [];
+      const email: EmailChannel = {
+        send: async (message: OutgoingEmail) => {
+          started.push(message.to);
+          if (message.to === "ana@hotel.example") await gate;
+          done.push(message.to);
+          return { ok: true, providerId: "em" };
+        }
+      };
+      service = build({ email, problems: [] });
+      await config.setContacts(T1, people);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      const round = service.tick(NOON + 120 * MIN); // everyone's step is due by now
+      for (let spin = 0; spin < 200 && done.length < 4; spin += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(done.sort()).toEqual(["besa@hotel.example", "cena@hotel.example", "drita@hotel.example", "elda@hotel.example"]);
+      release();
+      expect(await round).toMatchObject({ sent: 5 });
+    });
+
+    it("never sends more than four people's messages at the same moment", async () => {
+      let running = 0;
+      let most = 0;
+      const email: EmailChannel = {
+        send: async () => {
+          running += 1;
+          most = Math.max(most, running);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          running -= 1;
+          return { ok: true, providerId: "em" };
+        }
+      };
+      service = build({ email, problems: [] });
+      await config.setContacts(T1, [...people, ...["Fatos", "Gent", "Hana"].map((name) => ({ name, email: `${name.toLowerCase()}@hotel.example` }))]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      expect(await service.tick(NOON + 4 * 60 * MIN)).toMatchObject({ sent: 8 });
+      expect(most).toBe(4);
+    });
+
+    it("keeps one person's messages in order: the text waits for their email", async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const order: string[] = [];
+      const email: EmailChannel = {
+        send: async () => {
+          order.push("email started");
+          await gate;
+          order.push("email done");
+          return { ok: true, providerId: "em" };
+        }
+      };
+      const sms: SmsChannel = {
+        send: async () => {
+          order.push("text started");
+          return { ok: true, providerId: "sm" };
+        }
+      };
+      service = build({ email, sms, problems: [] });
+      await config.setContacts(T1, [besa]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      const round = service.tick(NOON + 10 * MIN); // the email and the text of the same person are both due
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(order).toEqual(["email started"]);
+      release();
+      await round;
+      expect(order).toEqual(["email started", "email done", "text started"]);
+    });
+
+    it("cannot pass an hourly limit by sending to several people at once: it holds exactly what is past it", async () => {
+      const email: EmailChannel = {
+        send: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 2));
+          return { ok: true, providerId: "em" };
+        }
+      };
+      service = build({ email, problems: [] });
+      // Ten people, each emailed in turn about each of thirteen Act now alerts: 130 emails are due, 120 may go in an hour.
+      await config.setContacts(T1, Array.from({ length: 10 }, (_, index) => ({ name: `Person ${index}`, email: `p${index}@hotel.example` })));
+      for (let index = 0; index < 13; index += 1) await service.onAlertEvents([opened(source.add({ title: `Tank ${index} is critical` }), NOON + index)], NOON);
+      const counts = await service.tick(NOON + 10 * 60 * MIN);
+      expect(counts).toMatchObject({ sent: 120, retried: 10, failed: 0 });
+    });
+  });
+
+  describe("two platforms working at once", () => {
+    class LockedOutbox extends MemoryOutboxStore {
+      free = true;
+      granted = 0;
+      released = 0;
+      override async tryLock() {
+        if (!this.free) return undefined;
+        this.granted += 1;
+        return async () => {
+          this.released += 1;
+        };
+      }
+    }
+
+    it("sends nothing while another platform has the round, and says nothing is wrong", async () => {
+      const locked = new LockedOutbox();
+      service = build(undefined, { outbox: locked, config });
+      await service.onAlertEvents([opened(source.add())], NOON);
+      locked.free = false;
+      expect(await service.tick(NOON)).toEqual({ sent: 0, failed: 0, skipped: 0, retried: 0 });
+      expect(fake.sent).toEqual([]);
+      locked.free = true;
+      expect(await service.tick(NOON + MIN)).toMatchObject({ sent: 1 });
+      expect(locked.released).toBe(locked.granted);
+    });
+
+    it("goes ahead anyway when the round has been held for more than two rounds running, so a lock never let go cannot silence an alert", async () => {
+      const locked = new LockedOutbox();
+      service = build(undefined, { outbox: locked, config });
+      await service.onAlertEvents([opened(source.add())], NOON);
+      locked.free = false;
+      expect(await service.tick(NOON)).toMatchObject({ sent: 0 });
+      expect(await service.tick(NOON + MIN)).toMatchObject({ sent: 0 });
+      expect(await service.tick(NOON + 2 * MIN)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+    });
+
+    it("lets go of the round even when the round fails", async () => {
+      class Breaking extends LockedOutbox {
+        override async claimDue(): Promise<never> {
+          throw new Error("the database dropped");
+        }
+      }
+      const broken = new Breaking();
+      service = build(undefined, { outbox: broken, config });
+      await expect(service.tick(NOON)).rejects.toThrow("the database dropped");
+      expect(broken.released).toBe(1);
+    });
+  });
+
+  describe("what Greecon's own morning message says of the customers' alert messages", () => {
+    it("names each customer whose alert messages are not arriving, and why, and leaves out the ones that are", async () => {
+      source.operator.add("t-greecon");
+      await config.setContacts("t-greecon", [{ name: "Greecon team", email: "team@greecon.example" }]);
+      const down: EmailChannel = {
+        send: async (message: OutgoingEmail) => {
+          if (message.to === "team@greecon.example") {
+            fake.sent.push({ channel: "email", to: message.to, subject: message.subject, body: message.body });
+            return { ok: true, providerId: "em" };
+          }
+          return { ok: false, transient: false, error: "The email service answered 401: invalid API key." };
+        }
+      };
+      service = build({ email: down, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      await service.tick(NOON);
+
+      await service.tick(Date.parse("2026-10-20T05:30:00Z")); // the next morning, 07:30
+      const note = fake.sent.find((message) => message.to === "team@greecon.example");
+      expect(note?.body).toContain("Hotel Adriatik Ltd: 1 alert message could not be delivered, the last because: The email service answered 401: invalid API key.");
+
+      // A customer's own morning message is about its own sites, and carries no such line about others.
+      source.alerts.forEach((alert) => source.alerts.set(alert.id, { ...alert, status: "acknowledged" }));
+      fake.sent.length = 0;
+      await service.tick(Date.parse("2026-10-21T05:30:00Z"));
+      expect(fake.sent.find((message) => message.to === "team@greecon.example")?.body).not.toContain("could not be delivered");
     });
   });
 
@@ -558,7 +1231,7 @@ describe("telling people", () => {
     it("says that nothing is sent when the platform has no email or text service, and that nobody is on the list", async () => {
       service = build({ problems: [] });
       await config.setContacts(T1, []);
-      const status = service.status(T1);
+      const status = await service.status(T1);
       expect(status.email.configured).toBe(false);
       expect(status.words).toEqual([
         "Alert messages are off on this Greecon platform. Alerts show in Greecon, but nobody is sent a message.",
@@ -567,20 +1240,20 @@ describe("telling people", () => {
     });
 
     it("says what is on, and asks for a test when none has been sent", async () => {
-      const status = service.status(T1);
+      const status = await service.status(T1);
       expect(status).toMatchObject({ contacts: 2, byEmail: 2, bySms: 2, email: { configured: true }, sms: { configured: true } });
       expect(status.words).toEqual(["Email is on.", "Text messages are on.", "No test message has been sent yet. Send one to each person and ask them to confirm it arrived."]);
     });
 
     it("says when text messages are off that Act now reaches people by email only", async () => {
       service = build({ email: fake.email, problems: [] });
-      expect(service.status(T1).words[1]).toBe("Text messages are off, so Act now alerts reach people by email only.");
+      expect((await service.status(T1)).words[1]).toBe("Text messages are off, so Act now alerts reach people by email only.");
     });
 
     it("gives the time of the last test, and asks whether it arrived", async () => {
       const [first] = config.contacts(T1);
       await service.sendTest(T1, first?.id as string, NOON);
-      const status = service.status(T1);
+      const status = await service.status(T1);
       expect(status.lastTestAtUtc).toBe(new Date(NOON).toISOString());
       expect(status.words.at(-1)).toBe("A test message was last sent on 2026-10-19 10:00 UTC. Ask the person whether it arrived.");
     });

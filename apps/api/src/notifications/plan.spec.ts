@@ -7,12 +7,19 @@ import {
   FIRST_SMS_DELAY_MS,
   PlanContext,
   RESOLVED_DELAY_MS,
+  baseKeyOf,
+  chainKey,
   digestWindow,
+  generationFor,
+  generationOfKey,
   inQuietHours,
+  latestChain,
   localDate,
   minutesOfDay,
   planAlertEvent,
-  quietHoursEnd
+  quietHoursEnd,
+  retryCountOf,
+  retryKeyOf
 } from "./plan";
 
 // 2026-10-19 is in Europe/Tirane's summer-time period until 25 October: UTC+2.
@@ -139,13 +146,36 @@ describe("an Act now alert", () => {
     expect(planAlertEvent(opened("critical"), context([besa, arben, plumber])).map((m) => m.dedupeKey)).toEqual(keys);
   });
 
+  it("keys a step on the alert, the round, the person and the way, and not on when it was planned", () => {
+    const early = planAlertEvent(opened("critical", NOON), context([besa, arben])).map((message) => message.dedupeKey);
+    // The same round planned from another place a moment later (the event, and then a round that noticed it missing).
+    const later = planAlertEvent(opened("critical", NOON + 90_000), context([besa, arben])).map((message) => message.dedupeKey);
+    expect(later).toEqual(early);
+    expect(early[0]).toBe(chainKey("a-1", 0, "c-besa", "email"));
+    expect(early.map(generationOfKey)).toEqual([0, 0, 0, 0]);
+    // The next round is another set of keys, and a try again of a message is the same message.
+    const next = planAlertEvent(opened("critical"), context([besa, arben], { generation: 3 })).map((message) => message.dedupeKey);
+    expect(next.every((key) => !early.includes(key))).toBe(true);
+    expect(next.map(generationOfKey)).toEqual([3, 3, 3, 3]);
+    expect(baseKeyOf(retryKeyOf(early[0] as string, 4))).toBe(early[0]);
+    expect(retryCountOf(retryKeyOf(early[0] as string, 4))).toBe(4);
+    expect(retryCountOf(early[0] as string)).toBe(0);
+  });
+
+  it("starts a person's steps from when the round began, in the order of the list, whenever the missing ones are planned", () => {
+    const whole = planAlertEvent(opened("critical", NOON), context([besa, arben]));
+    const replanned = planAlertEvent(opened("critical", NOON), context([besa, arben]));
+    expect(replanned.map((m) => `${m.dedupeKey}@${m.dueAtMs}`)).toEqual(whole.map((m) => `${m.dedupeKey}@${m.dueAtMs}`));
+  });
+
   it("plans nothing when nobody is on the list", () => {
     expect(planAlertEvent(opened("critical"), context([]))).toEqual([]);
   });
 
   it("starts again, at the new priority, when an alert gets worse", () => {
     const escalated: AlertEvent = { type: "escalated", atMs: NOON + 3_600_000, alert: alert("critical"), siteName: "Hotel Adriatik" };
-    const messages = planAlertEvent(escalated, context([besa]));
+    // The service gives the new round the next number, so it is a chain of its own and not the first one planned twice.
+    const messages = planAlertEvent(escalated, context([besa], { generation: 1 }));
     expect(messages.map((m) => `${m.channel} ${m.priority} +${(m.dueAtMs - escalated.atMs) / 60_000}`)).toEqual(["email act_now +0", "sms act_now +10"]);
     expect(messages[0]?.dedupeKey).not.toBe(planAlertEvent(opened("critical"), context([besa]))[0]?.dedupeKey);
   });
@@ -226,5 +256,28 @@ describe("an alert that cleared", () => {
 
   it("does not tell people who were never told", () => {
     expect(planAlertEvent(resolved, context([besa], { told: [] }))).toEqual([]);
+  });
+});
+
+describe("which round of messages an alert is in", () => {
+  const chain = (generation: number, priority: "act_now" | "check_today", startedAtMs = NOON) => ({ generation, priority, startedAtMs });
+
+  it("is the first round when nothing has been planned", () => {
+    expect(generationFor([], "act_now")).toBe(0);
+    expect(latestChain([])).toBeUndefined();
+  });
+
+  it("is the round already there at that priority, so planning it again changes nothing", () => {
+    expect(generationFor([chain(0, "act_now")], "act_now")).toBe(0);
+    expect(generationFor([chain(0, "check_today"), chain(1, "act_now")], "act_now")).toBe(1);
+  });
+
+  it("is the next round when the alert has only been planned for at another priority", () => {
+    expect(generationFor([chain(0, "check_today")], "act_now")).toBe(1);
+    expect(generationFor([chain(0, "act_now"), chain(1, "act_now")], "check_today")).toBe(2);
+  });
+
+  it("knows the newest round, and when it began", () => {
+    expect(latestChain([chain(0, "act_now", NOON), chain(2, "act_now", NOON + 5), chain(1, "check_today", NOON + 9)])).toEqual(chain(2, "act_now", NOON + 5));
   });
 });

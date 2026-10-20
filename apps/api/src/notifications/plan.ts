@@ -38,6 +38,8 @@ export interface AlertSummary {
   title: string;
   suggestedAction: string;
   createdAtUtc: string;
+  /** When someone last acknowledged it, if anyone has. It stays set when the alert clears and returns. */
+  acknowledgedAtUtc?: string;
 }
 
 export type AlertEvent =
@@ -59,6 +61,53 @@ export interface PlannedMessage {
   dedupeKey: string;
 }
 
+/** The identity of one step of a chain: this alert, this round of it, this person, this way of reaching them. */
+export function chainKey(alertId: string, generation: number, contactId: string, channel: NotificationChannel): string {
+  return `chain:${alertId}:g${generation}:${contactId}:${channel}`;
+}
+
+/** Which round a message belongs to, from its key. A key that is not a chain step is round 0. */
+export function generationOfKey(dedupeKey: string): number {
+  const found = /^chain:[^:]*:g([0-9]+):/.exec(dedupeKey);
+  return found ? Number(found[1]) : 0;
+}
+
+const RETRY_SUFFIX = /#retry([0-9]+)$/;
+
+/** The key a message was first planned under: a try again of it is keyed `<that>#retry<n>`. */
+export function baseKeyOf(dedupeKey: string): string {
+  return dedupeKey.replace(RETRY_SUFFIX, "");
+}
+
+/** How many times this message has already been tried again. */
+export function retryCountOf(dedupeKey: string): number {
+  const found = RETRY_SUFFIX.exec(dedupeKey);
+  return found ? Number(found[1]) : 0;
+}
+
+export function retryKeyOf(dedupeKey: string, retries: number): string {
+  return `${baseKeyOf(dedupeKey)}#retry${retries}`;
+}
+
+/** One round of messages that was planned for an alert: when it began, and at which priority. */
+export interface ChainInfo {
+  generation: number;
+  priority: AlertPriority;
+  startedAtMs: number;
+}
+
+/** The round of messages to use for an alert at this priority: the one already there, or a new round after the others. */
+export function generationFor(chains: readonly ChainInfo[], priority: AlertPriority): number {
+  const same = chains.filter((chain) => chain.priority === priority);
+  if (same.length > 0) return Math.max(...same.map((chain) => chain.generation));
+  return chains.length > 0 ? Math.max(...chains.map((chain) => chain.generation)) + 1 : 0;
+}
+
+/** The newest round, whatever its priority. */
+export function latestChain(chains: readonly ChainInfo[]): ChainInfo | undefined {
+  return chains.reduce<ChainInfo | undefined>((newest, chain) => (!newest || chain.generation > newest.generation || (chain.generation === newest.generation && chain.startedAtMs > newest.startedAtMs) ? chain : newest), undefined);
+}
+
 /** A person who was in fact told about this alert, as the log shows. */
 export interface ToldContact {
   contactId: string;
@@ -70,6 +119,9 @@ export interface ToldContact {
 export interface PlanContext {
   contacts: readonly NotificationContact[];
   settings: NotificationSettings;
+  /** Which round of messages this is for the alert: 0 the first time, one more each time the chain starts again from the
+   * first person. A message is keyed on it, so planning the same round twice, from two places, makes no second message. */
+  generation?: number;
   /** Where "Open in Greecon" goes, if the platform knows its own web address. */
   link?: string;
   /** For acknowledged and resolved: who has been told so far. */
@@ -167,7 +219,8 @@ function planOpening(event: AlertEvent, context: PlanContext): PlannedMessage[] 
   if (priority === "fyi") return [];
   const facts = factsOf(event, priority, context.settings);
   const { contacts, link } = context;
-  const key = (kind: NotificationKind, contact: NotificationContact, channel: NotificationChannel) => `${kind}:${event.alert.id}:${event.atMs}:${contact.id}:${channel}`;
+  const generation = context.generation ?? 0;
+  const key = (contact: NotificationContact, channel: NotificationChannel) => chainKey(event.alert.id, generation, contact.id, channel);
 
   if (priority === "check_today") {
     const contact = contacts.find((candidate) => candidate.email !== undefined);
@@ -185,7 +238,7 @@ function planOpening(event: AlertEvent, context: PlanContext): PlannedMessage[] 
         body: message.body,
         dueAtMs: quietHoursEnd(event.atMs, context.settings),
         eventAtMs: event.atMs,
-        dedupeKey: key("alert", contact, "email")
+        dedupeKey: key(contact, "email")
       }
     ];
   }
@@ -199,7 +252,7 @@ function planOpening(event: AlertEvent, context: PlanContext): PlannedMessage[] 
 
     if (contact.email) {
       const message = previous ? escalationEmail(facts, previous, link) : alertEmail(facts, link);
-      planned.push({ ...base, channel: "email", subject: message.subject, body: message.body, dueAtMs: emailDue, dedupeKey: key(kind, contact, "email") });
+      planned.push({ ...base, channel: "email", subject: message.subject, body: message.body, dueAtMs: emailDue, dedupeKey: key(contact, "email") });
     }
     if (contact.phone) {
       // The first person is texted only if the email has not been answered; someone with no email is texted at once.
@@ -209,7 +262,7 @@ function planOpening(event: AlertEvent, context: PlanContext): PlannedMessage[] 
         channel: "sms",
         body: previous ? escalationSms(facts, previous, link) : alertSms(facts, link),
         dueAtMs: smsDue,
-        dedupeKey: key(kind, contact, "sms")
+        dedupeKey: key(contact, "sms")
       });
     }
   });

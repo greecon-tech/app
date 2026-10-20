@@ -98,14 +98,17 @@ export interface PreviousContact {
   toldAtMs: number;
 }
 
-export function escalationEmail(facts: AlertFacts, previous: PreviousContact, link?: string): Message {
+/** The next person on the list. The person before them is said to have "not answered" only when they were in fact told:
+ * a message that failed to reach them, or that was never sent, is not an unanswered one. Without `previous`, the
+ * message says only that this person is next. */
+export function escalationEmail(facts: AlertFacts, previous: PreviousContact | undefined, link?: string): Message {
   const lead = `${word(facts.priority)}, not acknowledged: ${facts.title}.`;
   return {
     subject: `${word(facts.priority)}, not acknowledged: ${facts.title}, ${facts.siteName}`,
     body: [
       lead,
       "",
-      `${previous.name} was told at ${clockTime(previous.toldAtMs, facts.timezone)} and has not answered. You are next.`,
+      previous ? `${previous.name} was told at ${clockTime(previous.toldAtMs, facts.timezone)} and has not answered. You are next.` : "You are next on the list.",
       "",
       ...details(facts),
       "",
@@ -117,9 +120,9 @@ export function escalationEmail(facts: AlertFacts, previous: PreviousContact, li
   };
 }
 
-export function escalationSms(facts: AlertFacts, previous: PreviousContact, link?: string): string {
+export function escalationSms(facts: AlertFacts, previous: PreviousContact | undefined, link?: string): string {
   return fitSms(
-    `${word(facts.priority)}, not acknowledged: ${facts.title}, ${facts.siteName}. ${previous.name} was told ${clockTime(previous.toldAtMs, facts.timezone)}. You are next.`,
+    `${word(facts.priority)}, not acknowledged: ${facts.title}, ${facts.siteName}. ${previous ? `${previous.name} was told ${clockTime(previous.toldAtMs, facts.timezone)}. ` : ""}You are next.`,
     facts.action,
     link
   );

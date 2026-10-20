@@ -94,8 +94,9 @@ reading stays as it was, with a note. The platform keeps what was measured.
 2. **What was sent**, on the same page: each message, to whom, when, and its result: **Sent** (the email or text provider took it), **Not sent** (the **Why** column says why), **Waiting**, or **Not needed** (for example, someone acknowledged the alert before it went). **Sent** does not mean the person saw it. After **Send a test message** the page says *Accepted for delivery*, which means the same, so ask the person whether it arrived.
 3. **Email in spam?** Ask them to look, and to mark it not spam. **Text:** which network? (some operators replace a sender name; see [01, step 8](01-founder-go-live.md)).
 4. **Quiet hours** hold Check today until morning; only Act now is sent at night.
-5. **Hourly limits:** an account is limited to 60 emails and 20 texts an hour. A condition flapping all day should not hit it; if it did, find out why.
+5. **Hourly limits:** everything that is not Act now (Check today, and the notes that an alert was acknowledged or has cleared) is limited to 60 emails and 20 texts an hour per account; past that a message is dropped and the **Why** column says so. Act now has a limit of its own, 120 emails and 60 texts an hour, and past it a message is **held**, not dropped, and sent as soon as the hour allows. A condition flapping all day should not reach either; if it did, find out why.
 6. **Is the platform's messaging off?** The API's log at start-up says so ("Alert messages are OFF").
+7. **A message that could not be delivered** (a key refused, an empty text balance, the provider down): an Act now message is tried again every five minutes for as long as the alert is open and nobody has acknowledged it, and **Who is told** says "N alert messages could not be delivered, the last because ...". Mend the cause (the key, the balance, the address); the next try sends it. Greecon's own morning message names the customers whose alert messages are not arriving. A customer who is **Suspended** is sent nothing at all.
 
 **Fix:** correct the list and send a test message to the person, and confirm it arrived.
 

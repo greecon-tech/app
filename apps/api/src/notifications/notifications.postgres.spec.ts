@@ -8,7 +8,7 @@ import { Channels } from "./channels";
 import { NotificationConfig } from "./config";
 import { NotificationsService } from "./notifications.service";
 import { PostgresOutboxStore } from "./outbox";
-import { PlannedMessage } from "./plan";
+import { PlannedMessage, chainKey } from "./plan";
 
 const MIN = 60_000;
 const NOON = Date.parse("2026-10-19T10:00:00Z");
@@ -169,6 +169,190 @@ describe.skipIf(!testDatabaseUrl)("the message outbox, on a real PostgreSQL", ()
   });
 });
 
+const ALERT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01";
+const BESA = "cccccccc-cccc-4ccc-8ccc-cccccccccc01";
+const ARBEN = "cccccccc-cccc-4ccc-8ccc-cccccccccc02";
+const step = (generation: number, contactId: string, channel: "email" | "sms", overrides: Partial<PlannedMessage> = {}): PlannedMessage =>
+  message({ contactId, channel, dedupeKey: chainKey(ALERT, generation, contactId, channel), subject: channel === "email" ? "Act now" : undefined, ...overrides });
+
+describe.skipIf(!testDatabaseUrl)("rounds of messages for an alert, on a real PostgreSQL", () => {
+  it("plans a whole round in one statement, so that a database that drops part way leaves all of it or none of it", async () => {
+    await inWorld(async ({ connect, tenants }) => {
+      const db = connect();
+      const outbox = new PostgresOutboxStore(db);
+      // The second message is one the database refuses. Saved row by row, the first would have stayed and the chain looked planned.
+      await expect(outbox.plan(tenants[0], [step(0, BESA, "email"), step(0, BESA, "sms", { channel: "carrier-pigeon" as never })], NOON)).rejects.toThrow();
+      expect(await outbox.recent(tenants[0], 10)).toEqual([]);
+
+      const whole = await outbox.plan(tenants[0], [step(0, BESA, "email"), step(0, BESA, "sms"), step(0, ARBEN, "email", { dueAtMs: NOON + 30 * MIN })], NOON);
+      expect(whole.map((row) => row.dedupeKey)).toEqual([chainKey(ALERT, 0, BESA, "email"), chainKey(ALERT, 0, BESA, "sms"), chainKey(ALERT, 0, ARBEN, "email")]);
+      // Planned again, or twice in one go, makes nothing new.
+      expect(await outbox.plan(tenants[0], [step(0, BESA, "email"), step(0, BESA, "email")], NOON)).toEqual([]);
+      expect(await outbox.plan(tenants[0], [], NOON)).toEqual([]);
+      await db.onModuleDestroy();
+    });
+  });
+
+  it("counts what went out in the last hour, only at one priority when asked, and never another account's", async () => {
+    await inWorld(async ({ connect, tenants }) => {
+      const db = connect();
+      const outbox = new PostgresOutboxStore(db);
+      const rows = await outbox.plan(
+        tenants[0],
+        [
+          step(0, BESA, "email"), // Act now, the first message
+          step(0, ARBEN, "email", { kind: "escalation" }), // Act now, a step of the escalation
+          step(1, BESA, "email", { priority: "check_today" }), // Check today
+          message({ kind: "acknowledged", priority: "act_now", dedupeKey: "ack:1" }), // a note about an Act now alert
+          step(0, BESA, "sms")
+        ],
+        NOON
+      );
+      for (const row of rows) await outbox.markSent(row.id, NOON + MIN, "x");
+      await outbox.plan(tenants[1], [step(0, BESA, "email")], NOON);
+      const theirs = (await outbox.recent(tenants[1], 5))[0];
+      await outbox.markSent(theirs?.id as string, NOON + MIN, "x");
+
+      const urgent = ["alert", "escalation"] as const;
+      expect(await outbox.countSentSince(tenants[0], "email", NOON, urgent)).toBe(3);
+      expect(await outbox.countSentSince(tenants[0], "email", NOON, urgent, "act_now")).toBe(2);
+      expect(await outbox.countSentSince(tenants[0], "email", NOON, urgent, "check_today")).toBe(1);
+      expect(await outbox.countSentSince(tenants[0], "email", NOON, ["acknowledged"], "act_now")).toBe(1);
+      expect(await outbox.countSentSince(tenants[0], "email", NOON, ["acknowledged"], "check_today")).toBe(0);
+      expect(await outbox.countSentSince(tenants[0], "sms", NOON, urgent, "act_now")).toBe(1);
+      expect(await outbox.countSentSince(tenants[1], "email", NOON, urgent, "act_now")).toBe(1);
+      await db.onModuleDestroy();
+    });
+  });
+
+  it("knows which rounds there are for an alert, which keys already have a message, and who was told in which round", async () => {
+    await inWorld(async ({ connect, tenants }) => {
+      const db = connect();
+      const outbox = new PostgresOutboxStore(db);
+      const [first, second, third] = await outbox.plan(
+        tenants[0],
+        [step(0, BESA, "email", { eventAtMs: NOON }), step(0, ARBEN, "email", { eventAtMs: NOON, dueAtMs: NOON + 30 * MIN }), step(1, BESA, "email", { eventAtMs: NOON + 21 * MIN, dueAtMs: NOON + 21 * MIN })],
+        NOON
+      );
+      await outbox.plan(tenants[0], [step(2, BESA, "email", { priority: "check_today", eventAtMs: NOON + 90 * MIN })], NOON);
+      expect((await outbox.chains(tenants[0], ALERT)).sort((a, b) => a.generation - b.generation)).toEqual([
+        { generation: 0, priority: "act_now", startedAtMs: NOON },
+        { generation: 1, priority: "act_now", startedAtMs: NOON + 21 * MIN },
+        { generation: 2, priority: "check_today", startedAtMs: NOON + 90 * MIN }
+      ]);
+      expect(await outbox.chains(tenants[1], ALERT)).toEqual([]);
+
+      const there = await outbox.existingKeys(tenants[0], [chainKey(ALERT, 0, BESA, "email"), chainKey(ALERT, 0, BESA, "sms"), chainKey(ALERT, 1, BESA, "email")]);
+      expect([...there].sort()).toEqual([chainKey(ALERT, 0, BESA, "email"), chainKey(ALERT, 1, BESA, "email")].sort());
+      expect([...(await outbox.existingKeys(tenants[1], [chainKey(ALERT, 0, BESA, "email")]))]).toEqual([]);
+      expect(await outbox.existingKeys(tenants[0], [])).toEqual(new Set());
+
+      await outbox.markSent(first?.id as string, NOON, "besa@hotel.example");
+      await outbox.markSent(third?.id as string, NOON + 21 * MIN, "besa@hotel.example");
+      await outbox.markSent(second?.id as string, NOON + 30 * MIN, "arben@hotel.example");
+      const told = await outbox.toldAbout(tenants[0], ALERT);
+      expect(told.find((row) => row.contactId === BESA)?.toldAtMs).toBe(NOON); // first told in the earliest round
+      expect((await outbox.toldAbout(tenants[0], ALERT, 1)).map((row) => `${row.contactId} ${row.toldAtMs}`)).toEqual([`${BESA} ${NOON + 21 * MIN}`]);
+      expect(await outbox.toldAbout(tenants[0], ALERT, 3)).toEqual([]);
+      await db.onModuleDestroy();
+    });
+  });
+
+  it("drops what still waits from earlier rounds, and puts back only what was dropped as cleared in the round asked for", async () => {
+    await inWorld(async ({ connect, tenants }) => {
+      const db = connect();
+      const outbox = new PostgresOutboxStore(db);
+      const rows = await outbox.plan(
+        tenants[0],
+        [step(0, BESA, "sms", { dueAtMs: NOON + 10 * MIN }), step(0, ARBEN, "email", { dueAtMs: NOON + 30 * MIN }), step(1, BESA, "email", { dueAtMs: NOON + 21 * MIN }), step(0, ARBEN, "sms", { dueAtMs: NOON + 30 * MIN })],
+        NOON
+      );
+      const byKey = (key: string) => rows.find((row) => row.dedupeKey === key)?.id as string;
+      await outbox.markSent(byKey(chainKey(ALERT, 0, ARBEN, "sms")), NOON + 30 * MIN, "+355692222222");
+
+      expect(await outbox.supersedeBefore(tenants[0], ALERT, 1, NOON + 21 * MIN, "A new round started.")).toBe(2); // the two still waiting from round 0; the sent one is left
+      const after = new Map((await outbox.recent(tenants[0], 10)).map((row) => [row.dedupeKey, row]));
+      expect(after.get(chainKey(ALERT, 0, BESA, "sms"))).toMatchObject({ status: "skipped", error: "A new round started." });
+      expect(after.get(chainKey(ALERT, 0, ARBEN, "sms"))).toMatchObject({ status: "sent" });
+      expect(after.get(chainKey(ALERT, 1, BESA, "email"))).toMatchObject({ status: "planned" });
+      expect(await outbox.supersedeBefore(tenants[1], ALERT, 9, NOON, "x")).toBe(0);
+
+      const cleared = "The condition cleared before this was sent.";
+      await outbox.markSkipped(byKey(chainKey(ALERT, 1, BESA, "email")), NOON + 22 * MIN, cleared);
+      // Another reason is not put back, nor is another round, nor another account's.
+      expect(await outbox.requeueSkipped(tenants[0], ALERT, 0, cleared, NOON + 25 * MIN, "back")).toBe(0);
+      expect(await outbox.requeueSkipped(tenants[1], ALERT, 1, cleared, NOON + 25 * MIN, "back")).toBe(0);
+      expect(await outbox.requeueSkipped(tenants[0], ALERT, 1, cleared, NOON + 25 * MIN, "The condition came back, so this is sent after all.")).toBe(1);
+      const requeued = (await outbox.recent(tenants[0], 10)).find((row) => row.dedupeKey === chainKey(ALERT, 1, BESA, "email"));
+      expect(requeued).toMatchObject({ status: "planned", dueAtMs: NOON + 25 * MIN, error: "The condition came back, so this is sent after all." });
+      // A step whose own time is still to come keeps it.
+      await outbox.markSkipped(byKey(chainKey(ALERT, 1, BESA, "email")), NOON + 26 * MIN, cleared);
+      await outbox.requeueSkipped(tenants[0], ALERT, 1, cleared, NOON + 10 * MIN, "again");
+      expect((await outbox.recent(tenants[0], 10)).find((row) => row.dedupeKey === chainKey(ALERT, 1, BESA, "email"))?.dueAtMs).toBe(NOON + 25 * MIN);
+      await db.onModuleDestroy();
+    });
+  });
+
+  it("counts a message as not delivered while its latest try failed and nobody has received it or called it off", async () => {
+    await inWorld(async ({ connect, tenants }) => {
+      const db = connect();
+      const outbox = new PostgresOutboxStore(db);
+      const other = "dddddddd-dddd-4ddd-8ddd-dddddddddd02";
+      const planned = await outbox.plan(
+        tenants[0],
+        [
+          step(0, BESA, "email"), // failed, and its try again is waiting: not delivered
+          { ...step(0, BESA, "email"), dedupeKey: `${chainKey(ALERT, 0, BESA, "email")}#retry1`, dueAtMs: NOON + 5 * MIN },
+          step(0, ARBEN, "email"), // failed, then received on the try again: delivered
+          { ...step(0, ARBEN, "email"), dedupeKey: `${chainKey(ALERT, 0, ARBEN, "email")}#retry1`, dueAtMs: NOON + 5 * MIN },
+          step(0, BESA, "sms"), // failed, and the try again was called off (the alert was acknowledged): not a failure to report
+          { ...step(0, BESA, "sms"), dedupeKey: `${chainKey(ALERT, 0, BESA, "sms")}#retry1`, dueAtMs: NOON + 5 * MIN },
+          step(0, ARBEN, "sms") // never failed
+        ],
+        NOON
+      );
+      const id = (key: string) => planned.find((row) => row.dedupeKey === key)?.id as string;
+      await outbox.markFailed(id(chainKey(ALERT, 0, BESA, "email")), NOON + MIN, "The email service answered 401: invalid API key.", "besa@hotel.example");
+      await outbox.markFailed(id(chainKey(ALERT, 0, ARBEN, "email")), NOON + MIN, "The email service answered 503.", "arben@hotel.example");
+      await outbox.markSent(id(`${chainKey(ALERT, 0, ARBEN, "email")}#retry1`), NOON + 5 * MIN, "arben@hotel.example");
+      await outbox.markFailed(id(chainKey(ALERT, 0, BESA, "sms")), NOON + MIN, "Twilio refused it.", "+355691111111");
+      await outbox.markSkipped(id(`${chainKey(ALERT, 0, BESA, "sms")}#retry1`), NOON + 5 * MIN, "Someone acknowledged the alert before this was sent.");
+      await outbox.plan(tenants[1], [message({ alertId: other, dedupeKey: chainKey(other, 0, BESA, "email") })], NOON);
+      const theirs = (await outbox.recent(tenants[1], 5))[0];
+      await outbox.markFailed(theirs?.id as string, NOON + 2 * MIN, "Their mailbox is full.");
+
+      const ours = await outbox.undeliveredAlertMessages(NOON - MIN, tenants[0]);
+      expect(ours).toHaveLength(1);
+      expect(ours[0]).toMatchObject({ tenantId: tenants[0], alertId: ALERT, contactName: "Besa Krasniqi", channel: "email", error: "The email service answered 401: invalid API key.", atMs: NOON + MIN });
+      expect((await outbox.undeliveredAlertMessages(NOON - MIN)).map((row) => row.tenantId).sort()).toEqual([tenants[0], tenants[1]].sort());
+      expect(await outbox.undeliveredAlertMessages(NOON + 10 * MIN, tenants[0])).toEqual([]); // older than the window asked for
+      await db.onModuleDestroy();
+    });
+  });
+
+  it("lets one platform at a time have the round of work, and gives it up when it has finished", async () => {
+    await inWorld(async ({ connect }) => {
+      const dbA = connect();
+      const dbB = connect();
+      const a = new PostgresOutboxStore(dbA);
+      const b = new PostgresOutboxStore(dbB);
+      const releaseA = await a.tryLock();
+      expect(releaseA).toBeDefined();
+      expect(await b.tryLock()).toBeUndefined(); // another platform has it
+      expect(await a.tryLock()).toBeUndefined(); // and nobody takes it twice
+      await (releaseA as () => Promise<void>)();
+      const releaseB = await b.tryLock();
+      expect(releaseB).toBeDefined();
+      await (releaseB as () => Promise<void>)();
+      const againA = await a.tryLock();
+      expect(againA).toBeDefined();
+      await (againA as () => Promise<void>)();
+      await dbA.onModuleDestroy();
+      await dbB.onModuleDestroy();
+    });
+  });
+});
+
 describe.skipIf(!testDatabaseUrl)("who is told, on a real PostgreSQL", () => {
   it("is still there after a restart, with the same order, ids and settings", async () => {
     await inWorld(async ({ connect, tenants }) => {
@@ -281,4 +465,119 @@ describe.skipIf(!testDatabaseUrl)("telling people, on a real PostgreSQL", () => 
       await dbB.onModuleDestroy();
     });
   });
+});
+
+describe.skipIf(!testDatabaseUrl)("alert messages that have to arrive, on a real PostgreSQL", () => {
+  const openAlert = (tenantId: string, alertId: string) => ({
+    id: alertId,
+    tenantId,
+    siteId: "s-1",
+    severity: "critical",
+    title: "Tank level is critical",
+    suggestedAction: "Check the water supply.",
+    createdAtUtc: new Date(NOON).toISOString(),
+    status: "open" as const
+  });
+  const sourceFor = (tenantId: string, alerts: Map<string, ReturnType<typeof openAlert>>) => ({
+    alertById: (_tenant: string, alertId: string) => alerts.get(alertId),
+    openAlertsAcrossTenants: () => [...alerts.values()].filter((alert) => alert.status === "open").map((alert) => ({ alert, siteName: "Hotel Adriatik" })),
+    tenantNameOf: () => "Hotel Adriatik Ltd",
+    digestOf: () => ({ customer: "Hotel Adriatik Ltd", sites: [] }),
+    setAlertListener: () => undefined,
+    isTenantActive: (id: string) => id === tenantId
+  });
+
+  it("holds an Act now message past the hourly ceiling and sends it when the hour allows, counting by priority in the database", async () => {
+    await inWorld(async ({ connect, pool, tenants }) => {
+      const db = connect();
+      const config = new NotificationConfig(db);
+      const [besa] = await config.setContacts(tenants[0], [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      const outbox = new PostgresOutboxStore(db);
+      const alerts = new Map<string, ReturnType<typeof openAlert>>();
+      const messages: PlannedMessage[] = [];
+      for (let index = 0; index < 121; index += 1) {
+        const alertId = `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`;
+        alerts.set(alertId, openAlert(tenants[0], alertId));
+        messages.push(step(0, besa?.id as string, "email", { alertId, dedupeKey: chainKey(alertId, 0, besa?.id as string, "email") }));
+      }
+      await outbox.plan(tenants[0], messages, NOON);
+      // Fifty notes that someone acknowledged something are sent too: they have a limit of their own and must not use up Act now's.
+      await outbox.plan(
+        tenants[0],
+        Array.from({ length: 50 }, (_, index) => message({ alertId: ALERT, contactId: besa?.id, kind: "acknowledged", dedupeKey: `ack:${index}`, subject: "Acknowledged" })),
+        NOON
+      );
+      const sent: string[] = [];
+      const channels: Channels = { email: { send: async (mail) => (sent.push(mail.to), { ok: true as const, providerId: "em" }) }, problems: [] };
+      const service = new NotificationsService(sourceFor(tenants[0], alerts), config, outbox, channels, { autoSend: false });
+
+      const counts = await service.tick(NOON + 1000);
+      expect(counts).toMatchObject({ sent: 170, retried: 1, failed: 0 });
+      const waiting = (await pool.query("SELECT status, attempts, error FROM notifications WHERE status = 'planned'")).rows;
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]).toMatchObject({ attempts: 0 });
+      expect(waiting[0].error).toMatch(/^Held: this account has already been sent 120 Act now emails in the last hour\./);
+
+      expect(await service.tick(NOON + 61 * MIN)).toMatchObject({ sent: 1, retried: 0 });
+      expect((await pool.query("SELECT count(*)::int AS n FROM notifications WHERE status = 'sent'")).rows[0].n).toBe(171);
+      await db.onModuleDestroy();
+    });
+  }, 60_000);
+
+  it("plans a failed alert message again, shows it in the status, and stops saying so once it has arrived", async () => {
+    await inWorld(async ({ connect, pool, tenants }) => {
+      const db = connect();
+      const config = new NotificationConfig(db);
+      const [besa] = await config.setContacts(tenants[0], [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      const outbox = new PostgresOutboxStore(db);
+      const alerts = new Map([[ALERT, openAlert(tenants[0], ALERT)]]);
+      let working = false;
+      const channels: Channels = {
+        email: { send: async () => (working ? { ok: true as const, providerId: "em" } : { ok: false as const, transient: false, error: "The email service answered 401: invalid API key." }) },
+        problems: []
+      };
+      const service = new NotificationsService(sourceFor(tenants[0], alerts), config, outbox, channels, { autoSend: false });
+      await outbox.plan(tenants[0], [step(0, besa?.id as string, "email")], NOON);
+
+      expect(await service.tick(NOON)).toMatchObject({ failed: 1 });
+      expect((await pool.query("SELECT status, error FROM notifications ORDER BY created_at, dedupe_key")).rows).toEqual([
+        { status: "failed", error: "The email service answered 401: invalid API key." },
+        { status: "planned", error: null }
+      ]);
+      expect((await service.status(tenants[0], NOON + MIN)).words.at(-1)).toBe("1 alert message could not be delivered, the last because: The email service answered 401: invalid API key. Greecon keeps trying while the alert is open.");
+
+      working = true;
+      expect(await service.tick(NOON + 5 * MIN)).toMatchObject({ sent: 1 });
+      expect((await service.status(tenants[0], NOON + 6 * MIN)).words.join(" ")).not.toContain("could not be delivered");
+      await db.onModuleDestroy();
+    });
+  }, 60_000);
+
+  it("completes a chain that the database dropped part way through planning", async () => {
+    await inWorld(async ({ connect, pool, tenants }) => {
+      const db = connect();
+      const config = new NotificationConfig(db);
+      const [besa, arben] = await config.setContacts(tenants[0], [
+        { name: "Besa Krasniqi", email: "besa@hotel.example", phone: "+355691111111" },
+        { name: "Arben Hoxha", email: "arben@hotel.example", phone: "+355692222222" }
+      ]);
+      const outbox = new PostgresOutboxStore(db);
+      const alerts = new Map([[ALERT, openAlert(tenants[0], ALERT)]]);
+      const channels: Channels = { email: { send: async () => ({ ok: true as const, providerId: "em" }) }, sms: { send: async () => ({ ok: true as const, providerId: "sm" }) }, problems: [] };
+      const service = new NotificationsService(sourceFor(tenants[0], alerts), config, outbox, channels, { autoSend: false });
+      await outbox.plan(tenants[0], [step(0, besa?.id as string, "email", { eventAtMs: NOON })], NOON); // only the first row was saved
+
+      await service.tick(NOON + 2 * MIN);
+      const rows = (await pool.query("SELECT contact_name, channel, due_at, status FROM notifications ORDER BY due_at, channel")).rows;
+      expect(rows.map((row) => `${row.contact_name.split(" ")[0]} ${row.channel} +${(row.due_at.getTime() - NOON) / MIN} ${row.status}`)).toEqual([
+        "Besa email +0 sent",
+        "Besa sms +10 planned",
+        "Arben email +30 planned",
+        "Arben sms +30 planned"
+      ]);
+      await service.tick(NOON + 3 * MIN);
+      expect((await pool.query("SELECT count(*)::int AS n FROM notifications")).rows[0].n).toBe(4); // and nothing is planned twice
+      await db.onModuleDestroy();
+    });
+  }, 60_000);
 });
