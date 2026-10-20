@@ -310,6 +310,30 @@ describe("telling people", () => {
       expect(outbox.rows[0]?.status).toBe("failed"); // the failure stays in the log
     });
 
+    it("keeps the tries of one message together, so that its arrival clears every failure before it from the screen", async () => {
+      let serviceIsUp = false;
+      const email: EmailChannel = {
+        send: async (message: OutgoingEmail) => {
+          if (!serviceIsUp) return { ok: false, transient: true, error: "The email service answered 503: unavailable" };
+          fake.sent.push({ channel: "email", to: message.to, subject: message.subject, body: message.body });
+          return { ok: true, providerId: "em" };
+        }
+      };
+      service = build({ email, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      for (const minute of [0, 5, 10]) await service.tick(NOON + minute * MIN);
+
+      // One key for the message and one for each try again, never a try of a try.
+      expect(outbox.rows).toHaveLength(4);
+      expect(outbox.rows.every((row) => /^chain:a-1:g0:[^:]+:email(#retry[0-9]+)?$/.test(row.dedupeKey))).toBe(true);
+      expect((await service.status(T1, NOON + 11 * MIN)).words.at(-1)).toMatch(/^1 alert message could not be delivered, the last because: The email service answered 503: unavailable/);
+
+      serviceIsUp = true;
+      expect(await service.tick(NOON + 15 * MIN)).toMatchObject({ sent: 1 });
+      expect((await service.status(T1, NOON + 16 * MIN)).words.join(" ")).not.toContain("could not be delivered");
+    });
+
     it("never gives up on an alert message while the alert stands: twelve tries an hour apart from the first, then one every half hour", async () => {
       const down: EmailChannel = { send: async () => ({ ok: false, transient: true, error: "The email service could not be reached: timeout" }) };
       service = build({ email: down, problems: [] });
@@ -342,6 +366,93 @@ describe("telling people", () => {
       expect(sentTo()).toEqual(["email:besa@hotel.example"]);
     });
 
+    it("holds a Check today email whose first try failed until the quiet hours end, however long the service is down", async () => {
+      const evening = Date.parse("2026-10-19T19:58:00Z"); // 21:58, two minutes before the quiet hours begin
+      let serviceIsUp = false;
+      const email: EmailChannel = {
+        send: async (message: OutgoingEmail) => {
+          if (!serviceIsUp) return { ok: false, transient: true, error: "The email service answered 503: unavailable" };
+          fake.sent.push({ channel: "email", to: message.to, subject: message.subject, body: message.body });
+          return { ok: true, providerId: "em" };
+        }
+      };
+      service = build({ email, problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      const alert = source.add({ severity: "warning", title: "Tank level is low", createdAtUtc: new Date(evening).toISOString() });
+      await service.onAlertEvents([opened(alert, evening)], evening);
+      expect(await service.tick(evening)).toMatchObject({ failed: 1 });
+
+      // The service is back a minute later, in the middle of the night. A Check today email waits for the morning all the same.
+      serviceIsUp = true;
+      expect(await service.tick(evening + 5 * MIN)).toMatchObject({ sent: 0 }); // 22:03
+      expect(await service.tick(Date.parse("2026-10-20T01:30:00Z"))).toMatchObject({ sent: 0 }); // 03:30
+      expect(await service.tick(Date.parse("2026-10-20T04:59:00Z"))).toMatchObject({ sent: 0 }); // 06:59
+      expect(sentTo()).toEqual([]);
+      expect(await service.tick(Date.parse("2026-10-20T05:00:00Z"))).toMatchObject({ sent: 1 }); // 07:00
+      expect(fake.sent[0]?.subject).toBe("Check today: Tank level is low, Hotel Adriatik");
+    });
+
+    it("keeps trying an Act now message through the night: quiet hours never delay it", async () => {
+      const night = Date.parse("2026-10-19T21:30:00Z"); // 23:30
+      fake.results = [{ ok: false, transient: true, error: "The email service answered 503: unavailable" }];
+      await service.onAlertEvents([opened(source.add({ createdAtUtc: new Date(night).toISOString() }), night)], night);
+      expect(await service.tick(night)).toMatchObject({ failed: 1 });
+      expect(await service.tick(night + 5 * MIN)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+    });
+
+    it("tries a way of sending that is not set up once an hour, not every five minutes, and sends it when it has been set up", async () => {
+      service = build({ problems: [] });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      await service.onAlertEvents([opened(source.add())], NOON);
+      const triedAt: number[] = [];
+      for (let minute = 0; minute <= 190; minute += 1) {
+        const counts = await service.tick(NOON + minute * MIN);
+        if (counts.failed === 1) triedAt.push(minute);
+      }
+      expect(triedAt).toEqual([0, 60, 120, 180]);
+
+      // The platform is started again with the email service set up: the next try, which is waiting, is sent.
+      service = build();
+      expect(await service.tick(NOON + 239 * MIN)).toMatchObject({ sent: 0 });
+      expect(await service.tick(NOON + 240 * MIN)).toMatchObject({ sent: 1 });
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+    });
+
+    it("never leaves an alert message with no next try, even when the database drops just after the provider refused it", async () => {
+      class Dropping extends MemoryOutboxStore {
+        dropsOfThePlan = 0;
+        dropsOfTheRetry = 0;
+        override async plan(tenantId: string, messages: readonly PlannedMessage[], nowMs: number) {
+          if (this.dropsOfThePlan > 0 && messages.some((message) => message.dedupeKey.includes("#retry"))) {
+            this.dropsOfThePlan -= 1;
+            throw new Error("the connection dropped");
+          }
+          return super.plan(tenantId, messages, nowMs);
+        }
+        override async retryAt(...args: Parameters<MemoryOutboxStore["retryAt"]>) {
+          if (this.dropsOfTheRetry > 0) {
+            this.dropsOfTheRetry -= 1;
+            throw new Error("the connection dropped");
+          }
+          return super.retryAt(...args);
+        }
+      }
+      const dropping = new Dropping();
+      service = build(undefined, { outbox: dropping, config });
+      await config.setContacts(T1, [{ name: "Besa Krasniqi", email: "besa@hotel.example" }]);
+      fake.results = [{ ok: false, transient: true, error: "The email service answered 503: unavailable" }];
+      await service.onAlertEvents([opened(source.add())], NOON);
+      dropping.dropsOfThePlan = 1;
+      dropping.dropsOfTheRetry = 1;
+      await service.tick(NOON);
+
+      // Written down as failed with no next try, nobody would ever send it. Not written down, it is taken for a message whose
+      // worker died, and is sent again a few minutes later.
+      for (let minute = 1; minute <= 10; minute += 1) await service.tick(NOON + minute * MIN);
+      expect(sentTo()).toContain("email:besa@hotel.example");
+    });
+
     it("stops trying once the alert is acknowledged, or has cleared for good", async () => {
       const down: EmailChannel = { send: async () => ({ ok: false, transient: true, error: "The email service answered 503: unavailable" }) };
       service = build({ email: down, problems: [] });
@@ -355,12 +466,20 @@ describe("telling people", () => {
       expect(await service.tick(NOON + 60 * MIN)).toMatchObject({ failed: 0, retried: 0 });
       expect(outbox.rows).toHaveLength(2);
 
-      // And no further try is planned for a message that failed just as the alert was acknowledged.
+      // And no further try is planned for a message that failed just as the alert was acknowledged: the service refuses it
+      // at the very moment that someone presses the button.
       const other = source.add({ id: "a-9", title: "Pump is running dry" });
+      const closing: EmailChannel = {
+        send: async () => {
+          source.alerts.set(other.id, { ...other, status: "acknowledged" });
+          return { ok: false, transient: true, error: "The email service answered 503: unavailable" };
+        }
+      };
+      service = build({ email: closing, problems: [] });
       await service.onAlertEvents([opened(other, NOON + 61 * MIN)], NOON + 61 * MIN);
-      source.alerts.set(other.id, { ...other, status: "acknowledged" });
-      await service.tick(NOON + 61 * MIN);
+      expect(await service.tick(NOON + 61 * MIN)).toMatchObject({ failed: 1 });
       expect(outbox.rows.filter((row) => row.alertId === other.id)).toHaveLength(1);
+      expect(await service.tick(NOON + 70 * MIN)).toMatchObject({ failed: 0, retried: 0, sent: 0 });
     });
 
     it("tells the screen that alert messages did not arrive, how many, and why the last one failed", async () => {
@@ -555,9 +674,10 @@ describe("telling people", () => {
       await service.tick(NOON + 2 * MIN);
       expect(fake.sent).toEqual([]);
       expect(outbox.rows).toHaveLength(5);
-      // The first email is sent when the platform can send it, five minutes after it failed, and still nothing is planned twice.
-      await service.tick(NOON + 5 * MIN);
-      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+      // The first email failed because the email service was not set up, so its next try is an hour on; by then the rest of the chain
+      // is due as well. All of it goes when the platform can send it, and still nothing is planned twice.
+      await service.tick(NOON + 60 * MIN);
+      expect(sentTo().sort()).toEqual(["email:arben@hotel.example", "email:besa@hotel.example", "sms:+355691111111", "sms:+355692222222"]);
       expect(outbox.rows).toHaveLength(5);
     });
 
@@ -616,7 +736,7 @@ describe("telling people", () => {
       expect(entries.map((entry) => entry.error)).toEqual([SUSPENDED, SUSPENDED]);
     });
 
-    it("is told again as soon as it is active, about what happens from then on", async () => {
+    it("is told again as soon as it is active: about what opened while it was suspended, and about what happens from then on", async () => {
       source.suspended.add(T1);
       await service.onAlertEvents([opened(source.add())], NOON);
       expect(outbox.rows).toEqual([]);
@@ -624,7 +744,7 @@ describe("telling people", () => {
       source.suspended.delete(T1);
       await service.onAlertEvents([opened(source.add({ title: "Pump is running dry" }), NOON + 5 * MIN)], NOON + 5 * MIN);
       await service.tick(NOON + 5 * MIN);
-      expect(sentTo()).toContain("email:besa@hotel.example");
+      expect(fake.sent.map((message) => message.subject).sort()).toEqual(["Act now: Pump is running dry, Hotel Adriatik", "Act now: Tank level is critical, Hotel Adriatik"]);
     });
 
     it("does not stop another account from being told", async () => {
@@ -713,6 +833,52 @@ describe("telling people", () => {
       expect(escalation?.body).toContain("Besa Krasniqi was told at 12:21 and has not answered. You are next.");
       expect(escalation?.body).not.toContain("was told at 12:00");
       expect(outbox.rows.filter((row) => row.status === "sent").every((row) => row.dedupeKey.includes(":g0:") || row.dedupeKey.includes(":g1:"))).toBe(true);
+    });
+
+    it("starts again from the first person even when nobody heard that it came back", async () => {
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON); // Besa is emailed at 12:00
+
+      const acknowledged = { acknowledgedAtUtc: iso(NOON + 2 * MIN) };
+      source.alerts.set(alert.id, { ...alert, ...acknowledged, status: "acknowledged" });
+      await service.onAlertEvents([{ type: "acknowledged", atMs: NOON + 2 * MIN, alert: { ...alert, ...acknowledged }, siteName: "Hotel Adriatik", by: "Besa Krasniqi", byEmail: besa.email }], NOON + 2 * MIN);
+      await clear(alert, NOON + 10 * MIN, acknowledged);
+      await service.tick(NOON + 10 * MIN);
+      fake.sent.length = 0;
+
+      // It comes back at 12:21 and the announcement of it is lost (the platform was restarting, or the database dropped at that
+      // moment). The alert itself is open again and says that it was acknowledged after its messages began: that is enough.
+      source.alerts.set(alert.id, { ...alert, ...acknowledged, status: "open" });
+      await service.tick(NOON + 21 * MIN);
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+      expect(fake.sent[0]?.subject).toBe("Act now: Tank level is critical, Hotel Adriatik");
+
+      // Once, however many rounds notice it; and the new round runs as the first did, saying only what is true of it.
+      await service.tick(NOON + 22 * MIN);
+      expect(sentTo()).toEqual(["email:besa@hotel.example"]);
+      await service.tick(NOON + 31 * MIN);
+      expect(sentTo()).toEqual(["email:besa@hotel.example", "sms:+355691111111"]);
+      await service.tick(NOON + 51 * MIN);
+      expect(sentTo().slice(2).sort()).toEqual(["email:arben@hotel.example", "sms:+355692222222"]);
+      const escalation = fake.sent.find((message) => message.to === "arben@hotel.example");
+      expect(escalation?.body).toContain("Besa Krasniqi was told at 12:21 and has not answered. You are next.");
+      expect(outbox.rows.some((row) => row.dedupeKey.includes(":g2:"))).toBe(false);
+    });
+
+    it("does not start the messages again a second time when the announcement was heard and a round notices as well", async () => {
+      const alert = source.add();
+      await service.onAlertEvents([opened(alert)], NOON);
+      await service.tick(NOON);
+      const acknowledged = { acknowledgedAtUtc: iso(NOON + 2 * MIN) };
+      source.alerts.set(alert.id, { ...alert, ...acknowledged, status: "acknowledged" });
+      await clear(alert, NOON + 10 * MIN, acknowledged);
+      await returns(alert, NOON + 21 * MIN, acknowledged);
+      // Heard at once, the new round is planned at once, without waiting for the next round of work to notice.
+      expect(outbox.rows.some((row) => row.dedupeKey.includes(":g1:"))).toBe(true);
+      for (let minute = 21; minute <= 60; minute += 1) await service.tick(NOON + minute * MIN);
+      const generations = new Set(outbox.rows.filter((row) => row.kind === "alert" || row.kind === "escalation").map((row) => /:g([0-9]+):/.exec(row.dedupeKey)?.[1]));
+      expect([...generations].sort()).toEqual(["0", "1"]);
     });
 
     it("puts back, when the same alert comes back, a step that was dropped as cleared", async () => {
@@ -851,6 +1017,17 @@ describe("telling people", () => {
       source.add({ tenantId: T2, id: "a-fine" });
       expect(await service.tick(NOON)).toMatchObject({ sent: 1 });
       expect(sentTo()).toEqual(["email:owner@vlora.example"]);
+    });
+
+    it("plans the other alerts announced with it when one alert cannot be planned", async () => {
+      const failing = new FailingOutbox();
+      service = build(undefined, { outbox: failing, config });
+      const broken = source.add({ id: "a-broken" });
+      failing.brokenAlert = broken.id;
+      const fine = source.add({ id: "a-fine", title: "Pump is running dry" });
+      await service.onAlertEvents([opened(broken), opened(fine)], NOON);
+      expect(failing.rows.filter((row) => row.alertId === fine.id).length).toBeGreaterThan(0);
+      expect(failing.rows.filter((row) => row.alertId === broken.id)).toEqual([]);
     });
 
     it("sends what is due even when the open alerts cannot be listed at all", async () => {

@@ -19,7 +19,9 @@ import { ALERT_KINDS, OutboxStore, StoredNotification, UndeliveredAlertMessage }
 import {
   AlertEvent,
   AlertSummary,
+  ChainInfo,
   DIGEST_LATE_AFTER_MS,
+  PlanContext,
   PlannedMessage,
   RESOLVED_DELAY_MS,
   ToldContact,
@@ -28,6 +30,7 @@ import {
   generationOfKey,
   latestChain,
   planAlertEvent,
+  quietHoursEnd,
   retryCountOf,
   retryKeyOf
 } from "./plan";
@@ -98,6 +101,9 @@ const HOLD_WHILE_CLEARED_MS = 60_000;
 const ALERT_RETRY_FAST_MS = 5 * 60_000;
 const ALERT_RETRY_FAST_TRIES = 12;
 const ALERT_RETRY_SLOW_MS = 30 * 60_000;
+/** A way of sending that is not set up on the platform at all will not mend itself from one try to the next, so it is tried once an
+ * hour: setting it up while the alert is still open still reaches the people, and the log does not fill with a line every five minutes. */
+const ALERT_RETRY_NOT_SET_UP_MS = HOUR_MS;
 /** How far back the screens look for alert messages that did not arrive. */
 const UNDELIVERED_WINDOW_MS = 24 * HOUR_MS;
 /** How many people are sent to at once. One person's steps still go in order. */
@@ -107,6 +113,7 @@ const ROUNDS_SKIPPED_AT_MOST = 2;
 
 const CLEARED = "The condition cleared before this was sent.";
 const SUSPENDED = "The account is suspended, so nothing is sent for it.";
+const STARTED_AGAIN = "The condition came back after someone had acknowledged it, so the messages started again from the first person.";
 
 type Outcome = "sent" | "failed" | "skipped" | "retried";
 /** Whether a message has stopped being wanted (skip it), or should wait and be looked at again (hold it). */
@@ -207,14 +214,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (event.type === "reopened") {
       const newest = latestChain(chains);
       if (!newest) return false; // nothing was ever planned for it: the next round plans it, as for any open alert
-      const acknowledgedAtMs = Date.parse(event.alert.acknowledgedAtUtc ?? "");
-      if (Number.isFinite(acknowledgedAtMs) && acknowledgedAtMs > newest.startedAtMs) {
-        // Someone said they had it, and it has come back: they hear of it again, from the first person on, and what was
-        // still waiting from the earlier round is dropped, so nobody is told "has not answered" about a person who did.
-        const generation = newest.generation + 1;
-        await this.outbox.supersedeBefore(tenantId, event.alert.id, generation, nowMs, "The condition came back after someone had acknowledged it, so the messages started again from the first person.");
-        return this.planAndCheckDue(tenantId, planAlertEvent({ ...event, type: "opened" }, { ...context, generation }), nowMs);
-      }
+      if (acknowledgedSince(event.alert, newest)) return this.startAgain(event.alert, event.siteName, event.atMs, newest.generation + 1, context, nowMs);
       // The same alert came back inside the flap window: nobody is paged twice, and a step that was dropped as cleared is sent after all.
       const requeued = await this.outbox.requeueSkipped(tenantId, event.alert.id, newest.generation, CLEARED, nowMs, "The condition came back, so this is sent after all.");
       return requeued > 0;
@@ -228,6 +228,13 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (planned.length === 0) return false;
     await this.outbox.plan(tenantId, planned, nowMs);
     return planned.some((message) => message.dueAtMs <= nowMs);
+  }
+
+  /** A new round of messages for an alert that has come back after someone acknowledged it: they hear of it again, from the first
+   * person on, and what was still waiting from the earlier round is dropped, so nobody is told "has not answered" of a person who did. */
+  private async startAgain(alert: AlertSummary, siteName: string, atMs: number, generation: number, context: PlanContext, nowMs: number): Promise<boolean> {
+    await this.outbox.supersedeBefore(alert.tenantId, alert.id, generation, nowMs, STARTED_AGAIN);
+    return this.planAndCheckDue(alert.tenantId, planAlertEvent({ type: "opened", atMs, alert, siteName }, { ...context, generation }), nowMs);
   }
 
   private link(path: string): string | undefined {
@@ -328,10 +335,18 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (priority === "fyi" || contacts.length === 0) return;
 
     const chains = await this.outbox.chains(alert.tenantId, alert.id);
+    const context = { contacts, settings: this.config.settings(alert.tenantId), link: this.link("/alerts") };
+    // That an acknowledged alert has come back is announced once. If the announcement was lost (the platform was restarting, or the
+    // database dropped at that moment) the alert itself still says it: open, and acknowledged after its messages began.
+    const newest = latestChain(chains);
+    if (newest && acknowledgedSince(alert, newest)) {
+      await this.startAgain(alert, siteName, nowMs, newest.generation + 1, context, nowMs);
+      return;
+    }
     const generation = generationFor(chains, priority);
     const began = chains.find((chain) => chain.generation === generation && chain.priority === priority)?.startedAtMs ?? nowMs;
     // The steps are timed from when the round began, not from now, so a step that was lost keeps its place in the order.
-    const owed = planAlertEvent({ type: "opened", atMs: began, alert, siteName }, { contacts, settings: this.config.settings(alert.tenantId), link: this.link("/alerts"), generation });
+    const owed = planAlertEvent({ type: "opened", atMs: began, alert, siteName }, { ...context, generation });
     if (owed.length === 0) return;
     const there = await this.outbox.existingKeys(alert.tenantId, owed.map((message) => message.dedupeKey));
     const missing = owed.filter((message) => !there.has(message.dedupeKey));
@@ -505,8 +520,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
    * (when the trouble may pass) and then left as failed. */
   private async failed(row: StoredNotification, nowMs: number, error: string, destination: string, transient: boolean): Promise<Outcome> {
     if (row.kind === "alert" || row.kind === "escalation") {
-      await this.outbox.markFailed(row.id, nowMs, error, destination);
-      this.logger.warn(`A ${row.kind} message to ${row.contactName} failed: ${error}`);
+      // The next try is saved before the failure is written down. A database that drops between the two then leaves, at worst, a
+      // message that is sent twice; written the other way round, it would leave one that nobody ever tries again.
       const verdict = this.noLongerNeeded(row, nowMs);
       if (!(verdict && "skip" in verdict)) {
         const tries = retryCountOf(row.dedupeKey) + 1;
@@ -522,7 +537,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
               priority: row.priority,
               subject: row.subject,
               body: row.body,
-              dueAtMs: nowMs + (tries < ALERT_RETRY_FAST_TRIES ? ALERT_RETRY_FAST_MS : ALERT_RETRY_SLOW_MS),
+              dueAtMs: this.nextTryAt(row, nowMs, tries, error),
               eventAtMs: row.eventAtMs,
               dedupeKey: retryKeyOf(row.dedupeKey, tries)
             }
@@ -530,6 +545,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           nowMs
         );
       }
+      await this.outbox.markFailed(row.id, nowMs, error, destination);
+      this.logger.warn(`A ${row.kind} message to ${row.contactName} failed: ${error}`);
       return "failed";
     }
     if (transient && row.attempts + 1 < MAX_ATTEMPTS) {
@@ -540,6 +557,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     await this.outbox.markFailed(row.id, nowMs, error, destination);
     if (row.channel && error !== NOT_SET_UP[row.channel]) this.logger.warn(`A ${row.kind} message to ${row.contactName} failed: ${error}`);
     return "failed";
+  }
+
+  /** When an alert message that did not go is tried again: soon, then less often, and once an hour for a way of sending that is not
+   * set up at all. Only Act now ignores the quiet hours: a Check today email whose tries run into them waits for the morning. */
+  private nextTryAt(row: StoredNotification, nowMs: number, tries: number, error: string): number {
+    const wait = error === NOT_SET_UP[row.channel] ? ALERT_RETRY_NOT_SET_UP_MS : tries < ALERT_RETRY_FAST_TRIES ? ALERT_RETRY_FAST_MS : ALERT_RETRY_SLOW_MS;
+    const at = nowMs + wait;
+    return row.priority === "check_today" ? quietHoursEnd(at, this.config.settings(row.tenantId)) : at;
   }
 
   /** The escalation as it stands when it is sent: whoever is before this person on the list is said to have been told, and not
@@ -688,6 +713,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   async log(tenantId: string, limit: number): Promise<NotificationLogEntry[]> {
     return (await this.outbox.recent(tenantId, Math.min(Math.max(limit, 1), 200))).map(toLogEntry);
   }
+}
+
+/** Whether someone acknowledged the alert after its newest round of messages began. Open again, that means it has come back. */
+function acknowledgedSince(alert: AlertSummary, round: ChainInfo): boolean {
+  const acknowledgedAtMs = Date.parse(alert.acknowledgedAtUtc ?? "");
+  return Number.isFinite(acknowledgedAtMs) && acknowledgedAtMs > round.startedAtMs;
 }
 
 /** The first message about an Act now alert, or a step of its escalation: the ones nobody may be left without. A note

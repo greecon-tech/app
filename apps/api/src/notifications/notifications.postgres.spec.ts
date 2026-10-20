@@ -351,6 +351,36 @@ describe.skipIf(!testDatabaseUrl)("rounds of messages for an alert, on a real Po
       await dbB.onModuleDestroy();
     });
   });
+
+  it("goes on when the database drops the connection that holds the round, instead of ending the whole process, and the round can be had again", async () => {
+    await inWorld(async ({ pool, connect }) => {
+      const db = connect();
+      const store = new PostgresOutboxStore(db);
+      // The connection is held for as long as a round goes on, and nothing else listens for it to fail: an error with no listener ends the process.
+      const uncaught: Error[] = [];
+      const note = (error: Error): void => void uncaught.push(error);
+      process.on("uncaughtException", note);
+      try {
+        const release = await store.tryLock();
+        expect(release).toBeDefined();
+        const holders = await pool.query<{ pid: number }>(
+          `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`
+        );
+        expect(holders.rows).toHaveLength(1);
+        await pool.query("SELECT pg_terminate_backend($1)", [holders.rows[0]?.pid]); // a restart, a failover, a connection the host cut
+        await new Promise((resolve) => setTimeout(resolve, 300)); // the news reaches the connection
+        await (release as () => Promise<void>)(); // letting go of what is already gone must not fail
+        expect(uncaught).toEqual([]);
+
+        const again = await store.tryLock();
+        expect(again).toBeDefined();
+        await (again as () => Promise<void>)();
+      } finally {
+        process.off("uncaughtException", note);
+      }
+      await db.onModuleDestroy();
+    });
+  });
 });
 
 describe.skipIf(!testDatabaseUrl)("who is told, on a real PostgreSQL", () => {

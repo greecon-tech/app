@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { Logger } from "@nestjs/common";
 import { AlertPriority, NotificationChannel, NotificationKind } from "@greecon/shared";
 import type { Pool } from "pg";
 import { DatabaseService } from "../database/database.service";
@@ -330,10 +331,14 @@ function mapRow(row: NotificationRow): StoredNotification {
 /** The pattern of a chain step's key, for the round it belongs to (the same as generationOfKey in plan.ts). */
 const CHAIN_KEY = "^chain:[^:]*:g([0-9]+):";
 const ROUND_LOCK = "greecon:notifications-round";
+/** Connections that already have a listener for their errors: a pooled connection is used again and again, and one listener is enough. */
+const listenedTo = new WeakSet<object>();
 
 const COLUMNS = `id, tenant_id, alert_id, contact_id, contact_name, channel, destination, kind, priority, subject, body, status, due_at, event_at, attempts, sent_at, provider_id, error, dedupe_key, created_at`;
 
 export class PostgresOutboxStore implements OutboxStore {
+  private readonly logger = new Logger(PostgresOutboxStore.name);
+
   constructor(private readonly db: DatabaseService) {}
 
   async plan(tenantId: string, messages: readonly PlannedMessage[], nowMs: number): Promise<StoredNotification[]> {
@@ -515,6 +520,13 @@ export class PostgresOutboxStore implements OutboxStore {
     const pool = (this.db as unknown as { pool?: Pool }).pool;
     if (!pool) return async () => undefined;
     const client = await pool.connect();
+    // The connection is out of the pool for as long as the round goes on, so nothing else is listening for it to fail, and an error
+    // event with no listener ends the whole process. A database that restarts, fails over or cuts an idle connection does exactly that.
+    // The lock goes with the connection, so all there is to do is to say so.
+    if (!listenedTo.has(client)) {
+      listenedTo.add(client);
+      client.on("error", (error) => this.logger.warn(`The connection that held the round of sending was lost: ${error.message}`));
+    }
     let locked = false;
     try {
       const result = await client.query<{ locked: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [ROUND_LOCK]);
