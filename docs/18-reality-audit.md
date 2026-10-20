@@ -152,7 +152,10 @@ All commands are still simulated; nothing is written to equipment (see 2 in the 
 Three reviewers who had not written the code went over the finished platform: one for security and access, one for
 reliability and data flow, one for the launch pages against the code. Each ran real code where it could, and each
 finding below was checked against the code again before anything was changed. Several are in the platform's two most
-trusted parts, who can sign in and whether an alert reaches a person.
+trusted parts, who can sign in and whether an alert reaches a person (findings 44 to 66). A fourth reader then
+looked only at the alert messaging as it was after the rework those findings led to: it ran the code against a real
+PostgreSQL, cut the connection under it, and changed a copy of the code in forty-six ways to see whether a test
+noticed (findings 67 to 72).
 
 | # | Finding | Severity | Status and evidence |
 |---|---|---|---|
