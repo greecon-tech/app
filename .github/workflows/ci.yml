@@ -66,3 +66,56 @@ jobs:
         run: node scripts/run-smoke.mjs
         env:
           SMOKE_DATABASE_ADMIN_URL: postgres://postgres:greecon@localhost:5432/postgres
+
+  # The two images the host builds and runs, built and started the way a deployment does it. A mistake in a
+  # Dockerfile (a file missing from the image, a build step that needs something that was not copied in) would
+  # otherwise show itself on the first deploy, when nobody can easily fix it.
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: greecon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the API image
+        run: docker build -f infra/docker/api.Dockerfile -t greecon-api:ci .
+
+      - name: Build the web image
+        run: docker build -f infra/docker/web.Dockerfile -t greecon-web:ci .
+
+      - name: Start the API image on a real database, with the settings a deployment gives it
+        run: |
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://postgres:greecon@127.0.0.1:5432/postgres \
+            -e JWT_SECRET=ci-only-signing-secret-that-is-long-enough-0123456789 \
+            -e PORT=4000 -e TRUST_PROXY=1 -e PUBLIC_API_URL=http://127.0.0.1:4000 \
+            greecon-api:ci
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/health > /dev/null && break; sleep 2; done
+          curl -sf http://127.0.0.1:4000/health | tee /dev/stderr | grep -q '"database":"connected"'
+          curl -sf http://127.0.0.1:4000/edge/install.sh | head -1 | grep -q '^#!'
+          docker exec api test -s /app/apps/api/edge-bundle/greecon-edge.mjs
+
+      - name: Start the web image against it and load its public pages
+        run: |
+          docker run -d --name web --network host -e GREECON_API_URL=http://127.0.0.1:4000 -e PORT=3000 greecon-web:ci
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3000/login > /dev/null && break; sleep 2; done
+          curl -sf http://127.0.0.1:3000/login | grep -q 'Greecon'
+          curl -sf http://127.0.0.1:3000/privacy | grep -q 'keeps'
+          curl -sf http://127.0.0.1:3000/.well-known/security.txt | grep -q 'Contact:'
+
+      - name: What the services said, if something failed
+        if: failure()
+        run: |
+          docker logs api || true
+          docker logs web || true

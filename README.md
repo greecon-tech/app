@@ -46,4 +46,6 @@ Local services:
 - Mosquitto MQTT: `localhost:1883`
 - Grafana: `http://localhost:3001`
 
+The API migrates the stack's database itself when it starts. The demo client login is `demo@greecon.earth` with `demo123`; to sign in as the Greecon team, set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` in your shell before `docker compose up`.
+
 Without a database the API serves deterministic demo data and every command is simulated. With one (`DATABASE_URL`) it is the real platform: sign-in, clients, sites, boxes, alerts by email and text, downloads. Nothing in this platform writes to equipment. Production secrets are never in the repository: see `docs/launch/01-founder-go-live.md`.

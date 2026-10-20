@@ -1,4 +1,4 @@
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY apps/edge-simulator/package.json apps/edge-simulator/package.json
@@ -14,7 +14,7 @@ WORKDIR /app
 COPY . .
 RUN npm run build:packages && npm run build:edge
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package.json /app/package.json

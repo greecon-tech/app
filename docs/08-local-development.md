@@ -33,7 +33,10 @@ Services:
 - Postgres/TimescaleDB: `localhost:5432`
 - Mosquitto: `localhost:1883`
 
-The database initializes with the schema and demo seed data from `apps/api/src/database/migrations`.
+The API migrates the database itself when it starts: the schema and the demo seed data come from
+`apps/api/src/database/migrations`, each file once (the database is not given the files to run). The stack uses a signing
+secret that is for this laptop only. The demo client login is `demo@greecon.earth` with `demo123`; to sign in as the
+Greecon team, set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` in your shell before `docker compose up`.
 
 ## Demo Access Headers
 

@@ -1,4 +1,4 @@
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/package.json
@@ -17,7 +17,7 @@ COPY . .
 # is installed and updated from the platform it reports to (docs/14-edge-hardware-deployment.md).
 RUN npm run build:packages && npm run build:edge-bundle && npm run build:api
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/package.json /app/package.json
