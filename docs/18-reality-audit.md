@@ -12,7 +12,7 @@ the platform does updates this page in the same commit.
 
 ## 1. How things were checked
 
-- `npm run typecheck` and `npm test` for every package. At the time of writing: API 775 tests,
+- `npm run typecheck` and `npm test` for every package. At the time of writing: API 784 tests,
   edge agent 123, edge simulator 1, GAIA core 107, shared 78, all passing. (The separate Modbus
   driver service of the first pass is gone: its job is done inside the edge agent.)
 - A real PostgreSQL 16, not a fake, for the parts where a fake would hide the bug: the migration
