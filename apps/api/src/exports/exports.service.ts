@@ -187,11 +187,15 @@ export class ExportsService {
 
   /** The account's audit trail: who did what, and when. */
   async audit(principal: Principal, style: CsvStyle, nowMs: number = Date.now()): Promise<CsvDownload> {
-    const events = this.platform.listAudit(principal).sort((a, b) => Date.parse(a.createdAtUtc) - Date.parse(b.createdAtUtc));
+    // Recorded first, so the download's own line is in the trail it takes. The trail is read from the
+    // database a page at a time: what the platform holds in memory is only its newest part.
     await this.platform.recordDataExport(principal, "audit", undefined, "The audit trail.");
+    const platform = this.platform;
     async function* chunks(): AsyncGenerator<string> {
       yield csvHeader(["time_utc", "who", "event", "entity", "reason"], style);
-      for (const event of events) yield csvLine([text(utcStamp(Date.parse(event.createdAtUtc))), text(event.actor), text(event.eventType), text(event.entityType), text(event.reason ?? "")], style);
+      for await (const page of platform.auditTrail(principal)) {
+        for (const event of page) yield csvLine([text(utcStamp(Date.parse(event.createdAtUtc))), text(event.actor), text(event.eventType), text(event.entityType), text(event.reason ?? "")], style);
+      }
     }
     return { filename: `greecon-audit-${isoDay(nowMs)}.csv`, chunks: chunks() };
   }

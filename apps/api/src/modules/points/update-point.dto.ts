@@ -1,15 +1,17 @@
-import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from "class-validator";
+import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
 import { PointSource, pointCapabilities, qualityFlags } from "@greecon/shared";
 
 export class UpdatePointDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(160)
   label?: string;
 
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(40)
   unit?: string;
 
   @IsOptional()

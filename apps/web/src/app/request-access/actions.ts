@@ -1,5 +1,7 @@
 "use server";
 
+import { visitorHeaders } from "../../lib/visitor";
+
 const API_BASE_URL = process.env.GREECON_API_URL ?? "http://localhost:4000";
 
 export interface AccessRequestInput {
@@ -24,7 +26,7 @@ export async function requestAccessAction(input: AccessRequestInput): Promise<{ 
   try {
     response = await fetch(`${API_BASE_URL}/public/access-requests`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(await visitorHeaders()) },
       body: JSON.stringify({
         name: input.name,
         company: input.company,

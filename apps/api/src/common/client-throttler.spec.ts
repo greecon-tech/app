@@ -3,7 +3,7 @@ import { Reflector } from "@nestjs/core";
 import { Throttle, ThrottlerException, ThrottlerGuard, ThrottlerOptions, ThrottlerStorageService } from "@nestjs/throttler";
 import jwt from "jsonwebtoken";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LOGIN_ACCOUNT_THROTTLE, loginAccountTracker, sessionOrSourceTracker, throttlers } from "./client-throttler";
+import { LOGIN_ACCOUNT_THROTTLE, loginAccountCeilingTracker, loginAccountTracker, sessionOrSourceTracker, throttlers } from "./client-throttler";
 import { SESSION_HEADER } from "./principal";
 
 const SECRET = "test-secret";
@@ -90,11 +90,12 @@ describe("client throttler trackers", () => {
   });
 
   describe("loginAccountTracker", () => {
-    it("counts attempts per account, normalising case and whitespace", () => {
+    it("counts attempts at one account from one source, normalising case and whitespace", () => {
       const a = loginAccountTracker({ ip: WEB_SERVICE_IP, body: { email: "Owner@Example.com" } });
       const b = loginAccountTracker({ ip: WEB_SERVICE_IP, body: { email: "  owner@example.com " } });
-      expect(a).toBe("login:owner@example.com");
+      expect(a).toBe(`login:owner@example.com|${WEB_SERVICE_IP}`);
       expect(b).toBe(a);
+      expect(loginAccountTracker({ ip: "198.51.100.7", body: { email: "owner@example.com" } })).not.toBe(a);
     });
 
     it("falls back to the source address when there is no usable email", () => {
@@ -107,7 +108,24 @@ describe("client throttler trackers", () => {
 
     it("bounds the key length so one request can't allocate an arbitrarily large bucket name", () => {
       const key = loginAccountTracker({ ip: WEB_SERVICE_IP, body: { email: "a".repeat(100_000) } });
-      expect(key.length).toBeLessThanOrEqual("login:".length + 254);
+      expect(key.length).toBeLessThanOrEqual(`ip:${WEB_SERVICE_IP}`.length);
+    });
+
+    it("does not start a new count for a spelling the database would treat as the same address", () => {
+      // "İ" is "i" to a database with a Unicode collation and "i" plus an accent to JavaScript; an address
+      // that is not plain ASCII is counted by its source, never as an account of its own.
+      const key = loginAccountTracker({ ip: WEB_SERVICE_IP, body: { email: "İlir@example.com" } });
+      expect(key).toBe(`ip:${WEB_SERVICE_IP}`);
+      expect(loginAccountCeilingTracker({ ip: WEB_SERVICE_IP, body: { email: "İlir@example.com" } })).toBe(`ip:${WEB_SERVICE_IP}`);
+    });
+  });
+
+  describe("loginAccountCeilingTracker", () => {
+    it("counts an account over every source at once", () => {
+      const a = loginAccountCeilingTracker({ ip: "198.51.100.1", body: { email: "Owner@Example.com" } });
+      const b = loginAccountCeilingTracker({ ip: "198.51.100.2", body: { email: "owner@example.com " } });
+      expect(a).toBe("login-any:owner@example.com");
+      expect(b).toBe(a);
     });
   });
 });
@@ -181,5 +199,30 @@ describe("throttler config enforced by the real ThrottlerGuard", () => {
 
     // ...and the ceiling only ever applies to login: ten different users on another route all pass.
     for (let i = 0; i < 10; i++) expect(await guard.canActivate(authed(`user-${i}`))).toBe(true);
+  });
+
+  it("does not let someone who knows an address keep it locked for its owner: each source has its own count", async () => {
+    // The attacker, from their own address, uses up the account's allowance (2 in this test)...
+    expect(await guard.canActivate(attempt("founder@example.com", "203.0.113.50"))).toBe(true);
+    expect(await guard.canActivate(attempt("founder@example.com", "203.0.113.50"))).toBe(true);
+    await expect(guard.canActivate(attempt("founder@example.com", "203.0.113.50"))).rejects.toBeInstanceOf(ThrottlerException);
+    // ...and the owner, from theirs, still signs in.
+    expect(await guard.canActivate(attempt("founder@example.com", "198.51.100.20"))).toBe(true);
+  });
+
+  it("still stops guesses at one account spread over many sources, at a ceiling above what one person needs", async () => {
+    // login-account ceiling is 5 in this test; each source stays under its own limit of 2.
+    for (let i = 0; i < 5; i++) expect(await guard.canActivate(attempt("target@example.com", `192.0.2.${i + 10}`))).toBe(true);
+    await expect(guard.canActivate(attempt("target@example.com", "192.0.2.99"))).rejects.toBeInstanceOf(ThrottlerException);
+    // Another account is unaffected.
+    expect(await guard.canActivate(attempt("someone-else@example.com", "192.0.2.99"))).toBe(true);
+  });
+
+  it("a flood from one visitor does not use up the sign-ins of every other visitor", async () => {
+    // login-source ceiling is 5 in this test: the flooder is stopped at 5 attempts from their address...
+    for (let i = 0; i < 5; i++) expect(await guard.canActivate(attempt(`invented-${i}@example.com`, "203.0.113.77"))).toBe(true);
+    await expect(guard.canActivate(attempt("invented-5@example.com", "203.0.113.77"))).rejects.toBeInstanceOf(ThrottlerException);
+    // ...and a real customer, arriving as their own visitor, signs in.
+    expect(await guard.canActivate(attempt("real-customer@example.com", "198.51.100.33"))).toBe(true);
   });
 });

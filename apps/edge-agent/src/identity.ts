@@ -16,6 +16,39 @@ export const DEFAULT_IDENTITY_FILE = "/etc/greecon/edge.json";
 
 export class IdentityError extends Error {}
 
+/** True for an address that only exists inside a private network: this machine, the usual private
+ * ranges, a link-local address, a name with no dot (a laptop on the same desk), or a .local or
+ * .internal name. */
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "localhost" || host === "::1" || host.endsWith(".local") || host.endsWith(".internal")) return true;
+  if (!host.includes(".") && !host.includes(":")) return true;
+  const octets = host.split(".").map(Number);
+  if (octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)) {
+    const [a, b] = octets as [number, number, number, number];
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+  return /^(fc|fd|fe80)/.test(host);
+}
+
+/** The platform's address, tidied to scheme, host and port. A box sends its credential and its readings
+ * there and takes its own software from there, so the address must be https. Plain http is accepted only
+ * for a platform on the same private network, which is how a rehearsal on a desk runs: on the open
+ * internet anyone on the path could read the credential, or hand the box software of their own. */
+export function platformAddress(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("not http or https");
+  } catch {
+    throw new IdentityError(`The platform address "${raw}" is not a web address such as https://api.greecon.earth.`);
+  }
+  if (url.protocol === "http:" && !isPrivateHost(url.hostname)) {
+    throw new IdentityError(`The platform address "${raw}" is not https. A box sends its credential and takes its software from that address, so it must start with https:// (plain http is accepted only for a platform on the same private network).`);
+  }
+  return `${url.protocol}//${url.host}`;
+}
+
 type Env = Record<string, string | undefined>;
 
 /** The identity from the file the installer wrote, or, for development against a local platform, from
@@ -41,14 +74,7 @@ export function loadIdentity(env: Env = process.env, read: (path: string) => str
     );
   }
 
-  let apiUrl: string;
-  try {
-    const url = new URL(String(source.apiUrl).trim());
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("not http or https");
-    apiUrl = `${url.protocol}//${url.host}`;
-  } catch {
-    throw new IdentityError(`The platform address "${String(source.apiUrl)}" is not a web address such as https://api.greecon.earth.`);
-  }
+  const apiUrl = platformAddress(String(source.apiUrl));
   const secret = String(source.secret).trim();
   if (secret.length < 16) throw new IdentityError("The box's credential is too short to be real. Enrol the box again with a new code from the site's setup page.");
 

@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeliveryError, OfflineBuffer } from "./offline-buffer";
 
 describe("edge agent offline buffer", () => {
@@ -186,6 +186,19 @@ describe("edge agent offline buffer persistence", () => {
     expect(buffer.snapshot()).toEqual([{ n: 4 }, { n: 5 }]);
     // And the file was trimmed to match, so it cannot grow back to the old size on its own.
     expect(readFileSync(path, "utf8").trim().split("\n")).toHaveLength(2);
+  });
+
+  it("parses only the lines it keeps when a restored backlog is longer than the cap, so a restart after a long outage does not need the whole file in memory", () => {
+    mkdirIfNeeded(path);
+    writeFileSync(path, Array.from({ length: 1_000 }, (_, n) => `${JSON.stringify({ n })}\n`).join(""));
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      const buffer = new OfflineBuffer<{ n: number }>({ persistPath: path, maxItems: 10 });
+      expect(buffer.snapshot().map((item) => item.n)).toEqual([990, 991, 992, 993, 994, 995, 996, 997, 998, 999]);
+      expect(parse.mock.calls.length).toBeLessThanOrEqual(10);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it("keeps the file from growing without bound during a long outage", () => {

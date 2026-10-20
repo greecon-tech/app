@@ -582,8 +582,16 @@ describe("setting a site up", () => {
     it("says nothing about a limit the platform would say nothing about", async () => {
       const { site } = await hotel();
       const sheet = setup.handover(site.id, owner);
+      // "Smallest useful surplus" has no standard, so the platform makes no claim about surplus until a site sets one.
+      const solar = sheet.devices.flatMap((device) => device.readings).find((entry) => entry.canonicalName === "energy.solar.power.kw");
+      expect(solar?.limits).toEqual([]);
+    });
+
+    it("lists the no-flow limit as the standard it is, because the platform does raise an Act now alert at it", async () => {
+      const { site } = await hotel();
+      const sheet = setup.handover(site.id, owner);
       const flow = sheet.devices.flatMap((device) => device.readings).find((entry) => entry.canonicalName === "water.flow.lpm");
-      expect(flow?.limits).toEqual([]);
+      expect(flow?.limits).toEqual([{ key: "dry_run_lpm", label: "No flow at or below", value: 0.2, standard: true }]);
     });
   });
 

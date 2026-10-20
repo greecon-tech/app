@@ -3,7 +3,7 @@ import type { EdgeConfig, EdgeConfigDevice, EdgeConfigPoint, PointSource } from 
 import { profileByKey } from "@greecon/shared";
 import { FakeModbusServer, startFakeModbusServer } from "../testing/fake-modbus-server";
 import { DevicePoller } from "./poller";
-import { ModbusTcpReader } from "./reader";
+import { ModbusTcpReader, RegisterReader } from "./reader";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const SITE = "22222222-2222-4222-8222-222222222201";
@@ -206,6 +206,40 @@ describe("one round of reading", () => {
     expect(result.messages).toEqual([]);
     expect(result.statuses[0]).toMatchObject({ ok: false, readingsFailed: 2 });
     expect(result.statuses[0]?.lastError).toContain("Grid meter reported no value for");
+  });
+
+  it("tries only the first device behind a converter that cannot be reached, so one dead converter does not hold up the rest", async () => {
+    const dead = await startFakeModbusServer([1, 2, 3]);
+    const deadPort = dead.port;
+    await dead.close(); // nothing listens there now: the connection is refused
+    const calls: string[] = [];
+    const counting: RegisterReader = {
+      read: (connection, registerType, address, count) => {
+        calls.push(`${connection.port}/${connection.unitId}`);
+        return reader.read(connection, registerType, address, count);
+      },
+      keepOnly: (addresses) => reader.keepOnly(addresses),
+      close: () => reader.close()
+    };
+    const counted = new DevicePoller(counting, { info: () => undefined, warn: () => undefined }, () => clock);
+    const behindDeadConverter = (id: string, unit: number): EdgeConfigDevice => ({ deviceId: id, name: `Meter ${unit}`, connection: { kind: "modbus_tcp", host: dead.host, port: deadPort, unitId: unit }, points: gridPoints() });
+    server.setFloat32(1, "input", 52, 1000);
+
+    const result = await counted.pollAll(configOf([behindDeadConverter("a", 1), behindDeadConverter("b", 2), behindDeadConverter("c", 3), device(server, "live", 1, gridPoints())]));
+
+    expect(calls.filter((call) => call.startsWith(`${deadPort}/`))).toHaveLength(1);
+    expect(result.statuses.map((status) => [status.deviceId, status.ok])).toEqual([["a", false], ["b", false], ["c", false], ["live", true]]);
+    // The others are told the same reason, not a vaguer one.
+    expect(result.statuses[1]?.lastError).toBe(result.statuses[0]?.lastError);
+    expect(result.messages.map((message) => message.deviceId)).toEqual(["live"]);
+  });
+
+  it("still reads the other devices behind a converter when only one of them does not answer", async () => {
+    server.removeUnit(2); // the converter forwards the request and nothing answers
+    server.setFloat32(1, "input", 52, 1000);
+    server.setFloat32(3, "input", 52, 3000);
+    const result = await poller.pollAll(configOf([device(server, "one", 1, gridPoints()), device(server, "two", 2, gridPoints()), device(server, "three", 3, gridPoints())]));
+    expect(result.statuses.map((status) => [status.deviceId, status.ok])).toEqual([["one", true], ["two", false], ["three", true]]);
   });
 
   it("reads converters at the same time, not one after the other", async () => {

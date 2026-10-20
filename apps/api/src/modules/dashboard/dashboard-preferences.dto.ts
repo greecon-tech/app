@@ -1,9 +1,10 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsString, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsString, ValidateNested, MaxLength } from "class-validator";
 import { dashboardWidgetSizes } from "@greecon/shared";
 
 class DashboardWidgetPreferenceDto {
   @IsString()
+  @MaxLength(100)
   key!: string;
 
   @IsBoolean()

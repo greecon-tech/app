@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EdgeConfig, profileByKey } from "@greecon/shared";
 import type { EdgeIdentity } from "./identity";
 import { ModbusTcpReader } from "./modbus/reader";
-import { EdgeRuntime } from "./runtime";
+import { EdgeRuntime, waitBeforeNext } from "./runtime";
 import { FakeModbusServer, startFakeModbusServer } from "./testing/fake-modbus-server";
 import { FakePlatform, startFakePlatform } from "./testing/fake-platform";
 
@@ -292,3 +292,19 @@ describe("the box, start to finish", () => {
   });
 });
 
+describe("how long a loop waits before its next run", () => {
+  it("waits what is left of the delay after the work", () => {
+    expect(waitBeforeNext(10_000, 1_000, 4_000)).toBe(7_000);
+    expect(waitBeforeNext(10_000, 1_000, 11_000)).toBe(0);
+  });
+
+  it("is not stalled for a day when the clock is set back during the work", () => {
+    const aDay = 86_400_000;
+    expect(waitBeforeNext(10_000, 5_000_000, 5_000_000 - aDay)).toBe(10_000);
+  });
+
+  it("only skips the wait when the clock is set forward, and never waits longer than the delay", () => {
+    expect(waitBeforeNext(10_000, 0, 86_400_000)).toBe(0);
+    expect(waitBeforeNext(10_000, 100, 100)).toBe(10_000);
+  });
+});

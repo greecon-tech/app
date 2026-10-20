@@ -214,6 +214,75 @@ describe.skipIf(!testDatabaseUrl)("Greecon's own team (real PostgreSQL)", () => 
     });
   }, 60_000);
 
+  it("will not let a team member take over the owner through the ordinary people routes, nor the owner use them on the team", async () => {
+    await inTeam(async ({ platform, founder }) => {
+      const staff = await platform.addStaffMember({ name: "Arta Project", email: "arta.pm@greecon.earth" }, founder);
+      const arta = asTeamMember(founder, staff.member);
+      const onTheTeam = /Greecon team/;
+
+      // A team member has user:manage in Greecon's own account, and these routes would act on anyone in it.
+      await expect(platform.resetUserPassword(founder.userId, arta)).rejects.toThrow(onTheTeam);
+      await expect(platform.updateUser(founder.userId, { role: "viewer" }, arta)).rejects.toThrow(onTheTeam);
+      await expect(platform.updateUser(founder.userId, { status: "disabled" }, arta)).rejects.toThrow(onTheTeam);
+      await expect(platform.updateUser(staff.member.id, { role: "owner" }, arta)).rejects.toThrow(onTheTeam);
+      await expect(platform.createUser({ name: "Mallory", email: "mallory@greecon.earth", role: "owner" }, arta)).rejects.toThrow(onTheTeam);
+      // The owner manages the team through the team's own routes, which are the owner's alone.
+      await expect(platform.resetUserPassword(staff.member.id, founder)).rejects.toThrow(onTheTeam);
+      await expect(platform.createUser({ name: "Someone", email: "someone@greecon.earth", role: "admin" }, founder)).rejects.toThrow(onTheTeam);
+
+      // Nothing changed: the founder is still the owner, and still active.
+      expect(platform.listUsers(founder).find((user) => user.id === founder.userId)).toMatchObject({ role: "owner", status: "active" });
+    });
+  }, 60_000);
+
+  it("lets only an owner add an owner, change one or reset one's password, in a customer's account too", async () => {
+    await inTeam(async ({ platform, founder }) => {
+      const customer = await platform.createTenant({ name: "Hotel Adriatik", ownerName: "Besa", ownerEmail: "besa@hotel-adriatik.example" }, founder);
+      const owner: Principal = { tenantId: customer.tenant.id, userId: customer.owner.id, role: "owner", email: customer.owner.email, isPlatformAdmin: false };
+      const admin = await platform.createUser({ name: "Arben", email: "arben@hotel-adriatik.example", role: "admin" }, owner);
+      const viewer = await platform.createUser({ name: "Drita", email: "drita@hotel-adriatik.example", role: "viewer" }, owner);
+      const arben: Principal = { tenantId: owner.tenantId, userId: admin.user.id, role: "admin", email: admin.user.email, isPlatformAdmin: false };
+      const onlyAnOwner = /Only an owner/;
+
+      // An admin who could reset the owner's password could sign in as the owner.
+      await expect(platform.resetUserPassword(owner.userId, arben)).rejects.toThrow(onlyAnOwner);
+      await expect(platform.updateUser(owner.userId, { status: "disabled" }, arben)).rejects.toThrow(onlyAnOwner);
+      await expect(platform.updateUser(owner.userId, { role: "viewer" }, arben)).rejects.toThrow(onlyAnOwner);
+      await expect(platform.updateUser(viewer.user.id, { role: "owner" }, arben)).rejects.toThrow(onlyAnOwner);
+      await expect(platform.createUser({ name: "Another", email: "another@hotel-adriatik.example", role: "owner" }, arben)).rejects.toThrow(onlyAnOwner);
+
+      // What an admin is for still works, and an owner may do all of it.
+      await expect(platform.resetUserPassword(viewer.user.id, arben)).resolves.toBeDefined();
+      await expect(platform.updateUser(viewer.user.id, { role: "operator" }, arben)).resolves.toMatchObject({ role: "operator" });
+      await expect(platform.createUser({ name: "Second owner", email: "second@hotel-adriatik.example", role: "owner" }, owner)).resolves.toBeDefined();
+    });
+  }, 60_000);
+
+  it("ends a person's open sessions when their role changes, and does not hand an old one back when they are turned off and on", async () => {
+    await inTeam(async ({ platform, db, founder }) => {
+      const customer = await platform.createTenant({ name: "Hotel Adriatik", ownerName: "Besa", ownerEmail: "besa@hotel-adriatik.example" }, founder);
+      const owner: Principal = { tenantId: customer.tenant.id, userId: customer.owner.id, role: "owner", email: customer.owner.email, isPlatformAdmin: false };
+      const { user } = await platform.createUser({ name: "Arben", email: "arben@hotel-adriatik.example", role: "admin" }, owner);
+      const openSinceMinutes = () => Math.floor(Date.now() / 1000) - 120;
+
+      // A session carries the role it was opened with, so a demoted admin must not keep using the old one.
+      const beforeDemotion = openSinceMinutes();
+      expect(await sessionIsStillGood(db, user.id, beforeDemotion)).toBe(true);
+      await platform.updateUser(user.id, { role: "viewer" }, owner);
+      expect(await sessionIsStillGood(db, user.id, beforeDemotion)).toBe(false);
+
+      // Turned off and back on: a session opened before it must not come back to life.
+      forgetAllUsers();
+      const beforeDisabling = openSinceMinutes();
+      await platform.updateUser(user.id, { status: "disabled" }, owner);
+      await platform.updateUser(user.id, { status: "active" }, owner);
+      forgetAllUsers();
+      expect(await sessionIsStillGood(db, user.id, beforeDisabling)).toBe(false);
+      // A session opened afterwards is fine.
+      expect(await sessionIsStillGood(db, user.id, Math.floor(Date.now() / 1000) + 5)).toBe(true);
+    });
+  }, 60_000);
+
   it("lets only the owner of Greecon's account reset a customer's locked-out person, and says so in the customer's own trail", async () => {
     await inTeam(async ({ platform, auth, db, founder }) => {
       const customer = await platform.createTenant({ name: "Hotel Adriatik", ownerName: "Besa", ownerEmail: "besa@hotel-adriatik.example" }, founder);

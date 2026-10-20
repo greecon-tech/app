@@ -12,7 +12,7 @@ import { StatusBadge } from "../../../components/StatusBadge";
 import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
 import { ValueView } from "../../../components/ValueView";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
-import { groupByCanonicalName } from "../../../lib/telemetry-history";
+import { groupByPointId } from "../../../lib/telemetry-history";
 import { priorityWord, titleCase } from "../../../lib/health";
 import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
 import { Metric } from "../../../lib/types";
@@ -58,8 +58,8 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
   const metrics = buildMetrics(detail);
   const canControl = hasPermission(DEMO_ROLE, "command:create");
   const hasControllableEquipment = detail.points.some((point) => point.capability === "write" || point.capability === "read_write");
-  const historyByCanonicalName = groupByCanonicalName(history);
-  const trendPoints = Array.from(new Map(detail.points.filter((point) => point.capability !== "write").map((point) => [point.canonicalName, point])).values());
+  const historyByPointId = groupByPointId(history);
+  const trendPoints = detail.points.filter((point) => point.capability !== "write");
 
   return (
     <Shell title={site.name} subtitle={`${site.type.replace(/_/g, " ")} · ${site.locationName}`}>
@@ -97,7 +97,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         ) : (
           <div className="chart-grid">
             {trendPoints.map((point) => (
-              <TimeSeriesChart key={point.id} title={point.label} unit={point.unit} data={historyByCanonicalName.get(point.canonicalName) ?? []} />
+              <TimeSeriesChart key={point.id} title={point.label} unit={point.unit} data={historyByPointId.get(point.id) ?? []} />
             ))}
           </div>
         )}

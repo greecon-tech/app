@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import jwt from "jsonwebtoken";
+import { DEMO_TENANT_ID } from "@greecon/shared";
 import { sessionIsStillGood } from "./active-users";
 import { hashGatewaySecret } from "./gateway-secret";
 import {
@@ -47,7 +48,19 @@ export class PrincipalGuard implements CanActivate {
       if (claims.mcp === true && !isAllowedWhilePasswordIsTemporary(request)) {
         throw new ForbiddenException({ message: "Choose a new password before you continue.", code: "PASSWORD_CHANGE_REQUIRED" });
       }
-      request.principal = principalFromClaims(claims);
+      const principal = principalFromClaims(claims);
+      // Readings come from a box, with its own credential. A person who could send them (an operator can, and
+      // so can the published demo login) could fill the platform's memory and disk with them, or write
+      // readings that no meter made.
+      if (isEdgeIngestRequest(request)) {
+        throw new ForbiddenException("Readings are sent by a box with its own credential, not by a signed-in person.");
+      }
+      // The demo login is published, so anyone on the internet can hold it: it may look and try, and
+      // nothing it does may be kept beyond a few harmless things.
+      if (principal.tenantId === DEMO_TENANT_ID && !principal.isPlatformAdmin && !isAllowedInTheDemo(request)) {
+        throw new ForbiddenException("The live demo is read-only: you can look and try it, but not change it. Ask Greecon for a setup of your own.");
+      }
+      request.principal = principal;
       return true;
     }
 
@@ -127,6 +140,15 @@ const ALLOWED_WHILE_PASSWORD_IS_TEMPORARY: ReadonlyArray<{ method: string; path:
 
 function isAllowedWhilePasswordIsTemporary(request: RequestWithPrincipal): boolean {
   return ALLOWED_WHILE_PASSWORD_IS_TEMPORARY.some((route) => route.method === request.method && route.path === request.path);
+}
+
+/** What a session in the demo account may do besides looking: acknowledge an alert, arrange its own dashboard,
+ * and be told why its password cannot be changed. Nothing else is written. */
+function isAllowedInTheDemo(request: RequestWithPrincipal): boolean {
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return true;
+  if (request.method === "POST" && /^\/alerts\/[^/]+\/acknowledge$/.test(request.path)) return true;
+  if (request.method === "PUT" && request.path === "/dashboard-preferences") return true;
+  return request.method === "POST" && request.path === "/auth/change-password";
 }
 
 /** Sending readings, one message or many. */

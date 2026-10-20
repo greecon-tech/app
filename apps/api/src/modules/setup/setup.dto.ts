@@ -43,6 +43,7 @@ export class ConfirmSetupStepDto {
 export class CreateDeviceFromProfileDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   siteId!: string;
 
   @IsIn(deviceProfiles.map((profile) => profile.key))
@@ -55,6 +56,7 @@ export class CreateDeviceFromProfileDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   assetId?: string;
 
   @IsOptional()
@@ -78,6 +80,7 @@ export class CreateDeviceFromProfileDto {
 export class ProvisionGatewayDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   siteId!: string;
 
   @IsString()

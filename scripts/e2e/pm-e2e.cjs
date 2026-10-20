@@ -207,8 +207,9 @@ async function boxCall(secret, method, path, body) {
   const testResults = await peopleForm.locator(".setup-items").first().innerText();
   ok("the test says what happened to the email and to the text", testResults.includes("Email") && testResults.includes("Text message") && !testResults.includes("Not sent"), testResults.replace(/\n+/g, " | "));
   const afterTest = await recorded();
-  const testMail = afterTest.find((item) => item.channel === "email" && item.to === "besa@hotel-adriatik.example");
-  const testText = afterTest.find((item) => item.channel === "sms" && item.to === "+355691234567");
+  // The platform's own 30-second round can send the morning message in between, so the test is picked out by what it says.
+  const testMail = afterTest.find((item) => item.channel === "email" && item.to === "besa@hotel-adriatik.example" && /This is a test message/.test(item.text ?? ""));
+  const testText = afterTest.find((item) => item.channel === "sms" && item.to === "+355691234567" && /test message/i.test(item.text ?? ""));
   ok("the provider was asked to send the email, from Greecon's alert address, with the platform's key", testMail?.from === "Greecon <alerts@e2e.example>" && testMail?.auth === "Bearer re_e2e", JSON.stringify(testMail)?.slice(0, 160));
   ok("the test email says it is a test and that nothing is wrong", testMail?.text.includes("This is a test message from Greecon for Hotel Adriatik") && testMail?.text.includes("Nothing is wrong"));
   ok("and the provider was asked to send the text", testText?.text.startsWith("Greecon test message for Hotel Adriatik."), testText?.text);

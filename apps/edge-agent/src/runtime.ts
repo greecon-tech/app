@@ -64,6 +64,15 @@ const MAX_POLL_MS = 300_000;
 const WATCHED_FOR_MS = 15 * 60_000;
 const WATCHED_HEARTBEAT_MS = 10_000;
 
+/** How long to wait before the next run of a loop that wants one every `delayMs`, when the last began at
+ * `startedAtMs` and it is `nowMs` now. The clock can be set while the work runs (the installer tells whoever sets
+ * a box up to set it by hand): a step back must not make the next run wait as long as the step, which could be
+ * a day, and a step forward must not do more than shorten one wait. */
+export function waitBeforeNext(delayMs: number, startedAtMs: number, nowMs: number): number {
+  const elapsed = Math.max(0, nowMs - startedAtMs);
+  return Math.min(delayMs, Math.max(0, delayMs - elapsed));
+}
+
 export class EdgeRuntime {
   readonly outbox: Outbox;
   private readonly platform: PlatformClient;
@@ -159,7 +168,7 @@ export class EdgeRuntime {
         const startedAt = this.now();
         work()
           .catch((error: unknown) => this.options.log.error(`The ${name} step failed and will be tried again: ${error instanceof Error ? error.message : String(error)}`))
-          .finally(() => arm(Math.max(0, delay() - (this.now() - startedAt))));
+          .finally(() => arm(waitBeforeNext(delay(), startedAt, this.now())));
       }, wait);
       this.timers.push(timer);
     };

@@ -50,6 +50,11 @@ export interface ConditionState {
 // Some conditions are normal for a few seconds. A pump that has just started has little flow until
 // it prime and pressurises, so "running with no flow" must hold this long before anyone is told
 // (an on-delay, in ISA-18.2 terms). Conditions not listed alert immediately.
+//
+// A critical or a low tank is deliberately not listed: a delay would lengthen every real alert, and the
+// cost of one level sensor's single bad sample is one message that resolves itself (the platform answers
+// "resolved" only after fifteen minutes of clear readings). If real sites show that costing more than a
+// delay would, it is a decision to take with their numbers (docs/18, open list).
 const ON_DELAY_SECONDS: Partial<Record<StateKey, number>> = {
   "water.pump.dry_run_risk": 30
 };

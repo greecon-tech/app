@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsString, MaxLength } from "class-validator";
+import { IsNotEmpty, IsString, MaxLength } from "class-validator";
+import { AccountEmail } from "../../common/account-email.decorator";
 
 export class AddStaffDto {
   @IsString()
@@ -6,7 +7,6 @@ export class AddStaffDto {
   @MaxLength(120)
   name!: string;
 
-  @IsEmail()
-  @MaxLength(254)
+  @AccountEmail()
   email!: string;
 }

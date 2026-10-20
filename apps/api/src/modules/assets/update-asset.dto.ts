@@ -1,10 +1,11 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString } from "class-validator";
+import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
 import { assetTypes, statusLabels } from "@greecon/shared";
 
 export class UpdateAssetDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(160)
   name?: string;
 
   @IsOptional()

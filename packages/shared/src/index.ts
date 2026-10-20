@@ -323,12 +323,12 @@ export const pointLimitDefinitions: readonly PointLimitDefinition[] = [
   {
     key: "dry_run_lpm",
     label: "No flow at or below",
-    help: "With the pump running, flow at or below this means no water is moving.",
+    help: "With the pump confirmed running, flow at or below this for 30 seconds means no water is moving, and an Act now alert opens. It needs the pump's running state to be read as well. Raise it only if this pump normally runs at a trickle.",
     unit: "lpm",
     appliesTo: ["water.flow.lpm"],
     min: 0,
     max: 100000,
-    fallback: null
+    fallback: 0.2
   },
   {
     key: "surplus_min_kw",

@@ -20,7 +20,7 @@ import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
 import { ValueSection } from "../../../components/ValueSection";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
-import { groupByCanonicalName } from "../../../lib/telemetry-history";
+import { groupByPointId } from "../../../lib/telemetry-history";
 import { priorityWord, titleCase } from "../../../lib/health";
 import { CONTACT_WORDS } from "../../../lib/setup";
 import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
@@ -71,11 +71,11 @@ export default async function SiteDetailPage({ params, searchParams }: { params:
   ]);
   const { site } = detail;
   const metrics = buildMetrics(detail);
-  const historyByCanonicalName = groupByCanonicalName(history);
+  const historyByPointId = groupByPointId(history);
   // One chart per readable point this site actually has — a write-only command point (e.g. the
-  // irrigation valve toggle) has no meaningful trend to plot, and points sharing a canonical name
-  // (rare — usually one device per point) share one chart rather than duplicating it.
-  const trendPoints = Array.from(new Map(detail.points.filter((point) => point.capability !== "write").map((point) => [point.canonicalName, point])).values());
+  // irrigation valve toggle) has no meaningful trend to plot. Each point has its own line: two tanks are two
+  // charts, never one that jumps between them.
+  const trendPoints = detail.points.filter((point) => point.capability !== "write");
   // The real logged-in session's role, not the build-time DEMO_ROLE fallback (which only ever
   // reflects the caller's identity on the static export — see lib/api.ts's requestHeaders) — this
   // page previously gated Manual Control by DEMO_ROLE even on a live deployment, so every visitor
@@ -134,7 +134,7 @@ export default async function SiteDetailPage({ params, searchParams }: { params:
         ) : (
           <div className="chart-grid">
             {trendPoints.map((point) => (
-              <TimeSeriesChart key={point.id} title={point.label} unit={point.unit} data={historyByCanonicalName.get(point.canonicalName) ?? []} />
+              <TimeSeriesChart key={point.id} title={point.label} unit={point.unit} data={historyByPointId.get(point.id) ?? []} />
             ))}
           </div>
         )}

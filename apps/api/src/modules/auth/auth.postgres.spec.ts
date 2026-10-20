@@ -87,4 +87,31 @@ describe.skipIf(!testDatabaseUrl)("signing in with a temporary password (real Po
       await expect(auth.changePassword("any-user", DEMO_TENANT_ID, "demo123", "A-brand-new-password-3")).rejects.toThrow(/Demo account passwords/);
     });
   }, 60_000);
+
+  it("finds an account only by its address in plain ASCII, so a spelling the database would lower-case into it does not sign in", async () => {
+    await withAuth(async (auth, query) => {
+      await addOwner(query, "ilir@client.example", "Temporary-Pass-1", false);
+      // The database's lower() turns "İ" into "i" (with a Unicode collation), so without the check this reaches the account.
+      await expect(auth.login("İlir@client.example", "Temporary-Pass-1")).rejects.toThrow(/Invalid email or password/);
+      await expect(auth.login("ilir@client.example\u200b", "Temporary-Pass-1")).rejects.toThrow(/Invalid email or password/);
+      // The ordinary spellings of the same address still do: case and spaces around it do not matter.
+      expect((await auth.login("  Ilir@Client.Example ", "Temporary-Pass-1")).user.email).toBe("ilir@client.example");
+    });
+  }, 60_000);
+
+  it("takes about as long to refuse an address with no account as one with the wrong password, so timing does not say which exist", async () => {
+    await withAuth(async (auth, query) => {
+      await addOwner(query, "owner@client.example", "Temporary-Pass-1", false);
+      const time = async (email: string): Promise<number> => {
+        const started = process.hrtime.bigint();
+        await auth.login(email, "a-wrong-password-entirely").catch(() => undefined);
+        return Number(process.hrtime.bigint() - started) / 1e6;
+      };
+      await time("owner@client.example"); // warm up
+      const real = Math.min(await time("owner@client.example"), await time("owner@client.example"));
+      const unknown = Math.min(await time("nobody@client.example"), await time("nobody-either@client.example"));
+      // A hash of the wrong length is refused in a fraction of a millisecond; a real one takes tens of them.
+      expect(unknown).toBeGreaterThan(real / 4);
+    });
+  }, 60_000);
 });

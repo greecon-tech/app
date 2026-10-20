@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChangePasswordForm } from "../../components/ChangePasswordForm";
 import { getSession } from "../../lib/session";
@@ -22,6 +23,9 @@ export default async function ChangePasswordPage() {
           </p>
         </div>
         <ChangePasswordForm forced />
+        <p className="muted">
+          <Link href="/privacy">What Greecon keeps about you</Link>
+        </p>
       </section>
     </main>
   );

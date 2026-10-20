@@ -20,7 +20,8 @@ export default function RequestAccessPage() {
         </div>
         <RequestAccessForm />
         <p className="muted">
-          Already have an account? <Link href="/login">Sign in</Link>. Or write to <a href="mailto:info@greecon.earth">info@greecon.earth</a>.
+          Already have an account? <Link href="/login">Sign in</Link>. Or write to <a href="mailto:info@greecon.earth">info@greecon.earth</a>. What Greecon keeps about you
+          is on the <Link href="/privacy">privacy page</Link>.
         </p>
       </section>
     </main>

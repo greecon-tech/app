@@ -46,6 +46,8 @@ export function proxy(request: NextRequest): NextResponse {
   return NextResponse.next();
 }
 
+// Public without a session: the sign-in and request pages, the privacy page, and /.well-known (security.txt
+// has to be readable by someone who has no account, which is the point of it).
 export const config = {
-  matcher: ["/((?!login|request-access|privacy|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
+  matcher: ["/((?!login|request-access|privacy|\\.well-known|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
 };

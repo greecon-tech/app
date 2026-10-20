@@ -7,6 +7,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { apiDocsEnabled, checkRuntimeConfig, trustedProxyHops } from "./common/runtime-config";
 import { prepareDatabase } from "./database/startup";
+import { PlatformService } from "./platform/platform.service";
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("Bootstrap");
@@ -80,6 +81,29 @@ async function bootstrap(): Promise<void> {
     if ((error as NodeJS.ErrnoException).code !== "EAFNOSUPPORT") throw error;
     await app.listen(port);
   }
+
+  // A host stops a service with SIGTERM when it deploys a new version. Nothing here listens for it by default,
+  // so the energy and water counted since the last save would be lost at every deploy. The counts are saved
+  // first, while the database is still open, and then everything is closed. (Nest's own shutdown hooks are not
+  // used: they close the database before the application's shutdown step, which would leave the counts unsaved.)
+  let stopping = false;
+  const stop = (signal: string): void => {
+    if (stopping) return;
+    stopping = true;
+    logger.log(`${signal} received: saving what has been counted, then stopping.`);
+    setTimeout(() => process.exit(1), 8_000).unref();
+    app
+      .get(PlatformService)
+      .saveBeforeStopping()
+      .then(() => app.close())
+      .then(() => process.exit(0))
+      .catch((error: unknown) => {
+        logger.error(`Stopping did not finish cleanly: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      });
+  };
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", () => stop("SIGINT"));
 }
 
 bootstrap().catch((error: unknown) => {

@@ -29,6 +29,16 @@ describe("what the platform uses when a site sets no limit", () => {
     expect(stateValue(deriveOperationalStates({ "energy.battery.soc.percent": reading(standard, "%") }, { nowMs: NOW }), "energy.battery.constrained")).toBe(false);
   });
 
+  it("calls a running pump dry at or below its stated standard flow, and never a stopped one", () => {
+    const standard = fallbackOf("dry_run_lpm", "water.flow.lpm") as number;
+    const pump = (state: string): SensorSnapshotValue => ({ value: state, unit: "state", quality: "OK", timestampUtc: new Date(NOW - 1000).toISOString() });
+    const states = (flow: number, pumpState: string) => deriveOperationalStates({ "water.pump.status": pump(pumpState), "water.flow.lpm": reading(flow, "lpm") }, { nowMs: NOW });
+    expect(typeof standard).toBe("number");
+    expect(stateValue(states(standard, "ON"), "water.pump.dry_run_risk")).toBe(true);
+    expect(stateValue(states(standard + 0.1, "ON"), "water.pump.dry_run_risk")).toBe(false);
+    expect(stateValue(states(0, "OFF"), "water.pump.dry_run_risk")).toBe(false);
+  });
+
   it("says nothing at all where the definitions say there is no standard", () => {
     const states = deriveOperationalStates(
       { "agri.soil.moisture.percent": reading(5, "%"), "energy.solar.power.kw": reading(9, "kW"), "energy.consumption.kw": reading(1, "kW") },

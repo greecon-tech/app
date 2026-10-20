@@ -16,6 +16,11 @@ const FLOW: CanonicalPointName = "water.flow.lpm";
 /** Below this share of the period, a comparison with a typical month would flatter the result. */
 export const MINIMUM_COVERAGE_FOR_COMPARISON = 0.9;
 
+/** A month so far is only compared with a typical month once this many whole days of it have passed. A
+ * typical month spread evenly over its hours is not what the first night of a month looks like, so a comparison
+ * made at six o'clock on the first would show a saving that is only the hour of day. */
+export const MINIMUM_DAYS_FOR_COMPARISON = 7;
+
 export interface ComputeInput {
   siteId: string;
   period: Period;
@@ -192,6 +197,12 @@ export function computeSiteValue(input: ComputeInput): SiteValue {
 }
 
 function compare(unit: "kWh" | "m³", baseline: number, actual: number, coverageOfPeriod: number, period: Period, price: number | undefined): Comparison {
+  if (period.days < MINIMUM_DAYS_FOR_COMPARISON) {
+    return {
+      available: false,
+      reason: `Only ${Math.floor(period.days)} whole day${Math.floor(period.days) === 1 ? "" : "s"} of ${period.label.toLowerCase()} have passed. A comparison with a typical month needs at least ${MINIMUM_DAYS_FOR_COMPARISON} days, because the first hours of a month are not like an average hour of it.`
+    };
+  }
   if (coverageOfPeriod < MINIMUM_COVERAGE_FOR_COMPARISON) {
     return {
       available: false,

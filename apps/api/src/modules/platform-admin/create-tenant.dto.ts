@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
+import { AccountEmail } from "../../common/account-email.decorator";
 
 export class CreateTenantDto {
   @IsString()
@@ -17,7 +18,6 @@ export class CreateTenantDto {
   @MaxLength(120)
   ownerName!: string;
 
-  @IsEmail()
-  @MaxLength(254)
+  @AccountEmail()
   ownerEmail!: string;
 }

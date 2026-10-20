@@ -27,6 +27,8 @@ export interface UpdaterOptions {
   restart: () => void;
   /** Runs a downloaded file's `version` command and returns what it printed. Replaced in tests. */
   versionOf?: (file: string) => Promise<string | undefined>;
+  /** Removes an old release from the disk. Replaced in tests. */
+  removeRelease?: (path: string) => void;
 }
 
 export type UpdateOutcome = "not-installed" | "not-needed" | "too-soon" | "rejected-before" | "failed" | "restarting";
@@ -135,14 +137,28 @@ export class Updater {
     }
   }
 
+  /** Clears old releases away. Never throws: by now the new version is current, and an old one that cannot
+   * be removed (a file owned by another user, a full or read-only disk) is only wasted space, whereas a throw
+   * here would leave the box on its old software without restarting, and try again every six hours. */
   private prune(home: string, keep: string): void {
-    const releases = join(home, "releases");
-    const previous = this.options.currentVersion;
-    const others = readdirSync(releases)
-      .filter((name) => name !== keep && name !== previous)
-      .map((name) => ({ name, mtime: statSync(join(releases, name)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime);
-    for (const old of others.slice(Math.max(0, KEEP_RELEASES - 2))) rmSync(join(releases, old.name), { recursive: true, force: true });
+    const remove = this.options.removeRelease ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
+    try {
+      const releases = join(home, "releases");
+      const previous = this.options.currentVersion;
+      const others = readdirSync(releases)
+        .filter((name) => name !== keep && name !== previous)
+        .map((name) => ({ name, mtime: statSync(join(releases, name)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      for (const old of others.slice(Math.max(0, KEEP_RELEASES - 2))) {
+        try {
+          remove(join(releases, old.name));
+        } catch (error) {
+          this.options.log.warn(`Could not remove the old version ${old.name} (${error instanceof Error ? error.message : String(error)}); it is left where it is.`);
+        }
+      }
+    } catch (error) {
+      this.options.log.warn(`Could not look through the old versions to clear them away (${error instanceof Error ? error.message : String(error)}).`);
+    }
   }
 
   private read(path: string): string | undefined {

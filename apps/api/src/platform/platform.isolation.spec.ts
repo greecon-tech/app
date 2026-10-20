@@ -14,6 +14,11 @@ import { DEMO_OWNER, PLATFORM_ADMIN } from "./test-support";
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const identifiersIn = (value: unknown): Set<string> => new Set(JSON.stringify(value).match(UUID) ?? []);
+const collect = async <T>(pages: AsyncGenerator<T[]>): Promise<T[]> => {
+  const all: T[] = [];
+  for await (const page of pages) all.push(...page);
+  return all;
+};
 
 describe("tenant isolation across the service", () => {
   let platform: PlatformService;
@@ -127,6 +132,7 @@ describe("tenant isolation across the service", () => {
       ["listMaintenance", platform.listMaintenance(b)],
       ["listAudit", platform.listAudit(b)],
       ["listAudit(A's site)", platform.listAudit(b, a.site)],
+      ["auditTrail", await collect(platform.auditTrail(b))],
       ["valueSummary", await platform.valueSummary(b)],
       ["siteProfile(B's site)", platform.siteProfile(mine.site, b)],
       ["siteValue(B's site)", await platform.siteValue(mine.site, "month", b)],
@@ -335,7 +341,7 @@ describe("tenant isolation across the service", () => {
     const exercised = new Set([
       "session", "getDashboardPreferences", "listTenants", "listUsers", "overview", "listSites", "siteDetail", "listAssets", "listDevices", "listPoints",
       "listGateways", "telemetryHistory", "latestTelemetry", "listDerivedStates", "listRules", "simulateRules", "listCommands", "listAlerts", "listIncidents",
-      "listMaintenance", "listAudit", "updateSite", "deleteSite", "createAsset", "updateAsset", "deleteAsset", "createDevice", "updateDevice", "deleteDevice",
+      "listMaintenance", "listAudit", "auditTrail", "updateSite", "deleteSite", "createAsset", "updateAsset", "deleteAsset", "createDevice", "updateDevice", "deleteDevice",
       "createPoint", "updatePoint", "deletePoint", "createGateway", "deleteGateway", "createRule", "updateRule", "setRuleApprovalState", "deleteRule",
       "createCommand", "acknowledgeCommand", "acknowledgeAlert", "updateIncidentStatus", "createMaintenanceTask", "updateMaintenanceTask",
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
@@ -348,7 +354,8 @@ describe("tenant isolation across the service", () => {
     // Acting only on the caller's own tenant, with nothing in the request that names another's data.
     // recordNotificationSettingsChange and recordDataExport only write one audit line, into the caller's own tenant's trail.
     // assertTeamMember and assertTeamOwner only look at the caller's own flags and role; they read no records.
-    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport", "recordNotificationSettingsChange", "recordDataExport", "assertTeamMember", "assertTeamOwner"]);
+    // assertMayManagePeople and assertOwnerRule only look at the caller's own role, flags and account's name; they read no customer's records.
+    const ownScopeOnly = new Set(["saveDashboardPreferences", "createSite", "createUser", "assertNotSupport", "recordNotificationSettingsChange", "recordDataExport", "assertTeamMember", "assertTeamOwner", "assertMayManagePeople", "assertOwnerRule"]);
 
     const takingAPrincipal = Object.getOwnPropertyNames(PlatformService.prototype).filter((name) => {
       const method = (PlatformService.prototype as unknown as Record<string, unknown>)[name];

@@ -1,17 +1,20 @@
-import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from "class-validator";
+import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
 import { PointSource, canonicalPoints, pointCapabilities } from "@greecon/shared";
 
 export class CreatePointDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   siteId!: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   assetId?: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   deviceId!: string;
 
   @IsIn(canonicalPoints)
@@ -19,10 +22,12 @@ export class CreatePointDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(160)
   label!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(40)
   unit!: string;
 
   @IsIn(pointCapabilities)

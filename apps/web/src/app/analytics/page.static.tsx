@@ -1,12 +1,13 @@
 import { CanonicalPointName } from "@greecon/shared";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
-import { TimeSeriesChart } from "../../components/TimeSeriesChart";
+import { kindCharts } from "../../components/KindCharts";
 import { apiGet } from "../../lib/api";
-import { groupByCanonicalName } from "../../lib/telemetry-history";
+import { seriesByKind } from "../../lib/telemetry-history";
 
 interface TelemetryReading {
   timestampUtc: string;
+  pointId: string;
   canonicalName: string;
   value: number | boolean | string;
 }
@@ -43,29 +44,23 @@ const AGRICULTURE_METRICS: ResourceMetric[] = [
 // the range/site tabs entirely rather than shipping dead links that would all serve the same file.
 export default async function AnalyticsPage() {
   const readings = await apiGet<TelemetryReading[]>("/telemetry/history?hours=168");
-  const byCanonicalName = groupByCanonicalName(readings);
+  const seriesOf = seriesByKind(readings);
 
   return (
     <Shell title="Analytics" subtitle="Real historical trends across energy, water, and agriculture — not a snapshot.">
       <Section title="Energy" aside={<span className="muted">Production, consumption, and grid exchange — last 7 days</span>}>
         <div className="chart-grid">
-          {ENERGY_METRICS.map((metric) => (
-            <TimeSeriesChart key={metric.canonicalName} title={metric.label} unit={metric.unit} data={byCanonicalName.get(metric.canonicalName) ?? []} />
-          ))}
+          {ENERGY_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
         </div>
       </Section>
       <Section title="Water">
         <div className="chart-grid">
-          {WATER_METRICS.map((metric) => (
-            <TimeSeriesChart key={metric.canonicalName} title={metric.label} unit={metric.unit} data={byCanonicalName.get(metric.canonicalName) ?? []} />
-          ))}
+          {WATER_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
         </div>
       </Section>
       <Section title="Agriculture">
         <div className="chart-grid">
-          {AGRICULTURE_METRICS.map((metric) => (
-            <TimeSeriesChart key={metric.canonicalName} title={metric.label} unit={metric.unit} data={byCanonicalName.get(metric.canonicalName) ?? []} />
-          ))}
+          {AGRICULTURE_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
         </div>
       </Section>
     </Shell>

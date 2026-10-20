@@ -56,7 +56,15 @@ export class DevicePoller {
     const done = await Promise.all(
       [...groups.values()].map(async (devices) => {
         const results: Array<{ device: EdgeConfigDevice; readings: TelemetryReading[]; status: DriverDeviceStatus }> = [];
-        for (const device of devices) results.push({ device, ...(await this.pollDevice(config, device, startedMs)) });
+        // Once the converter itself cannot be reached, the devices after the first are not tried this round:
+        // each would wait out its own connection attempt, and thirteen meters behind one dead converter would
+        // hold up every other converter's readings for most of a minute.
+        let converterDown: string | undefined;
+        for (const device of devices) {
+          const polled = await this.pollDevice(config, device, startedMs, converterDown);
+          results.push({ device, readings: polled.readings, status: polled.status });
+          converterDown ??= polled.converterDown;
+        }
         return results;
       })
     );
@@ -80,7 +88,12 @@ export class DevicePoller {
     return { messages, statuses };
   }
 
-  private async pollDevice(config: EdgeConfig, device: EdgeConfigDevice, startedMs: number): Promise<{ readings: TelemetryReading[]; status: DriverDeviceStatus }> {
+  private async pollDevice(
+    config: EdgeConfig,
+    device: EdgeConfigDevice,
+    startedMs: number,
+    converterAlreadyDown?: string
+  ): Promise<{ readings: TelemetryReading[]; status: DriverDeviceStatus; converterDown?: string }> {
     const health = this.health.get(device.deviceId) ?? { failures: 0, nextTryMs: 0 };
     this.health.set(device.deviceId, health);
 
@@ -92,8 +105,9 @@ export class DevicePoller {
     const words = new Map<string, number[] | ModbusReadError>();
     const readings: TelemetryReading[] = [];
     let failed = 0;
-    let firstError: string | undefined;
-    let silent = false;
+    let firstError: string | undefined = converterAlreadyDown;
+    let silent = converterAlreadyDown !== undefined;
+    let converterDown: string | undefined;
 
     for (const point of device.points) {
       const count = registersFor(point.source.dataType);
@@ -110,6 +124,7 @@ export class DevicePoller {
             const read = error instanceof ModbusReadError ? error : new ModbusReadError(error instanceof Error ? error.message : String(error), "transport");
             words.set(key, read);
             if (read.kind === "transport") silent = true;
+            if (read.converterUnreachable) converterDown = read.message;
           }
         }
       }
@@ -157,7 +172,7 @@ export class DevicePoller {
       if (health.failures >= FAILURES_BEFORE_BACKING_OFF) health.nextTryMs = this.now() + BACKED_OFF_RETRY_MS;
       this.logSilence(device, firstError ?? "no readings", health.failures);
     }
-    return { readings, status: this.statusOf(device, health, readings.length, failed) };
+    return { readings, status: this.statusOf(device, health, readings.length, failed), ...(converterDown ? { converterDown } : {}) };
   }
 
   private logSilence(device: EdgeConfigDevice, reason: string, failures: number): void {

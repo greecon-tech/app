@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SiteProfile } from "@greecon/shared";
-import { computeSiteValue, MINIMUM_COVERAGE_FOR_COMPARISON } from "./compute-value";
+import { computeSiteValue, MINIMUM_COVERAGE_FOR_COMPARISON, MINIMUM_DAYS_FOR_COMPARISON } from "./compute-value";
 import { BucketTotal } from "./energy-ledger";
 import { resolvePeriod } from "./periods";
 
@@ -136,6 +136,34 @@ describe("computeSiteValue", () => {
     });
     expect(value.comparison?.energy).toMatchObject({ available: false });
     expect((value.comparison?.energy as { reason: string }).reason).toContain("a gap in the readings would look like a saving");
+  });
+
+  it("does not compare the first days of a month with a typical month, because the hour of the day alone would look like a saving", () => {
+    // Six o'clock on the first of the month: six night hours against six hours' share of a month.
+    // Midnight in Tirane on 1 October is 22:00 UTC the evening before (it is UTC+2 until the end of October).
+    const midnight = Date.parse("2026-09-30T22:00:00Z");
+    const sixHoursIn = resolvePeriod("month", midnight + 6 * 3_600_000, "Europe/Tirane");
+    expect(sixHoursIn.days).toBeLessThan(MINIMUM_DAYS_FOR_COMPARISON);
+    const value = computeSiteValue({
+      siteId: "site",
+      period: sixHoursIn,
+      profile: profile({ importPricePerKwh: 0.15, baselineMonthlyImportKwh: 1000 }),
+      totals: [{ pointId: "i", canonicalName: "energy.grid.import.kw", amount: 1.2, coveredSeconds: sixHoursIn.days * 86_400, firstHourMs: sixHoursIn.fromMs }],
+      simulated: false
+    });
+    expect(value.comparison?.energy).toMatchObject({ available: false });
+    expect((value.comparison?.energy as { reason: string }).reason).toContain("needs at least 7 days");
+
+    // From the seventh day on, it can.
+    const later = resolvePeriod("month", sixHoursIn.fromMs + 7.5 * 86_400_000, "Europe/Tirane");
+    const seven = computeSiteValue({
+      siteId: "site",
+      period: later,
+      profile: profile({ importPricePerKwh: 0.15, baselineMonthlyImportKwh: 1000 }),
+      totals: [{ pointId: "i", canonicalName: "energy.grid.import.kw", amount: 200, coveredSeconds: later.days * 86_400, firstHourMs: later.fromMs }],
+      simulated: false
+    });
+    expect(seven.comparison?.energy).toMatchObject({ available: true });
   });
 
   it("compares only over periods where a monthly baseline is fair", () => {

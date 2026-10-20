@@ -2,13 +2,14 @@ import Link from "next/link";
 import { CanonicalPointName } from "@greecon/shared";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
-import { TimeSeriesChart } from "../../components/TimeSeriesChart";
+import { kindCharts } from "../../components/KindCharts";
 import { apiGet } from "../../lib/api";
-import { groupByCanonicalName } from "../../lib/telemetry-history";
+import { seriesByKind } from "../../lib/telemetry-history";
 
 interface TelemetryReading {
   timestampUtc: string;
   siteId: string;
+  pointId: string;
   canonicalName: string;
   value: number | boolean | string;
 }
@@ -57,14 +58,15 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const params = await searchParams;
   const range = params.range && RANGES[params.range] ? params.range : DEFAULT_RANGE;
   const hours = RANGES[range];
-  const siteId = params.siteId;
 
-  const [sites, readings] = await Promise.all([
-    apiGet<Site[]>("/sites"),
-    apiGet<TelemetryReading[]>(`/telemetry/history?hours=${hours}${siteId ? `&siteId=${siteId}` : ""}`)
-  ]);
+  const sites = await apiGet<Site[]>("/sites");
+  // A trend is one site's. Across several sites the same kind of reading (each has a tank) would be drawn as one
+  // line that jumps from one site to the next, so an account with several sites sees one at a time, the first
+  // unless another is chosen.
+  const siteId = sites.some((site) => site.id === params.siteId) ? params.siteId : sites.length > 1 ? sites[0]?.id : undefined;
+  const readings = await apiGet<TelemetryReading[]>(`/telemetry/history?hours=${hours}${siteId ? `&siteId=${siteId}` : ""}`);
 
-  const byCanonicalName = groupByCanonicalName(readings);
+  const seriesOf = seriesByKind(readings);
 
   return (
     <Shell title="Analytics" subtitle="Real historical trends across energy, water, and agriculture — not a snapshot.">
@@ -80,9 +82,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       {sites.length > 1 ? (
         <Section title="Site">
           <div className="tabs">
-            <Link href={buildHref(range, undefined)} aria-current={!siteId ? "page" : undefined}>
-              All sites
-            </Link>
             {sites.map((site) => (
               <Link key={site.id} href={buildHref(range, site.id)} aria-current={siteId === site.id ? "page" : undefined}>
                 {site.name}
@@ -93,23 +92,17 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       ) : null}
       <Section title="Energy" aside={<span className="muted">Production, consumption, and grid exchange</span>}>
         <div className="chart-grid">
-          {ENERGY_METRICS.map((metric) => (
-            <TimeSeriesChart key={metric.canonicalName} title={metric.label} unit={metric.unit} data={byCanonicalName.get(metric.canonicalName) ?? []} />
-          ))}
+          {ENERGY_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
         </div>
       </Section>
       <Section title="Water">
         <div className="chart-grid">
-          {WATER_METRICS.map((metric) => (
-            <TimeSeriesChart key={metric.canonicalName} title={metric.label} unit={metric.unit} data={byCanonicalName.get(metric.canonicalName) ?? []} />
-          ))}
+          {WATER_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
         </div>
       </Section>
       <Section title="Agriculture">
         <div className="chart-grid">
-          {AGRICULTURE_METRICS.map((metric) => (
-            <TimeSeriesChart key={metric.canonicalName} title={metric.label} unit={metric.unit} data={byCanonicalName.get(metric.canonicalName) ?? []} />
-          ))}
+          {AGRICULTURE_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
         </div>
       </Section>
     </Shell>

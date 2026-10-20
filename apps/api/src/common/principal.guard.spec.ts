@@ -344,3 +344,50 @@ describe("PrincipalGuard", () => {
     });
   });
 });
+
+describe("PrincipalGuard: what a signed-in person may not do", () => {
+  const original = process.env.JWT_SECRET;
+  const DEMO = "11111111-1111-4111-8111-111111111111";
+  beforeEach(() => {
+    process.env.JWT_SECRET = "test-secret";
+    forgetAllUsers();
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = original;
+  });
+
+  const session = (tenantId: string, role: JwtClaims["role"] = "operator", extra: Partial<JwtClaims> = {}) =>
+    jwt.sign({ sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", tenantId, role, email: "someone@example.com", ...extra } satisfies JwtClaims, "test-secret");
+  const guard = new PrincipalGuard(fakeDatabase(false));
+  const call = (token: string, method: string, path: string) => guard.canActivate(contextWithHeaders({ "x-greecon-session": token }, { method, path }));
+
+  it("may not send readings: those come from a box with its own credential", async () => {
+    for (const path of ["/telemetry/ingest", "/telemetry/ingest-batch"]) {
+      await expect(call(session("tenant-1", "owner"), "POST", path), path).rejects.toThrow(/sent by a box with its own credential/);
+    }
+    // Reading them back is still an ordinary thing to do.
+    await expect(call(session("tenant-1", "viewer"), "GET", "/telemetry/latest")).resolves.toBe(true);
+  });
+
+  it("is read-only in the demo account, which is published and so held by anyone: no tasks, commands, rules or people", async () => {
+    const demo = session(DEMO, "operator");
+    for (const [method, path] of [["POST", "/maintenance"], ["POST", "/commands"], ["POST", "/rules"], ["PATCH", "/sites/s1"], ["DELETE", "/devices/d1"], ["POST", "/users"], ["POST", "/gateways"]] as const) {
+      await expect(call(demo, method, path), `${method} ${path}`).rejects.toThrow(/live demo is read-only/);
+    }
+  });
+
+  it("lets the demo account look, acknowledge an alert, arrange its dashboard and be told its password cannot change", async () => {
+    const demo = session(DEMO, "operator");
+    for (const [method, path] of [["GET", "/overview"], ["GET", "/sites/s1"], ["POST", "/alerts/a1/acknowledge"], ["PUT", "/dashboard-preferences"], ["POST", "/auth/change-password"]] as const) {
+      await expect(call(demo, method, path), `${method} ${path}`).resolves.toBe(true);
+    }
+    // Only an alert's own acknowledge route, not something that merely starts like it.
+    await expect(call(demo, "POST", "/alerts/a1/acknowledge/extra")).rejects.toThrow(/live demo is read-only/);
+  });
+
+  it("does not make any other account read-only", async () => {
+    await expect(call(session("tenant-1", "operator"), "POST", "/maintenance")).resolves.toBe(true);
+    await expect(call(session("tenant-1", "owner"), "PATCH", "/sites/s1")).resolves.toBe(true);
+  });
+});

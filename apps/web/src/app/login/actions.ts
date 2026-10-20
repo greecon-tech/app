@@ -3,13 +3,14 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_TOKEN_COOKIE, SESSION_USER_COOKIE, SessionUser } from "../../lib/session";
+import { visitorHeaders } from "../../lib/visitor";
 
 const API_BASE_URL = process.env.GREECON_API_URL ?? "http://localhost:4000";
 
 export async function loginAction(email: string, password: string, intendedArea: "client" | "staff" = "client"): Promise<{ error?: string }> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(await visitorHeaders()) },
     body: JSON.stringify({ email, password })
   });
 

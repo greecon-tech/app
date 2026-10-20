@@ -411,6 +411,21 @@ export interface IngestBatchResult {
 /** A box reads every ten seconds; history keeps a reading a minute. */
 export const RAW_HISTORY_EVERY_MS = 60_000;
 
+// What a person's actions may add to the platform's memory, per account. The limits on each piece of text
+// bound how large one entry can be; these bound how many, so a loop that creates entries cannot grow the
+// process until it falls over, taking every customer's alerting with it. The database keeps everything: only
+// what the process holds is bounded, and downloads read the database.
+export const MAX_MAINTENANCE_TASKS_PER_ACCOUNT = 5_000;
+const MAX_COMMANDS_IN_MEMORY_PER_ACCOUNT = 500;
+const MAX_AUDIT_EVENTS_IN_MEMORY_PER_ACCOUNT = 1_000;
+const MAX_EDGE_SYNC_BATCHES_IN_MEMORY = 200;
+
+/** A newest-first list with only the newest `max` entries of one account's kept; other accounts' are untouched. */
+function keepNewestOf<T extends { tenantId: string }>(list: T[], tenantId: string, max: number): T[] {
+  let seen = 0;
+  return list.length <= max ? list : list.filter((entry) => entry.tenantId !== tenantId || ++seen <= max);
+}
+
 // How often every site's states are re-derived against the clock, so a gateway that has gone quiet is
 // noticed within about a minute even though nothing is arriving to trigger a refresh.
 const HEALTH_MONITOR_INTERVAL_MS = 60_000;
@@ -439,12 +454,25 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   async onApplicationShutdown(): Promise<void> {
+    await this.saveBeforeStopping();
+  }
+
+  private stoppedAndSaved = false;
+
+  /** Stops the background work and saves what has been counted since the last save, so a deploy loses nothing.
+   * main.ts calls it as soon as the process is asked to stop, while the database is still open (Nest closes the
+   * database before it runs onApplicationShutdown); asked twice, it does it once. */
+  async saveBeforeStopping(): Promise<void> {
+    if (this.stoppedAndSaved) return;
+    this.stoppedAndSaved = true;
     this.stopHealthMonitor();
     this.stopLedgerFlush();
-    // Whatever has been counted since the last save is saved now, so a deploy loses nothing.
+    let saved = true;
     await this.ledger.flush().catch((error: unknown) => {
+      saved = false;
       this.logger.warn(`Could not save energy totals at shutdown: ${error instanceof Error ? error.message : String(error)}`);
     });
+    if (saved) this.logger.log("Saved the energy and water counted since the last save.");
   }
 
   // Counted energy and water are saved in small batches. A failed save keeps the counts and tries
@@ -554,7 +582,10 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const incidentRows = await this.db.query<IncidentRow>("SELECT * FROM incidents ORDER BY created_at DESC");
     if (incidentRows.rows.length > 0) this.incidents = incidentRows.rows.map((row) => mapIncidentRow(row));
 
-    const auditRows = await this.db.query<AuditRow>("SELECT * FROM audit_events ORDER BY created_at DESC LIMIT 500");
+    const auditRows = await this.db.query<AuditRow>(
+      `SELECT * FROM (SELECT *, row_number() OVER (PARTITION BY tenant_id ORDER BY created_at DESC) AS position FROM audit_events) newest
+       WHERE position <= ${MAX_AUDIT_EVENTS_IN_MEMORY_PER_ACCOUNT} ORDER BY created_at DESC`
+    );
     if (auditRows.rows.length > 0) this.auditEvents = auditRows.rows.map((row) => mapAuditRow(row));
 
     const edgeSyncRows = await this.db.query<EdgeSyncRow>("SELECT * FROM edge_sync_batches ORDER BY created_at DESC LIMIT 200");
@@ -1376,11 +1407,31 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
   }
 
-  async createUser(input: CreateUserInput, principal: Principal): Promise<{ user: User; temporaryPassword: string }> {
+  /** Who may add, change or reset a person through the ordinary people routes. These serve a customer's
+   * account. On Greecon's own they would let any team member (an admin there, with user:manage) reset the
+   * owner's password and sign in as the owner, so the team is managed only through the team routes above,
+   * which are the owner's alone. */
+  private assertMayManagePeople(principal: Principal): void {
     this.assertNotSupport(principal);
     if (!hasPermission(principal.role, "user:manage")) {
       throw new ForbiddenException("Action blocked by access policy.");
     }
+    if (this.isOperatorTenant(principal.tenantId)) {
+      throw new ForbiddenException("The people on Greecon's own account are the Greecon team. The owner adds them, turns them off and resets their passwords under Greecon team on the Clients page.");
+    }
+  }
+
+  /** In any account only an owner changes an owner or makes one: an admin who could reset the owner's
+   * password could sign in as the owner. */
+  private assertOwnerRule(principal: Principal, ...roles: Array<UserRole | undefined>): void {
+    if (roles.includes("owner") && principal.role !== "owner") {
+      throw new ForbiddenException("Only an owner can add an owner, change one, or reset an owner's password.");
+    }
+  }
+
+  async createUser(input: CreateUserInput, principal: Principal): Promise<{ user: User; temporaryPassword: string }> {
+    this.assertMayManagePeople(principal);
+    this.assertOwnerRule(principal, input.role);
 
     const email = input.email.trim().toLowerCase();
     this.assertEmailIsFree(email);
@@ -1432,12 +1483,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   // generates a fresh temporary password on the user's behalf and passes it along out of band,
   // same one-time-disclosure handling as createUser.
   async resetUserPassword(userId: string, principal: Principal): Promise<{ user: User; temporaryPassword: string }> {
-    this.assertNotSupport(principal);
-    if (!hasPermission(principal.role, "user:manage")) {
-      throw new ForbiddenException("Action blocked by access policy.");
-    }
-
+    this.assertMayManagePeople(principal);
     const user = this.requireUser(userId, principal.tenantId);
+    this.assertOwnerRule(principal, user.role);
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
@@ -1460,12 +1508,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   }
 
   async updateUser(userId: string, input: UpdateUserInput, principal: Principal): Promise<User> {
-    this.assertNotSupport(principal);
-    if (!hasPermission(principal.role, "user:manage")) {
-      throw new ForbiddenException("Action blocked by access policy.");
-    }
-
+    this.assertMayManagePeople(principal);
     const user = this.requireUser(userId, principal.tenantId);
+    this.assertOwnerRule(principal, user.role, input.role);
     if (user.id === principal.userId && input.status === "disabled") {
       throw new ForbiddenException("You cannot disable your own account.");
     }
@@ -1477,17 +1522,18 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const nextStatus = input.status ?? user.status;
 
     if (this.db.isConfigured()) {
-      if (input.role) {
+      if (nextRole !== user.role) {
         await this.db.query(`UPDATE memberships SET role = $1 WHERE tenant_id = $2 AND user_id = $3`, [nextRole, principal.tenantId, user.id]);
       }
-      if (input.status) {
-        await this.db.query(`UPDATE users SET status = $1, updated_at = now() WHERE id = $2 AND tenant_id = $3`, [nextStatus, user.id, principal.tenantId]);
+      if (nextRole !== user.role || nextStatus !== user.status) {
+        // A session carries the role it was opened with, so a changed role or a person turned off and back
+        // on must not leave an earlier session standing: it ends on its next request and they sign in again.
+        await this.db.query(`UPDATE users SET status = $1, sessions_valid_after = $4, updated_at = now() WHERE id = $2 AND tenant_id = $3`, [nextStatus, user.id, principal.tenantId, new Date()]);
       }
     }
 
     user.role = nextRole;
     user.status = nextStatus;
-    // Turning someone off ends their session on its next request, not when the token would have run out.
     forgetUser(user.id);
 
     await this.recordAudit({
@@ -1586,7 +1632,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       derivedStates: this.listDerivedStates(principal, siteId),
       alerts: this.listAlerts(principal, siteId),
       rules: this.listRules(principal, siteId),
-      audit: this.listAudit(principal, siteId)
+      // The audit trail is for those who may read it, not for everyone who may look at a site.
+      audit: hasPermission(principal.role, "audit:read") ? this.listAudit(principal, siteId) : []
     };
   }
 
@@ -3090,6 +3137,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     };
 
     this.commands.unshift(record);
+    this.commands = keepNewestOf(this.commands, record.tenantId, MAX_COMMANDS_IN_MEMORY_PER_ACCOUNT);
     if (this.db.isConfigured()) await this.persistCommand(record);
 
     if (input.manualOverride) {
@@ -3282,6 +3330,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
     this.requireSite(input.siteId, principal.tenantId);
     if (input.assetId) this.requireAsset(input.assetId, principal.tenantId);
+    if (this.maintenanceTasks.filter((existing) => existing.tenantId === principal.tenantId).length >= MAX_MAINTENANCE_TASKS_PER_ACCOUNT) {
+      throw new ConflictException(`This account already has ${MAX_MAINTENANCE_TASKS_PER_ACCOUNT} maintenance tasks. Close or delete some before adding more.`);
+    }
 
     const task: MaintenanceTask = {
       id: randomUUID(),
@@ -3366,6 +3417,33 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       .map((event) => ({ ...event, actor: this.actorOf(event.userId, principal.tenantId) }));
   }
 
+  /** The account's whole audit trail, oldest first, a page at a time, from the database: the list held in memory
+   * is only the newest part of it, and a download must not stop where the memory does. Without a database the
+   * memory is all there is. */
+  async *auditTrail(principal: Principal, pageSize: number = 1_000): AsyncGenerator<Array<AuditEvent & { actor: string }>> {
+    if (!this.db.isConfigured()) {
+      yield [...this.listAudit(principal)].sort((a, b) => Date.parse(a.createdAtUtc) - Date.parse(b.createdAtUtc));
+      return;
+    }
+    let after: { at: string; id: string } | undefined;
+    for (;;) {
+      const page = await this.db.query<AuditRow>(
+        after
+          ? `SELECT * FROM audit_events WHERE tenant_id = $1 AND (created_at, id) > ($2::timestamptz, $3::uuid) ORDER BY created_at ASC, id ASC LIMIT $4`
+          : `SELECT * FROM audit_events WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC LIMIT $2`,
+        after ? [principal.tenantId, after.at, after.id, pageSize] : [principal.tenantId, pageSize]
+      );
+      if (page.rows.length === 0) return;
+      yield page.rows.map((row) => {
+        const event = mapAuditRow(row);
+        return { ...event, createdAtUtc: new Date(row.created_at).toISOString(), actor: this.actorOf(event.userId, principal.tenantId) };
+      });
+      const last = page.rows[page.rows.length - 1] as AuditRow;
+      after = { at: new Date(last.created_at).toISOString(), id: last.id };
+      if (page.rows.length < pageSize) return;
+    }
+  }
+
   private actorOf(userId: string, tenantId: string): string {
     const user = this.users.find((candidate) => candidate.id === userId);
     if (!user) return "System";
@@ -3381,6 +3459,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       createdAtUtc: nowIso()
     };
     this.edgeSyncBatches.unshift(batch);
+    if (this.edgeSyncBatches.length > MAX_EDGE_SYNC_BATCHES_IN_MEMORY) this.edgeSyncBatches.length = MAX_EDGE_SYNC_BATCHES_IN_MEMORY;
 
     if (this.db.isConfigured()) {
       await this.db.query(
@@ -3436,6 +3515,12 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   // guard rejecting with the wrong exception type is worse than it just failing closed.
   isTenantActive(tenantId: string): boolean {
     return this.tenants.find((candidate) => candidate.id === tenantId)?.status === "active";
+  }
+
+  /** Whether this is Greecon's own account: the one whose people are told, each morning, how every customer's sites
+   * stand (and which customers' alert messages are failing to arrive). */
+  isOperatorTenant(tenantId: string): boolean {
+    return this.tenants.find((candidate) => candidate.id === tenantId)?.domain === GREECON_DOMAIN;
   }
 
   async updateTenantStatus(tenantId: string, status: Tenant["status"], principal: Principal): Promise<Tenant> {
@@ -3886,6 +3971,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       createdAtUtc: nowIso()
     };
     this.auditEvents.unshift(auditEvent);
+    this.auditEvents = keepNewestOf(this.auditEvents, auditEvent.tenantId, MAX_AUDIT_EVENTS_IN_MEMORY_PER_ACCOUNT);
 
     if (this.db.isConfigured()) {
       await this.db.query(

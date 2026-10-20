@@ -188,4 +188,19 @@ describe("a box taking a fix without being visited", () => {
     const kept = ["0.0.1+old1", "0.0.2+old2", "0.0.3+old3", OLD, NEW].filter((name) => existsSync(join(home, "releases", name)));
     expect(kept).toEqual(["0.0.3+old3", OLD, NEW]);
   });
+
+  it("still switches to the new version and restarts when an old one cannot be removed, which would otherwise strand the box", async () => {
+    for (const [index, name] of ["0.0.1+old1", "0.0.2+old2", "0.0.3+old3"].entries()) {
+      mkdirSync(join(home, "releases", name), { recursive: true });
+      const when = new Date(T0 - (10 - index) * 86_400_000);
+      utimesSync(join(home, "releases", name), when, when);
+    }
+    // The first release was made by the installer as root, so the service (another user) cannot remove its files.
+    const box = updater({ removeRelease: () => { throw Object.assign(new Error("EACCES: permission denied, rmdir"), { code: "EACCES" }); } });
+    clock += 11 * MINUTE;
+    await expect(box.consider(reply())).resolves.toBe("restarting");
+    expect(restarts).toBe(1);
+    expect(readlinkSync(join(home, "current"))).toBe(join(home, "releases", NEW));
+    expect(logs.some((line) => /Could not remove the old version.*left where it is/.test(line))).toBe(true);
+  });
 });

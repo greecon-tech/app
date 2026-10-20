@@ -8,8 +8,10 @@
 #
 # It puts Node.js and the Greecon edge software on the box, gives the box its own credential, starts it,
 # and waits to hear that Greecon can see it. Run it again with a new code to install a replacement box;
-# run it again with no code to repair an installation. If a step fails it says what to check and stops:
-# nothing is left half done that running it again would not put right.
+# run it again with no code to repair an installation. If a step fails it says what to check and stops.
+# Before the box has its credential (step 5) the same line can simply be run again once the cause is fixed;
+# after that the code is used up, so run it with no code at the end (it repairs the box and keeps its
+# credential) or with a new code (it replaces the box).
 #
 # What it changes: /opt/greecon (software), /etc/greecon (the box's credential), /var/lib/greecon-edge
 # (what the box keeps between restarts), one service called greecon-edge, one user called greecon, and
@@ -44,6 +46,8 @@ main() {
 
   local CODE=""
   local STEP=0
+  # Set once this run has used its code to give the box its credential.
+  local ENROLLED=0
 
   # ---- Saying things --------------------------------------------------------------------------------
 
@@ -52,7 +56,11 @@ main() {
   die() {
     printf '\nSTOP: %s\n' "$1" >&2
     if [ -n "${2:-}" ]; then printf '%s\n' "$2" >&2; fi
-    printf '\nRunning the same command again is safe once this is fixed.\n' >&2
+    if [ "$ENROLLED" = "1" ]; then
+      printf '\nThe code has been used: this box now has its credential. Run the command again with no code at the end: it repairs the box and keeps the credential.\n' >&2
+    else
+      printf '\nRunning the same command again is safe once this is fixed.\n' >&2
+    fi
     exit 1
   }
 
@@ -191,7 +199,7 @@ If the site has a firewall it must allow outgoing HTTPS (port 443)."
 
   local MANIFEST VERSION SHA256
   MANIFEST="$(fetch "$API_URL/edge/bundle.json" 2>/dev/null)" \
-    || die "Greecon did not give the software to this box." "The code may have been used already, or may have expired (a code lasts seven days). Make a new one on the site's setup page."
+    || die "Greecon did not give the software to this box." "The code may have been used already, or may have expired (a code lasts seven days). Make a new one on the site's setup page. If this box was installed before, run the command again with no code at the end."
   VERSION="$(printf '%s' "$MANIFEST" | "$NODE" -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(String(JSON.parse(d).version)))')"
   SHA256="$(printf '%s' "$MANIFEST" | "$NODE" -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(String(JSON.parse(d).sha256)))')"
   [ -n "$VERSION" ] && [ -n "$SHA256" ] || die "Greecon's answer about the software was not what was expected." "Tell Greecon support; this is a fault at their end."
@@ -224,6 +232,10 @@ If the site has a firewall it must allow outgoing HTTPS (port 443)."
     kept=$((kept + 1))
     if [ "$kept" -gt 1 ]; then rm -rf "${RELEASES:?}/$old"; fi
   done
+  # The service, which runs as the user greecon, is the one that later switches versions and clears old ones
+  # away, so everything under $EDGE must belong to it, the first release included. Otherwise the third update
+  # could not remove the first, and would stop partway.
+  if [ "$SKIP_SYSTEM" != "1" ]; then chown -R greecon:greecon "$EDGE"; fi
   say "  Version $VERSION is in place."
 
   # Two small programs: the one the service runs (which goes back to the previous version if a new one
@@ -274,10 +286,13 @@ WRAPPER
 
   if [ -n "$CODE" ]; then
     "$BIN" enrol --api "$API_URL" --code "$CODE" --identity "$IDENTITY" || die "The code was not accepted." "Make a new code on the site's setup page and run the command shown there."
-    if [ "$SKIP_SYSTEM" != "1" ]; then chown root:greecon "$IDENTITY" && chmod 640 "$IDENTITY"; fi
+    ENROLLED=1
   else
     say "  This box already has its credential."
   fi
+  # Whether it was just written or was already there (an earlier run may have stopped before this line),
+  # the service must be able to read it and nobody else may.
+  if [ "$SKIP_SYSTEM" != "1" ] && [ -f "$IDENTITY" ]; then chown root:greecon "$IDENTITY" && chmod 640 "$IDENTITY"; fi
 
   # ---- Running it -----------------------------------------------------------------------------------
 
@@ -300,11 +315,11 @@ Type=simple
 User=greecon
 Group=greecon
 StateDirectory=greecon-edge
-Environment=NODE_OPTIONS=--max-old-space-size=384
+Environment=NODE_OPTIONS=--max-old-space-size=768
 ExecStart=$OPT/run-edge
 Restart=always
 RestartSec=5
-MemoryMax=512M
+MemoryMax=1024M
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

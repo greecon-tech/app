@@ -216,9 +216,23 @@ export class OfflineBuffer<T> {
   private load(path: string): void {
     if (!existsSync(path)) return;
 
+    // The file can hold twice as many lines as the queue may keep (it is only compacted then), and after
+    // a long outage on a site with many readings each line is large. Parsing every line before keeping the
+    // newest would need several times the queue's own size in memory at the moment of a restart, which on a box
+    // with little to spare is a crash on every start. So the lines are counted first, and only the ones to keep
+    // are parsed.
+    let total = 0;
+    forEachLine(path, (line) => {
+      if (line.trim()) total += 1;
+    });
+    const skip = Math.max(0, total - this.maxItems);
+
     const restored: T[] = [];
+    let seen = 0;
     forEachLine(path, (line) => {
       if (!line.trim()) return;
+      seen += 1;
+      if (seen <= skip) return;
       try {
         restored.push(JSON.parse(line) as T);
       } catch {
@@ -226,9 +240,9 @@ export class OfflineBuffer<T> {
       }
     });
 
-    this.items = restored.length > this.maxItems ? restored.slice(restored.length - this.maxItems) : restored;
-    this.fileLines = restored.length;
-    if (restored.length > this.maxItems) this.rewriteFile();
+    this.items = restored;
+    this.fileLines = total;
+    if (skip > 0) this.rewriteFile();
   }
 
   private appendToFile(item: T): void {

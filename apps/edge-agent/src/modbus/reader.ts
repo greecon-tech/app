@@ -20,7 +20,11 @@ export interface RegisterReader {
 export class ModbusReadError extends Error {
   constructor(
     message: string,
-    readonly kind: "transport" | "refused"
+    readonly kind: "transport" | "refused",
+    /** The converter itself could not be reached: the connection did not open. Nothing behind it can be
+     * read this round, so there is no point trying each device in turn. (A device that does not answer its
+     * converter is different: the converter is up and the others behind it may be fine.) */
+    readonly converterUnreachable: boolean = false
   ) {
     super(message);
     this.name = "ModbusReadError";
@@ -71,13 +75,20 @@ export class ModbusTcpReader implements RegisterReader {
   read(connection: ModbusConnection, registerType: ModbusRegisterType, address: number, count: number): Promise<number[]> {
     const entry = this.entryFor(connection);
     const run = async (): Promise<number[]> => {
+      let connecting = false;
       try {
-        if (!entry.open) await this.open(entry, connection);
+        if (!entry.open) {
+          connecting = true;
+          await this.open(entry, connection);
+          connecting = false;
+        }
         entry.client.setID(connection.unitId);
         const result = registerType === "holding" ? await entry.client.readHoldingRegisters(address, count) : await entry.client.readInputRegisters(address, count);
         return result.data;
       } catch (error) {
-        throw await this.explain(error, connection, registerType, address, entry);
+        const explained = await this.explain(error, connection, registerType, address, entry);
+        // A failure while the connection was being opened is the converter's, not one device's.
+        throw connecting && explained.kind === "transport" ? new ModbusReadError(explained.message, "transport", true) : explained;
       }
     };
     // Whatever happened to the request before, this one runs after it.

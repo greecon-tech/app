@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IdentityError, loadIdentity } from "./identity";
+import { IdentityError, loadIdentity, platformAddress } from "./identity";
 
 const good = { apiUrl: "https://api.greecon.example/", tenantId: "t", siteId: "s", gatewayId: "g", secret: "x".repeat(64) };
 const fileWith = (value: unknown) => () => JSON.stringify(value);
@@ -45,5 +45,27 @@ describe("who this box is", () => {
     expect(() => loadIdentity({}, fileWith({ ...good, apiUrl: "api.greecon.example" }))).toThrow(/not a web address/);
     expect(() => loadIdentity({}, fileWith({ ...good, apiUrl: "ftp://api.greecon.example" }))).toThrow(/not a web address/);
     expect(() => loadIdentity({}, fileWith({ ...good, secret: "short" }))).toThrow(/too short to be real/);
+  });
+});
+
+describe("the platform's address", () => {
+  it("must be https on the open internet, because the box sends its credential there and takes its software from there", () => {
+    expect(platformAddress("https://api.greecon.earth/")).toBe("https://api.greecon.earth");
+    expect(() => platformAddress("http://api.greecon.earth")).toThrow(/is not https/);
+    expect(() => platformAddress("http://203.0.113.9:4000")).toThrow(/is not https/);
+    expect(() => platformAddress("http://greecon.earth.example.com")).toThrow(/is not https/);
+  });
+
+  it("may be plain http for a platform on the same private network, as in a rehearsal on a desk", () => {
+    for (const address of ["http://localhost:4000", "http://127.0.0.1:4000", "http://192.168.1.20:4000", "http://10.0.0.5:4000", "http://172.16.4.2:4000", "http://172.31.255.1:4000", "http://169.254.1.1", "http://laptop:4000", "http://laptop.local:4000", "http://[::1]:4000"]) {
+      expect(() => platformAddress(address), address).not.toThrow();
+    }
+    // 172.32 is not private; 192.169 is not either.
+    expect(() => platformAddress("http://172.32.0.1:4000")).toThrow(/is not https/);
+    expect(() => platformAddress("http://192.169.0.1:4000")).toThrow(/is not https/);
+  });
+
+  it("is checked when a box is read from its file, not only when it is enrolled", () => {
+    expect(() => loadIdentity({}, fileWith({ ...good, apiUrl: "http://api.greecon.example" }))).toThrow(/is not https/);
   });
 });

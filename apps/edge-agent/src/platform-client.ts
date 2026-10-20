@@ -1,5 +1,5 @@
 import type { EdgeConfig, EnrolResponse, GatewayHeartbeat, HeartbeatReply } from "@greecon/shared";
-import type { EdgeIdentity } from "./identity";
+import { platformAddress, type EdgeIdentity } from "./identity";
 
 // What the box says to the platform besides readings: asking what to read, saying how it is, and
 // presenting a code to get its credential.
@@ -65,7 +65,7 @@ export class PlatformClient {
 
 /** Presents an enrolment code and gets the box's identity. Used once, by `greecon-edge enrol`. */
 export async function enrol(apiUrl: string, code: string, fetchImpl: typeof fetch = fetch, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<EnrolResponse> {
-  const base = apiUrl.replace(/\/+$/, "");
+  const base = platformAddress(apiUrl);
   const body = (await send(fetchImpl, `${base}/edge/enrol`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) }, timeoutMs).catch((error: unknown) => {
     // A 401 here is not "wrong credential": the box has none yet. It is the code.
     if (error instanceof PlatformError && error.status === 401) throw new PlatformError("that code has been used, has expired, or is not one of ours. Make a new one on the site's setup page.", 401);

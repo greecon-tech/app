@@ -123,4 +123,25 @@ describe.skipIf(!testDatabaseUrl)("the readings spreadsheet, on a real PostgreSQ
       expect(body.slice(1).trim().split("\r\n")).toHaveLength(1);
     });
   }, 120_000);
+
+  it("gives the whole audit trail from the database, not only the newest part the platform holds in memory", async () => {
+    await inWorld(async (world) => {
+      // More lines than the platform keeps in memory for one account (1,000), written straight to the database,
+      // with two taken in the same instant, so that paging through them must not skip or repeat one.
+      await world.pool.query(
+        `INSERT INTO audit_events (id, tenant_id, user_id, event_type, entity_type, reason, created_at)
+         SELECT gen_random_uuid(), $1, $2, 'test.event', 'test', 'Line ' || g, '2026-10-01T00:00:00Z'::timestamptz + (g / 2 || ' seconds')::interval
+         FROM generate_series(1, 2500) g`,
+        [world.owner.tenantId, world.owner.userId]
+      );
+      const body = await read(await world.service.audit(world.owner, "standard", NOW));
+      const lines = body.slice(1).trim().split("\r\n");
+      const reasons = lines.filter((line) => line.includes("Line "));
+      expect(reasons).toHaveLength(2500);
+      expect(new Set(reasons).size).toBe(2500);
+      // Oldest first.
+      expect(reasons[0]).toContain("Line 1");
+      expect(reasons[reasons.length - 1]).toContain("Line 2500");
+    });
+  }, 120_000);
 });
