@@ -21,81 +21,123 @@ The frontend hides unauthorized actions, but the API enforces RBAC with guards. 
 
 ## Authentication
 
-`POST /auth/login` checks an email/password against `users.password_hash` (bcrypt) and, on
-success, issues a signed JWT (`{sub, tenantId, role, email}`, 12h expiry, `JWT_SECRET`). The web
-app stores it in an httpOnly session cookie and sends it back as `x-greecon-session` on every API
-call; the API's `PrincipalGuard` verifies the signature on every request and builds the caller's
-identity from the verified claims — never from anything the client merely asserts.
+`POST /auth/login` checks an email and password against `users.password_hash` (bcrypt) and, on success,
+issues a signed JWT (`{sub, tenantId, role, email, isPlatformAdmin}`, 12 hours, `JWT_SECRET`). The web app stores
+it in an httpOnly cookie and sends it back as `x-greecon-session` on every API call; the API's `PrincipalGuard`
+verifies the signature on every request and builds the caller's identity from the verified claims, never from
+anything the client merely asserts.
 
-This deliberately uses a custom header, not the standard `Authorization` one: on GCP, `Authorization`
-already carries the Cloud Run service-to-service ID token (infrastructure-level access control,
-unrelated to which human is logged in) — reusing it for both would silently break one or the
-other depending on deployment target.
+This deliberately uses a custom header, not the standard `Authorization` one: on GCP, `Authorization` already
+carries the Cloud Run service-to-service ID token, which has nothing to do with which human is logged in.
 
-A request that presents a token must have it verify, full stop — an invalid or expired token is
-rejected outright, never silently downgraded to trusting a header instead. A header
-(`x-user-role`/`x-tenant-id`) is trusted when **no token is presented at all**, but only outside
-production (`NODE_ENV !== "production"`, unset by both Dockerfiles' local/CI equivalents): the
-static GitHub Pages export (which has no server to log in against and bakes in a fixed demo role
-per build — `docs/12-deployment-github-pages.md`, built by running the API locally with no public
-exposure) and local dev/test convenience. **On a real deployment (Railway, GCP —
-`NODE_ENV=production` from both Dockerfiles), this fallback is disabled outright**: a request with
-no valid session token gets `401 Unauthorized`, full stop, not a role assigned from whatever it
-happened to send. This matters now that the API can have a public domain (below) — an unauthenticated
-header from literally anyone on the internet must never grant anything.
+A request that presents a token must have it verify, full stop: an invalid or expired token is rejected, never
+downgraded to trusting a header. A header (`x-user-role`, `x-tenant-id`) is trusted when **no token is presented
+at all**, but only outside production (`NODE_ENV !== "production"`): the static GitHub Pages export (built by
+running the API locally; `docs/12-deployment-github-pages.md`) and local development. **On a real deployment
+(`NODE_ENV=production`, set by both Dockerfiles) that fallback is off:** a request with no valid session gets
+`401`. That matters because the API has a public address (a box at a site must reach it).
 
-**The one exception, scoped tightly:** `POST /telemetry/ingest` also accepts a device secret
-(`x-edge-device-token`) for a real edge box that has no user to log in as — see
-`docs/14-edge-hardware-deployment.md`. `PrincipalGuard` checks the exact path and method before
-granting anything through this header, so it falls straight into the production lockout above on
-any other route. Two credential schemes are checked, in order:
+**One account per email address.** Signing in looks the account up by its email, so an address that already
+has an account cannot be used for another, in any client or on the Greecon team: the second is refused in words,
+and the database holds the rule too (a unique index on the lower-cased address). An account's address is plain
+ASCII, written one way (lower case, no spaces; `common/email.ts`): the database and JavaScript lower-case some letters
+outside ASCII differently ("İ"), which would have let one account be signed in to, and counted by the rate limit,
+under many spellings of its address.
 
-1. **A real per-gateway secret** (the normal path): generated once through the "Add gateway" form
-   on a site's own page, shown exactly once, and stored only as a SHA-256 hash in `edge_gateways`.
-   `PrincipalGuard` looks it up with one indexed query and grants a synthetic "operator" principal
-   scoped to whichever tenant owns that gateway — a leaked secret can inject fake telemetry for
-   that one tenant, but can't read anything, issue a command, or affect any other client's gateway.
-   SHA-256 rather than bcrypt deliberately: this is a high-entropy random token, not a low-entropy
-   human password, so it doesn't need bcrypt's slowness, and a fast hash is what makes the lookup a
-   single query instead of a bcrypt-compare loop over every registered gateway.
-2. **A legacy shared token** (`EDGE_INGEST_TOKEN`/`EDGE_INGEST_TENANT_ID`, both env vars, both
-   required together): checked only if no gateway's secret matches. This was the *only* mechanism
-   before per-gateway credentials existed — one fixed secret for one fixed tenant, which cannot
-   support a second real client's edge device without Greecon reconfiguring Railway by hand. Kept
-   working for any deployment that already configured it; a gateway created through the UI never
-   needs it.
+**Sessions end when access does.** A token lasts twelve hours, so on its own it could not say that the person has
+since been turned off or has chosen a new password. On each request the guard asks (`common/active-users.ts`)
+whether the account is still active and whether the token was issued after `users.sessions_valid_after`, which
+turning someone off, turning them on again, changing their role, resetting a password and changing a password set
+(a session carries the role it was opened with, so a demoted admin must not keep it, nor an old session come back to life
+when a person is turned off and on). The cut-off is written from the API's own clock, which is the one that dates the token. The answer is remembered for 15 seconds
+per person and forgotten at once when the person is turned off or reset, so it takes effect on their next click.
+A token is dated to the second, and one issued in the same second as a reset is kept, so that signing in straight
+after a reset is never refused. A person whose session has ended is sent to the sign-in page with a sentence that
+says so. (This also means changing `JWT_SECRET` signs everyone out cleanly rather than breaking every page.)
 
-Real per-gateway mTLS/certificate identity (`docs/15-master-roadmap.md`'s Phase 2) remains the
-further-out end state — this SHA-256 secret is a real, unique-per-device credential already, just
-without a certificate chain or hardware-backed key storage behind it.
+**Passwords.** A password is at least 10 characters, different from the current one, and not one this product
+has ever published or suggested (`common/password-policy.ts`); the same rules apply to every way of choosing one.
+A new account, and a reset, gets a **temporary password**, generated by the platform, shown **once** to whoever
+created it, and never stored in clear: the session it opens can do exactly one thing, choose a new password
+(`users.must_change_password`). It is three groups of four letters and digits that cannot be mistaken for one another
+(about 59 bits, `common/generate-password.ts`); the first version, two words and a number, had 23,040 possibilities. **It
+does not yet expire** if nobody uses it (open: 72 hours would be right; see `docs/18`). Every shared password the repository ever published is closed at start-up unless it
+belongs to the demo tenant (`database/account-hygiene.ts`); the first Greecon administrator is created from
+`BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`, which only ever fill a gap and never replace a password
+that is set.
 
-There is no *self-service forgot-password* flow yet — recovering a genuinely forgotten password
-still needs a real email-sending integration this deployment doesn't have, so an owner/admin resets
-it for you from the Admin page instead (`POST /users/:userId/reset-password`), generating a fresh
-temporary password shown once, the same one-time-disclosure handling as creating a new user. But
-*changing* a password you still remember is self-service: `POST /auth/change-password` (`/settings`
-→ "Account Security") lets any logged-in user set their own new password after confirming the
-current one — no admin needed for the common case of just wanting a different password. Every
-seeded demo account still shares one password (`003_auth.sql`) — that one's still an open item,
-tracked in `docs/15-master-roadmap.md`, Phase 0.
+**Rate limits.** `POST /auth/login` is limited to 8 attempts a minute at one **account from one source**, 60 at one
+account from all sources together, and 200 from one source across all accounts; the rest of the API to 120 a minute per
+**logged-in user**, in memory (fine for one instance; use a shared store before a second). Counting an account's attempts
+from every source together would let anyone who knew an address keep it locked for its owner, so each source has its own
+count. Every browser request reaches the API through the web service, so the web service passes on the **visitor's**
+address (the last entry of `X-Forwarded-For`, which the platform in front of it adds; `apps/web/src/lib/visitor.ts`) and
+the API, trusting one proxy hop, reads it: one visitor flooding the sign-in page cannot use up everyone else's attempts
+(`common/client-throttler.ts`). The token is verified before it picks a bucket, so a forged one cannot select someone
+else's. Callers with no session, such as boxes, are limited per source address (`TRUST_PROXY=1` behind Railway).
 
-`POST /auth/login` is rate-limited to 8 attempts per minute per **account** (the rest of the API to
-120 requests per minute per **logged-in user** as a global default) via `@nestjs/throttler`,
-in-memory — fine for the current single-instance deployment, revisit with a shared (Redis) store
-only once there's more than one API replica running. Limits are keyed by user/account rather than
-source IP because every browser request reaches the API through the web service, so an IP key would
-be one shared limit for all customers (`apps/api/src/common/client-throttler.ts`). The session token
-is verified before it picks a bucket, so a forged token can't select someone else's. Logins
-additionally share a high per-source ceiling (200/min) as a flood breaker across many accounts —
-behind the web service that source is the web service itself, so it is deliberately far above any
-real login rate. Callers with no session, such as edge devices, are still limited per source
-address. Forwarding the end user's real IP from the web service (and trusting it only from there)
-would allow a true per-IP login limit; that is not done today.
+**What a signed-in person may not do.** Send readings: those come from a box with its own credential, and a person who
+could (an operator can, and so can the published demo login) could fill the platform's memory and disk. The **demo
+login is read-only** apart from acknowledging an alert and arranging its own dashboard, because its password is published
+and so held by anyone. Every piece of text and every list in a request has a length limit, so no one request can be as
+large as the body limit's worth of a note (`@MaxLength` and `@ArrayMaxSize` on the request classes, and a test that
+fails if a new one has none), and what a person's actions can add to the process's memory is bounded per account
+(5,000 maintenance tasks, the newest 1,000 audit lines and 500 commands; the database keeps everything and downloads
+read it). A viewer does not read the audit trail through the site page.
 
-A suspended client (`tenants.status`, set via `/platform-admin`) is enforced twice: `POST
-/auth/login` refuses a fresh token for it, and `TenantStatusGuard` rejects every subsequent request
-from an already-issued token too — a 12h-valid JWT does not go on working after its tenant is
-suspended.
+**Suspended clients** (`tenants.status`, set by Greecon staff): `POST /auth/login` refuses a fresh token, and
+`TenantStatusGuard` rejects every request from an already-issued one.
+
+## Greecon's own staff
+
+`isPlatformAdmin` is held by the people who work for Greecon. They live in Greecon's own account and sign in with
+**Greecon team**. **Only the owner of that account adds people to the team, turns them off, resets their passwords,
+or resets a customer's person who is locked out.** The ordinary people routes serve a customer's account and refuse
+to act on Greecon's own (a team member has the right to manage users there, and would otherwise be able to reset the
+owner's password and sign in as the owner), and in **every** account only an owner adds an owner, changes one or
+resets one's password. A team member can see who is on the team, onboard clients, open
+a client's account and see every client's sites. Each person has a login of their own, so everything they do is
+under their own name.
+
+**A support session** is how a team member sets a customer's account up. It is a separate token, **four hours**
+long, as `admin` in that account only (it is not a platform administrator's, so Greecon's console is closed to it),
+carrying the team member's own identity: everything done is recorded in the *customer's* audit trail as
+"Greecon staff (their email)", and opening the session is itself recorded first. **It cannot add people to the
+account, change a role or reset a password:** who may sign in is the customer's. The one exception is a locked-out
+person whose owner has phoned: the owner of Greecon's account resets them from the Clients console, and that is
+recorded in the customer's trail under their name.
+
+## Boxes
+
+A box at a site has no user. Its way in is a **credential of its own**, handed to it once, by a **one-time
+enrolment code** that a team member made on the site's setup page.
+
+1. **The code** (`GRC-XXXX-XXXX-XXXX`, 60 bits, an alphabet without look-alike characters) is shown once, stored only
+   as a hash, good for **one use and seven days**, and the endpoint that takes it is rate limited. A new code for the
+   same box replaces the credential of the box that was there, which stops working at once.
+2. **The installer** (`GET /edge/install.sh`, public) puts the software on the box; the software itself
+   (`GET /edge/bundle`, `/edge/bundle.json`) is given only to a box that presents an unused code or a credential.
+3. **The credential** (a long random secret, returned once by `POST /edge/enrol`) is saved on the box in
+   `/etc/greecon/edge.json`, readable only by the service, and stored by the platform **only as a SHA-256 hash**
+   in `edge_gateways.secret_hash`. SHA-256 and not bcrypt on purpose: it is a high-entropy random value, not a
+   human password, and a fast hash is what makes the lookup one indexed query.
+4. **What a credential may call**, checked by exact path and method in the guard: send readings
+   (`POST /telemetry/ingest`, `/telemetry/ingest-batch`), ask what to read (`GET /edge/config`), say how it is
+   (`POST /edge/heartbeat`), and fetch its own software. Nothing else: on any other route it is an
+   unauthenticated request. It cannot read a customer's data, issue a command, or touch another client's box.
+   The readings it sends must name its own client's sites, devices and readings; a message for anyone else's is refused.
+5. **A legacy shared token** (`EDGE_INGEST_TOKEN` and `EDGE_INGEST_TENANT_ID` together) still works for readings only
+   on a deployment that set it before codes existed, and cannot ask for configuration or report health. New
+   deployments do not set it.
+
+Per-box certificates (mTLS) with hardware-backed keys remain the further-out end state: this credential is already
+unique per box and revocable, but has no certificate chain behind it.
+
+## What is not built
+
+Two-factor sign-in (the first security work after the fifth site, and before any control of equipment; see
+`27-launch-decisions.md`), single sign-on, a self-service forgotten-password email (a locked-out person's
+password is reset by someone who confirms by phone who is asking), a true per-IP login limit, and per-box certificates.
 
 ## Manual Override
 
@@ -112,7 +154,7 @@ Manual override does not bypass hard safety rules.
 
 ## Secrets
 
-No real secrets are stored in source control. `.env.example` contains local placeholders only. Production secrets belong in Google Secret Manager.
+No real secrets are stored in source control. `.env.example` contains local placeholders only. On Railway the secrets are the service's variables (`docs/launch/01-founder-go-live.md`); on Google Cloud they belong in Secret Manager. Keys are written into the password manager the moment they are created and never into email or chat.
 
 ## Gateway Identity
 

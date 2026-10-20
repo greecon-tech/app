@@ -1,0 +1,15 @@
+# Keeps the build context to the source. A host that deploys from GitHub starts from a clean checkout, but
+# a build on a laptop must not carry its own node_modules or earlier build output into an image.
+.git
+.github
+**/node_modules
+**/dist
+**/.next
+**/out
+**/*.tsbuildinfo
+**/*.log
+apps/api/edge-bundle
+.env
+.env.*
+!.env.example
+docs

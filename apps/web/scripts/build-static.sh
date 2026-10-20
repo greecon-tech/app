@@ -13,6 +13,9 @@
 #     opposite generateStaticParams situation from the SSR version — see that file's own comment.
 #   login/page.tsx          — imports LoginForm, which calls the real login Server Action. The
 #     static export has no server to log in against at all (see login/page.static.tsx).
+#   request-access/page.tsx — imports RequestAccessForm, which calls the request-access Server Action.
+#     The static demo has no server to send a request to, so its twin just says how to reach Greecon.
+#   change-password/page.tsx — imports ChangePasswordForm, which calls Server Actions. The demo has no accounts.
 #   components/Shell.tsx    — imports the logout Server Action and reads the real session. Shell
 #     is used by every single page, so this one import would otherwise break the entire export,
 #     not just the routes that obviously need it.
@@ -30,6 +33,14 @@
 #     Server Action (see reports/actions.ts).
 #   maintenance/page.tsx    — imports CreateMaintenanceTaskForm/MaintenanceTaskActions, which call
 #     real Server Actions (see maintenance/actions.ts).
+#   sites/[siteId]/setup/page.tsx — imports the setup forms (add a box, addresses, registers, confirm a
+#     step), which call Server Actions. The twin shows the same checklist read only.
+#   sites/[siteId]/handover/page.tsx — no Server Action, but a dynamic route needs generateStaticParams
+#     in a static export and must not have it in the live build (same reason as sites/[siteId]/page.tsx).
+#   settings/people/page.tsx — imports the forms that save who is told and send test messages (Server
+#     Actions). The twin explains the rules and says the demo sends nobody a message.
+#   export/[kind]/route.ts  — the download route: it reads the person's session on each request, which a
+#     static export cannot. The twin has no routes at all (the demo makes no files).
 set -e
 # Disables pathname expansion for the rest of the script: one of the paths below literally
 # contains "[siteId]", which the shell would otherwise try to glob-match as a one-character
@@ -43,6 +54,8 @@ SWAPPED="
 src/app/automation/page.tsx
 src/app/sites/[siteId]/page.tsx
 src/app/login/page.tsx
+src/app/request-access/page.tsx
+src/app/change-password/page.tsx
 src/app/admin/page.tsx
 src/app/platform/page.tsx
 src/app/analytics/page.tsx
@@ -50,6 +63,10 @@ src/app/settings/page.tsx
 src/app/alerts/page.tsx
 src/app/reports/page.tsx
 src/app/maintenance/page.tsx
+src/app/sites/[siteId]/setup/page.tsx
+src/app/sites/[siteId]/handover/page.tsx
+src/app/settings/people/page.tsx
+src/app/export/[kind]/route.ts
 src/components/Shell.tsx
 "
 
@@ -59,9 +76,17 @@ restore() {
   done
 }
 
+# The twin of page.tsx is page.static.tsx; the twin of route.ts is route.static.ts.
+twin_of() {
+  case "$1" in
+    *.tsx) echo "${1%.tsx}.static.tsx" ;;
+    *.ts) echo "${1%.ts}.static.ts" ;;
+  esac
+}
+
 for path in $SWAPPED; do
   cp "$path" "$path.live"
-  cp "${path%.tsx}.static.tsx" "$path"
+  cp "$(twin_of "$path")" "$path"
 done
 trap restore EXIT
 

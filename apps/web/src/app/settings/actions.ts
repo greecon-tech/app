@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { DashboardWidgetPreference, DashboardWidgetSize, dashboardWidgetCatalog, dashboardWidgetSizes } from "@greecon/shared";
-import { apiGet, apiMutate } from "../../lib/api";
+import { apiErrorMessage, apiGet, apiMutate } from "../../lib/api";
 
 /** The saved list, extended with any catalog entry it's missing (a widget added to the product
  * after someone last customized their dashboard) so every known widget always has a row to
@@ -56,6 +56,6 @@ export async function changePasswordAction(currentPassword: string, newPassword:
     await apiMutate("/auth/change-password", "POST", { currentPassword, newPassword });
     return { success: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to change password." };
+    return { error: apiErrorMessage(error, "Failed to change password.") };
   }
 }

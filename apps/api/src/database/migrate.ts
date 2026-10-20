@@ -1,30 +1,13 @@
 import "reflect-metadata";
-import { readFileSync, readdirSync } from "fs";
-import { join } from "path";
-import { Pool } from "pg";
+import { prepareDatabase } from "./startup";
 
+// The same step the API runs when it starts. Kept as a command for a database that should be
+// brought up to date without starting the API, or to see what a deploy will do.
 async function main(): Promise<void> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
+  if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is not configured.");
   }
-
-  const migrationsDir = join(__dirname, "migrations");
-  const files = readdirSync(migrationsDir)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-
-  const pool = new Pool({ connectionString });
-  try {
-    for (const file of files) {
-      const sql = readFileSync(join(migrationsDir, file), "utf8");
-      process.stdout.write(`Applying ${file}...\n`);
-      await pool.query(sql);
-    }
-    process.stdout.write("Migrations applied.\n");
-  } finally {
-    await pool.end();
-  }
+  await prepareDatabase({ ...process.env, AUTO_MIGRATE: "true" }, (message) => process.stdout.write(`${message}\n`));
 }
 
 main().catch((error: unknown) => {

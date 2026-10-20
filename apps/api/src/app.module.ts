@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { AccessRequestsModule } from "./modules/access-requests/access-requests.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AssetsModule } from "./modules/assets/assets.module";
@@ -10,19 +11,23 @@ import { CommandsModule } from "./modules/commands/commands.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DerivedStatesModule } from "./modules/derived-states/derived-states.module";
 import { DevicesModule } from "./modules/devices/devices.module";
+import { EdgeModule } from "./modules/edge/edge.module";
 import { EdgeSyncModule } from "./modules/edge-sync/edge-sync.module";
+import { ExportsModule } from "./modules/exports/exports.module";
 import { GatewaysModule } from "./modules/gateways/gateways.module";
 import { HealthModule } from "./modules/health/health.module";
 import { IncidentsModule } from "./modules/incidents/incidents.module";
 import { MaintenanceModule } from "./modules/maintenance/maintenance.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PlatformAdminModule } from "./modules/platform-admin/platform-admin.module";
 import { PointsModule } from "./modules/points/points.module";
-import { ReportsModule } from "./modules/reports/reports.module";
 import { RulesModule } from "./modules/rules/rules.module";
+import { SetupModule } from "./modules/setup/setup.module";
 import { SitesModule } from "./modules/sites/sites.module";
 import { TelemetryModule } from "./modules/telemetry/telemetry.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 import { UsersModule } from "./modules/users/users.module";
+import { ValueModule } from "./modules/value/value.module";
 import { throttlers } from "./common/client-throttler";
 import { PrincipalGuard } from "./common/principal.guard";
 import { RbacGuard } from "./common/rbac.guard";
@@ -50,6 +55,8 @@ import { PlatformModule } from "./platform/platform.module";
     AssetsModule,
     DevicesModule,
     GatewaysModule,
+    SetupModule,
+    EdgeModule,
     PlatformAdminModule,
     PointsModule,
     TelemetryModule,
@@ -60,7 +67,10 @@ import { PlatformModule } from "./platform/platform.module";
     AlertsModule,
     IncidentsModule,
     MaintenanceModule,
-    ReportsModule,
+    NotificationsModule,
+    ValueModule,
+    ExportsModule,
+    AccessRequestsModule,
     AuditModule,
     EdgeSyncModule,
     HealthModule

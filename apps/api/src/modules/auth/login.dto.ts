@@ -1,10 +1,12 @@
-import { IsEmail, IsNotEmpty, IsString } from "class-validator";
+import { IsNotEmpty, IsString, MaxLength } from "class-validator";
+import { AccountEmail } from "../../common/account-email.decorator";
 
 export class LoginDto {
-  @IsEmail()
+  @AccountEmail()
   email!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(200)
   password!: string;
 }

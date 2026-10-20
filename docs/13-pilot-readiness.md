@@ -1,5 +1,12 @@
 # Pilot Readiness — Gaps and How-To Fixes
 
+> **Status (2026-10-18): history.** This is the log of the earlier pilot-readiness passes and stays as
+> the record of how each piece was verified. The current ledger of what is true of the platform, what
+> was fixed since and what is still open is `18-reality-audit.md`. Where this file says a command was
+> "dispatched" or "real", it means accepted by the API and simulated: no command has ever been written
+> to equipment (`23-safety-and-security-case.md`).
+> The how-to parts of this log for setting up a site, connecting a box and deploying are replaced by `docs/launch/` and `docs/14`, `docs/11`, `docs/16`, which describe what runs now (there is no `edge-driver-modbus`, `edge.env`, `EDGE_TOKEN` or "Add gateway" form any more).
+
 This is a running audit of the platform against what a real pilot deployment needs, in the
 "what's the gap, and how do we close it" format. Items are grouped by status: fixed this pass,
 and still open with a concrete next step. Update this file as gaps are closed or new ones are
@@ -148,16 +155,16 @@ dashboard at all; this was only found while preparing an actual industrial-PC de
 
 **Fix:** added `apps/edge-agent`, a small bridge that subscribes to the site's telemetry topic on
 the local broker and forwards each message to `POST /telemetry/ingest`, buffering in memory and
-retrying if the API is briefly unreachable (same `OfflineBuffer` pattern the simulator already
-used for its own MQTT reconnects). Verified live end-to-end: Mosquitto + the simulator + the new
+retrying if the API is briefly unreachable. Verified live end-to-end: Mosquitto + the simulator + the new
 agent + the real API against real Postgres, confirmed fresh readings landing in
 `telemetry_readings` on a ~5-second cadence. See `docs/14-edge-hardware-deployment.md` for the
 full install.
 
-**How to extend further:** the buffer is in-process memory only — a service restart during a long
-outage loses whatever hadn't flushed. If a pilot site has unreliable backhaul, the buffer should
-move to an on-disk queue (SQLite is the natural fit given nothing else on this box needs a real
-database).
+**Update (2026-10-13):** the buffer is now durable and bounded: an append-only JSON-lines file
+(`BUFFER_PATH`, default `/var/lib/greecon-edge/buffer.jsonl` under systemd) that survives restarts
+and power cuts, capped at `BUFFER_MAX_ITEMS` (oldest discarded first, and reported), flushed
+one-at-a-time in order, with a request timeout, and a permanently refused reading is dropped with a
+logged reason instead of being retried forever. See `docs/18-reality-audit.md`.
 
 ### Energy metering was solar/battery-only
 

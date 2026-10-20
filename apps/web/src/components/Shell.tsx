@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { GREECON_COMPANY, GREECON_DOMAIN, userRoles } from "@greecon/shared";
+import { GREECON_COMPANY, GREECON_DOMAIN, GREECON_PUBLIC_EMAILS, userRoles } from "@greecon/shared";
 import { DEMO_ROLE } from "../lib/api";
 import { logoutAction } from "../app/login/actions";
+import { leaveSetupAction } from "../app/platform/actions";
 import { getSession } from "../lib/session";
-import { Nav } from "./Nav";
+import { Nav, SectionTabs } from "./Nav";
 
 export async function Shell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
   // Set only by the multi-role GitHub Pages build (docs/12-deployment-github-pages.md), which
@@ -29,9 +30,25 @@ export async function Shell({ children, title, subtitle }: { children: ReactNode
         <div className="sidebar-foot">
           <p>{GREECON_COMPANY}</p>
           <span>{GREECON_DOMAIN}</span>
+          <span className="sidebar-foot__links">
+            <a href={`mailto:${GREECON_PUBLIC_EMAILS[0]}`}>Help</a> · <Link href="/privacy">Privacy</Link>
+          </span>
         </div>
       </aside>
       <div className="workspace">
+        {session?.user.support ? (
+          <div className="support-banner" role="status">
+            <p>
+              You are in <strong>{session.user.customer ?? "a customer's account"}</strong> as Greecon staff, setting it up. What you do here is recorded under your name in their audit
+              trail. You cannot add people to the account or change their passwords.
+            </p>
+            <form action={leaveSetupAction}>
+              <button type="submit" className="button-ghost">
+                Back to the Greecon console
+              </button>
+            </form>
+          </div>
+        ) : null}
         <header className="topbar">
           <div>
             <p className="eyebrow">Greecon Platform</p>
@@ -72,6 +89,7 @@ export async function Shell({ children, title, subtitle }: { children: ReactNode
             </div>
           )}
         </header>
+        <SectionTabs role={role} />
         <main>{children}</main>
       </div>
     </div>

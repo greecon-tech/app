@@ -1,17 +1,13 @@
 import { randomInt } from "crypto";
 
-// word-word-NN, matching the same shape used for every temporary password issued by hand so far
-// in this pilot (docs/11-deployment-railway.md's credential rotation step) — easy to read aloud
-// or type once, not meant to be memorized long-term since there is still no self-service reset
-// flow yet (docs/15-master-roadmap.md, Phase 0).
-const WORDS = [
-  "harbor", "summit", "cedar", "falcon", "meadow", "ridge", "glacier", "orchid",
-  "lantern", "copper", "willow", "granite", "ember", "thistle", "marble", "cobalt"
-];
+// A temporary password is handed to a person by phone or in person and lasts until their first sign-in, so
+// it has to be both easy to read aloud and too large to guess. Three groups of four from 31 letters and
+// digits that cannot be mistaken for one another (no 0, o, 1, l or i) is about 59 bits: at the limit
+// on sign-in attempts at one account, trying even a thousandth of them would take millions of years. The
+// earlier word-word-NN form had 23,040 possibilities, which a patient caller could have tried in a day or two.
+const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
 export function generateTemporaryPassword(): string {
-  const first = WORDS[randomInt(WORDS.length)];
-  const second = WORDS[randomInt(WORDS.length)];
-  const suffix = randomInt(10, 100);
-  return `${first}-${second}-${suffix}`;
+  const group = () => Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
+  return `${group()}-${group()}-${group()}`;
 }

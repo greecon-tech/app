@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { UserRole } from "@greecon/shared";
-import { apiMutate } from "../../lib/api";
+import { apiErrorMessage, apiMutate } from "../../lib/api";
 
 interface CreatedUser {
   id: string;
@@ -51,18 +52,36 @@ export async function resetUserPasswordAction(userId: string): Promise<{ error?:
   }
 }
 
-export async function createSiteAction(name: string, type: string, locationName: string): Promise<{ error?: string; created?: boolean }> {
-  if (!name.trim() || !locationName.trim()) {
-    return { error: "Name and location are required." };
+export interface NewSiteFromTemplate {
+  templateKey: string;
+  name: string;
+  locationName: string;
+  currency: string;
+  timezone: string;
+}
+
+/** Makes the site from a template and goes straight to its setup list. Only returns when something is wrong. */
+export async function createSiteFromTemplateAction(input: NewSiteFromTemplate): Promise<{ error: string }> {
+  if (!input.name.trim() || !input.locationName.trim()) {
+    return { error: "Give the site a name and say where it is." };
   }
 
+  let siteId: string;
   try {
-    await apiMutate("/sites", "POST", { name, type, locationName });
-    revalidatePath("/admin");
-    return { created: true };
+    const result = await apiMutate<{ site: { id: string } }>("/sites/from-template", "POST", {
+      templateKey: input.templateKey,
+      name: input.name.trim(),
+      locationName: input.locationName.trim(),
+      currency: input.currency || undefined,
+      timezone: input.timezone.trim() || undefined
+    });
+    siteId = result.site.id;
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to create site." };
+    return { error: apiErrorMessage(error, "Could not create the site.") };
   }
+  revalidatePath("/admin");
+  revalidatePath("/sites");
+  redirect(`/sites/${siteId}/setup`);
 }
 
 export async function updateSiteAction(siteId: string, name: string, type: string, locationName: string): Promise<{ error?: string }> {

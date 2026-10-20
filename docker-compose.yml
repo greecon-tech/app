@@ -10,7 +10,6 @@ services:
       - "5432:5432"
     volumes:
       - greecon-postgres-data:/var/lib/postgresql/data
-      - ./apps/api/src/database/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U greecon_local -d greecon"]
       interval: 5s
@@ -38,6 +37,13 @@ services:
       API_PORT: "4000"
       DATABASE_URL: postgres://greecon_local:greecon_local_password@postgres:5432/greecon
       GREECON_DEFAULT_TENANT_ID: "11111111-1111-4111-8111-111111111111"
+      # The API migrates the database itself when it starts, so the database is not given the migration
+      # files to run. The image is a production deployment and will not start without a signing secret;
+      # this one is for this laptop. To sign in as the Greecon team, set both of the next two in your
+      # shell before `docker compose up`.
+      JWT_SECRET: ${JWT_SECRET:-local-only-signing-secret-for-docker-compose-0123456789}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     ports:
       - "4000:4000"
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { apiMutate } from "../../../lib/api";
+import { apiErrorMessage, apiMutate } from "../../../lib/api";
 
 export async function createAssetAction(siteId: string, name: string, type: string): Promise<{ error?: string; created?: boolean }> {
   if (!name.trim()) {
@@ -58,29 +58,11 @@ export async function deleteDeviceAction(siteId: string, deviceId: string): Prom
   }
 }
 
-interface CreatedGateway {
-  id: string;
-  name: string;
-}
-
-export async function createGatewayAction(siteId: string, name: string): Promise<{ error?: string; gateway?: CreatedGateway; secret?: string }> {
-  if (!name.trim()) {
-    return { error: "Name is required." };
-  }
-
-  try {
-    const result = await apiMutate<{ gateway: CreatedGateway; secret: string }>("/gateways", "POST", { siteId, name });
-    revalidatePath(`/sites/${siteId}`);
-    return { gateway: result.gateway, secret: result.secret };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to add gateway." };
-  }
-}
-
 export async function deleteGatewayAction(siteId: string, gatewayId: string): Promise<{ error?: string }> {
   try {
     await apiMutate(`/gateways/${gatewayId}`, "DELETE");
     revalidatePath(`/sites/${siteId}`);
+    revalidatePath(`/sites/${siteId}/setup`);
     return {};
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to delete gateway." };
@@ -115,5 +97,51 @@ export async function deletePointAction(siteId: string, pointId: string): Promis
     return {};
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to delete point." };
+  }
+}
+
+/** Saves the limits for one reading point (an empty set clears them). The API refuses a limit that
+ * does not exist for that reading or is out of range, and says why. */
+export async function updatePointLimitsAction(siteId: string, pointId: string, limits: Record<string, number>): Promise<{ error?: string; saved?: boolean }> {
+  try {
+    await apiMutate(`/points/${pointId}`, "PATCH", { thresholdConfig: limits });
+    revalidatePath(`/sites/${siteId}`);
+    revalidatePath("/");
+    return { saved: true };
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Failed to save limits.") };
+  }
+}
+
+export interface SiteProfileInput {
+  currency?: string;
+  timezone?: string;
+  importPricePerKwh: number | null;
+  exportPricePerKwh: number | null;
+  waterPricePerM3: number | null;
+  baselineMonthlyImportKwh: number | null;
+  baselineMonthlyWaterM3: number | null;
+  baselineNote: string | null;
+  zeroExport: boolean;
+}
+
+export async function updateSiteProfileAction(siteId: string, input: SiteProfileInput): Promise<{ error?: string }> {
+  for (const [label, value] of [
+    ["The electricity price", input.importPricePerKwh],
+    ["The export price", input.exportPricePerKwh],
+    ["The water price", input.waterPricePerM3],
+    ["The electricity baseline", input.baselineMonthlyImportKwh],
+    ["The water baseline", input.baselineMonthlyWaterM3]
+  ] as const) {
+    if (value !== null && (!Number.isFinite(value) || value < 0)) return { error: `${label} must be a number, zero or more.` };
+  }
+
+  try {
+    await apiMutate(`/sites/${siteId}/profile`, "PUT", input);
+    revalidatePath(`/sites/${siteId}`);
+    revalidatePath("/");
+    return {};
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Failed to save prices and baseline.") };
   }
 }

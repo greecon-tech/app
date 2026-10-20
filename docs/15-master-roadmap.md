@@ -1,5 +1,14 @@
 # Master Roadmap — Toward Production-Grade
 
+> **Status (2026-10-18): history.** This was the plan before the October 2026 research. The current
+> sequence, with proof gates and the list of what is deliberately not being built, is
+> `25-roadmap-and-proof-gates.md`; where the two differ, 25 wins. Phase 0 and most of Phase 1 are
+> done (`18-reality-audit.md`). Phase 3 is no longer a phase: AI-driven optimisation sits in the
+> "not building" table in 25 with the evidence that would change that, and a site's limits are set
+> by the site (`adr/0003-limits-belong-to-the-site-the.md`), so the "one fixed `irrigate_below: 28`"
+> below no longer exists. Phase 4's polish is replaced by the rules in `20-design-and-interaction.md`.
+> The launch decisions are in `27-launch-decisions.md` and the practical pages in `launch/`.
+
 This is the "what would it actually take" plan across everything the platform needs to stop being
 a pilot demo and become a genuinely best-in-class operational platform: reliability, enterprise
 readiness, AI-driven optimization, and product polish. It supersedes the narrower scope of
@@ -53,8 +62,9 @@ configuration specifically. What's left:
 - Edge-to-cloud network reachability for a genuinely remote site (WireGuard/Tailscale tunnel,
   documented in `docs/14-edge-hardware-deployment.md`) — this is an operational/infra step, not
   code, but still needs doing per site before it's actually reachable.
-- Durable edge-side buffering (currently in-process memory in `apps/edge-agent`; loses backlog on
-  a service restart during a long outage).
+- ~~Durable edge-side buffering~~ — done 2026-10-13: an on-disk, bounded, ordered buffer in
+  `apps/edge-agent` (`docs/14-edge-hardware-deployment.md`). Batching many readings per request is
+  the next step if a site outgrows one request per device per poll.
 - Manual command targets aren't filtered by role/site scope beyond permission — fine for a
   single-site pilot, matters once there are multiple sites with different assigned operators.
 

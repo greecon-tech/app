@@ -1,226 +1,120 @@
-# Edge Hardware Deployment
+# Edge hardware deployment
 
-How to install the Greecon edge stack on a real industrial PC at a site (the Advantech
-UNO-2271G V3 or an equivalent — see the hardware notes at the end of this doc) and get real
-telemetry flowing into the platform.
+How a box at a site is installed, what it does, and what keeps it alive. The step-by-step version for the
+person doing the job is [launch/02 Project manager manual](launch/02-project-manager-manual.md); what to buy and how it is
+wired is [launch/03 Hardware and wiring](launch/03-hardware-and-wiring.md). This page is the engineering reference.
 
-## What actually ships in this pass
+## What the box is
 
-- **`apps/edge-agent`** — a small bridge that subscribes to the site's local MQTT topics and
-  forwards telemetry to the cloud API's `POST /telemetry/ingest`, buffering in memory and
-  retrying if the API is briefly unreachable. This did not exist before: nothing in the stack
-  previously connected the MQTT side (`docs/04-edge-runtime.md`) to the HTTP side (the API), so a
-  gateway publishing telemetry locally had no way to reach the dashboard at all. This closes that
-  gap.
-- **`apps/edge-simulator`** — already existed; publishes synthetic sine-wave readings to the local
-  broker. Useful for proving the pipeline end-to-end before real device drivers exist. It is not,
-  and should not be mistaken for, a real Modbus/OPC-UA driver.
-- `infra/edge/` — the install script, systemd units, and config templates this guide uses.
+One program, `apps/edge-agent`, built into **one file** (`greecon-edge.mjs`) and served by the platform at
+`GET /edge/bundle`, so that a box is installed and updated from the platform it reports to. It does five things,
+none of which can stop the others:
 
-## What does not exist yet (read this before you order cable)
+1. **Reads** the devices it has been told about: Modbus TCP, one connection per converter, one request at a time,
+   several converters at once (`modbus/reader.ts`, `modbus/poller.ts`). It reads every ten seconds unless the
+   platform says otherwise. A device that stays silent is asked less often so that it cannot slow the others.
+2. **Sends** what it read, in order, one request per round (`outbox.ts`). While anything waits, new readings join the
+   back of the queue: the platform counts energy by joining each reading to the one before, so order matters.
+3. **Keeps** readings it cannot send, on disk, for **about three days, for a site of up to about thirteen devices**
+   (`offline-buffer.ts`: the queue holds 60,000 messages, so a site with more devices keeps fewer days). In a long
+   outage it keeps one reading per point per minute, which is what the platform keeps in history anyway, so that
+   three days fit for about thirteen devices in about 115 MB of memory when the queue is full and has been read back
+   from disk. The queue is written and read in pieces so that a small box is never asked to hold all of it at once.
+4. **Says how it is:** a heartbeat every 30 seconds (every 10 for the first 15 minutes, when someone is probably
+   watching) carrying its version, its clock, the queue, and how each device answered, with a sentence for each
+   failure ("no answer from 192.168.1.50:502 (unit 2)").
+5. **Takes fixes:** after a heartbeat that says a newer version exists it fetches it, checks the checksum the
+   platform gave, runs it once, switches and restarts. The version before stays on disk. If the new one fails to
+   start three times without reporting in, the starting program (`run-edge`, written by the installer and not
+   changeable by the software) goes back to the previous version by itself and remembers not to try that one again.
+   `EDGE_AUTO_UPDATE=false` on the platform holds every box where it is.
 
-- **Modbus TCP is covered, nothing else yet.** `apps/edge-driver-modbus` (`docs/16-modbus-driver.md`)
-  reads real Modbus TCP registers. OPC-UA, Modbus RTU (serial), and 4-20mA analog (via a Modbus
-  I/O module) still aren't implemented — the same principle applies to each: publish
-  `TelemetryMessage` JSON (see `packages/shared`) to
-  `greecon/{tenantId}/{siteId}/telemetry/{deviceId}` on the local broker; the edge-agent bridge
-  doesn't care which protocol produced it.
-- **Local safety evaluation isn't running on the edge yet.** `packages/gaia-core`'s safety checks
-  currently only run inside the cloud API. The edge box does not independently block an unsafe
-  command if it loses connectivity — the "operate safely during internet loss" goal in
-  `docs/04-edge-runtime.md` is architecture, not yet code. Don't treat this box as a substitute for
-  hard-wired physical interlocks (float switches, pressure relief valves) on anything that
-  actually matters.
-- **No site/device provisioning UI.** Site, gateway, device, and point IDs are fixed seed data or
-  whatever's been inserted directly into Postgres (`docs/13-pilot-readiness.md`). You'll need
-  those UUIDs by hand for now.
+**It is configured from the platform, not from files.** The box asks `GET /edge/config` for its devices, their
+addresses and unit numbers, and each reading's register, kind of number, word order and scale. A change made on the site's
+setup page reaches the box within a minute, with no one touching it. The box keeps the last configuration it was
+given, so a restart during an outage still knows what to read.
 
-## Before you start: can this box actually reach the API?
+**It writes nothing to any device.** The reader has no write path. A box cannot switch anything, whoever asks.
 
-This is the part that's easy to miss. The API's RBAC used to fall back to trusting a self-asserted
-role header on any request with no session token at all — safe only because the API was never
-reachable from outside its own deployment. Now that a real edge box needs to reach it from a farm
-site, that fallback is disabled outright on a production deployment (`docs/07-security-and-rbac.md`)
-— there is no header an outside caller can send that grants anything, on any route.
+## What was dropped
 
-**The current approach — a public API with a device-only credential.** The API's Railway (or GCP)
-domain is made public, but the only thing an unauthenticated caller can ever do with it is
-`POST /telemetry/ingest`, and only with the right per-gateway secret:
+The earlier design had a local MQTT broker, a separate Modbus driver process, a hand-written `edge.env`, and
+an `install.sh` that cloned the repository onto the box. None of that remains: `apps/edge-driver-modbus`, `infra/edge/`
+and the broker on the box are gone. `apps/edge-simulator` still publishes synthetic readings to a broker for local
+development, and the box can still forward a local broker's topic if `MQTT_URL` is set (an optional bridge,
+off by default); neither is used on a site.
 
-1. Give the API service a public domain (same step as the web service already has one) — needed
-   once, not per gateway.
-2. Create the site on the platform's Admin page first if it doesn't exist yet, then open that
-   site's own page and use the **"Add gateway"** form (needs `device:manage` — owner/admin/operator).
-   It generates a real secret and shows it exactly once — copy it now, it is never shown again.
-3. Set `EDGE_TOKEN` in this box's `edge.env` to that secret, and `API_URL` to the API's public URL.
-
-The edge agent sends that secret as `x-edge-device-token`; the API looks it up against every
-registered gateway (one query, not a slow per-attempt comparison) and grants access scoped to
-whichever tenant that specific gateway belongs to — everything else, on any other route, is
-rejected the same as an unauthenticated request. Every gateway gets its own secret this way: a
-compromised one can inject fake telemetry for its own tenant only, cannot read anything, issue
-commands, or reach any other route, and revoking it just means creating a new one and updating this
-one box. Onboarding a second, third, or hundredth client's gateway needs nothing beyond this — no
-Railway configuration, no environment variables, ever, per client.
-
-**Legacy alternative — a single shared token for one fixed tenant.** Before per-gateway credentials
-existed, the only option was one `EDGE_INGEST_TOKEN`/`EDGE_INGEST_TENANT_ID` pair set as Railway
-environment variables on the API service, shared by every gateway across that one tenant. Still
-works if already configured (`docs/07-security-and-rbac.md`), but a new deployment should always
-use the per-gateway form above instead — the shared token can't support more than one client's
-tenant at all, since `EDGE_INGEST_TENANT_ID` is a single fixed value.
-
-**Alternative — a private tunnel, no public domain on the API at all.** If a client's compliance
-posture rules out the API ever having a public domain, put the edge box on the same private network
-as the API via WireGuard or Tailscale instead of generating one. This changes *which network the
-request travels over*, not *whether it needs a credential* — a production deployment
-(`NODE_ENV=production`, set by both Dockerfiles) rejects an unauthenticated request unconditionally,
-tunnel or not (`docs/07-security-and-rbac.md`), so `EDGE_TOKEN` is still required either way:
-
-1. Deploy Tailscale (or WireGuard) on the machine/network where the API actually runs (a
-   Tailscale subnet-router service alongside it on Railway, or your GCP VPC directly).
-2. Install the same client on the edge box during provisioning (`apt install tailscale` on
-   Ubuntu, then `tailscale up`, or the equivalent WireGuard peer config).
-3. Generate a gateway secret the same way as the public approach above (Admin page → the site →
-   "Add gateway"), and set `EDGE_TOKEN` to it.
-4. Set `API_URL` in `edge.env` to the API's address **on that private network**, not a public
-   hostname — the only thing this alternative actually changes.
-
-If the edge box happens to be on the same LAN/VPC as the API already (e.g. a pilot running
-everything in one building), you can skip the tunnel too and point `API_URL` straight at the API's
-internal address — `EDGE_TOKEN` is still required, for the same reason.
-
-## Step 1 — Flash the OS
-
-Install Ubuntu Server 24.04 LTS (or whatever current LTS the vendor image supports) on the
-industrial PC. Advantech ships UNO-series units with Ubuntu pre-validated — check the box's
-support page for a vendor-provided image before doing a generic install, since it'll already have
-the right kernel modules for the onboard serial/expansion hardware.
-
-## Step 2 — Network
-
-Configure the two NICs deliberately, don't leave both on DHCP from the same network:
-
-- **NIC 1 (OT/field network):** static IP, on the same subnet as your Modbus/OPC-UA field devices
-  once they exist. No internet route needed on this interface.
-- **NIC 2 (uplink):** whatever gets this box onto the internet/VPN (site LAN, or the cellular
-  module if this is a genuinely remote site). This is the interface the Tailscale/WireGuard tunnel
-  above rides on.
-
-## Step 3 — Get the software onto the box
-
-From your workstation, add a read-only deploy key for this repo (GitHub → repo Settings → Deploy
-keys → Add deploy key, do not check "Allow write access") and note the private key path — the
-install script clones over SSH using whatever key is already configured for the `root` user
-running it.
-
-```sh
-scp infra/edge/*.sh infra/edge/*.conf infra/edge/*.service infra/edge/*.example \
-    you@edge-box:/tmp/greecon-edge/
-ssh you@edge-box
-cd /tmp/greecon-edge
-sudo REPO_URL=git@github.com:greecon-tech/demo.git GIT_REF=main ./install.sh
-```
-
-`install.sh` (in `infra/edge/`) does the rest: installs Node.js 22 and Mosquitto, configures the
-broker to listen on loopback only (`infra/edge/mosquitto-edge.conf` — this broker never needs to
-be reachable from the network, only the local edge-agent and driver processes talk to it), clones
-the repo into `/opt/greecon`, builds `edge-agent` and `edge-simulator`, and installs both as
-systemd services (only `greecon-edge-agent` is enabled by default).
-
-## Step 4 — Configure this site
-
-```sh
-sudo nano /etc/greecon/edge.env
-```
-
-Fill in the blanks from `infra/edge/edge.env.example`:
-
-- `TENANT_ID`/`SITE_ID` — create the site on the platform's Admin page first if it doesn't exist
-  yet, then copy its ID from there (no more reading it out of Postgres by hand).
-- `GATEWAY_ID`/`EDGE_TOKEN` — both come from the same "Add gateway" form on that site's own page
-  (the prerequisite step above): `GATEWAY_ID` is the created gateway's own ID, `EDGE_TOKEN` is the
-  secret shown once on that same screen — copy both before leaving the page, there's no provisioning
-  console command needed and no way to see the secret again afterward.
-- `API_URL` — the API's public URL, or its private-network address if using the tunnel alternative
-  — see the prerequisite step above for which one applies. `EDGE_TOKEN` is required either way; the
-  tunnel only changes which network the request travels over, not whether it needs a credential.
-
-## Step 5 — Start it
-
-```sh
-sudo systemctl start greecon-edge-agent
-sudo systemctl status greecon-edge-agent
-sudo journalctl -u greecon-edge-agent -f
-```
-
-You should see:
+## Installing
 
 ```
-Greecon edge agent starting for <tenant>/<site>, gateway <gateway>.
-Edge agent connected to mqtt://127.0.0.1:1883, bridging greecon/<tenant>/<site>/telemetry/+ -> <API_URL>/telemetry/ingest
+curl -fsSL https://api.greecon.earth/edge/install.sh | sudo bash -s -- GRC-XXXX-XXXX-XXXX
 ```
 
-## Step 6 — Prove the pipeline end-to-end before wiring real devices
+The code comes from the site's setup page (**Add the box and get its install command**), is good for one use and seven
+days, and is stored by the platform only as a hash. The script (`apps/api/src/setup/edge-install.sh`, served with the
+platform's own address filled in) is one function called on its last line, so a download cut short does nothing:
 
-With no real driver publishing yet, there's nothing on the telemetry topic. Temporarily run the
-simulator to confirm the whole chain — broker → agent → API → dashboard — actually works:
+1. **Checking the box:** Linux with systemd (Debian 12, Ubuntu 22.04 or later, Raspberry Pi OS 64-bit), root, `curl`,
+   `tar`, `sha256sum`, a processor it has software for (x86-64, 64-bit ARM, 32-bit ARM). Then that it can reach the
+   platform, and that the clock agrees with it to within five minutes (it asks the box to sync from the network, and
+   warns if it still does not, then carries on: a wrong clock does not stop the install, but it stamps every reading
+   wrongly).
+2. **Node.js** 22.11.0 from nodejs.org, checked against its published checksum.
+3. **Places for the software and its settings:** it creates them and the user `greecon`.
+4. **The edge software:** fetched from the platform with the code, checksum checked, checked that it runs, and put
+   in place as the current release, keeping the previous releases.
+5. **Giving the box its credential:** `greecon-edge enrol` exchanges the code for the box's own credential and saves
+   it in `/etc/greecon/edge.json` (readable by the service only, never printed). **The code is spent here.** With no
+   code on the line, this step keeps the credential the box already has.
+6. **Starting the service:** it writes the service (`greecon-edge`, restarting always, with a memory ceiling and the
+   usual hardening) and starts it.
+7. **Waiting for Greecon to hear from the box:** up to two minutes, until the platform can see it.
 
-```sh
-sudo systemctl enable --now greecon-edge-simulator
+If a step fails it says `STOP:` and what to check. A line that stopped before step 5 can be run again as it is, once
+the cause is fixed: the code has not been used. From step 5 on the code is used up, and the same line stops because
+Greecon does not accept it a second time. Run the line again **with no code** to repair an installation (it keeps its
+credential), or with a **new code** to replace the box, or to install a box that never got its credential.
+
+**Everything it changes:** `/opt/greecon` (the software), `/etc/greecon` (the credential), `/var/lib/greecon-edge` (the
+queue, the last configuration, a status file), one service called `greecon-edge`, one user called `greecon`, and one
+command, `greecon-edge`.
+
+## The command on the box
+
+```
+greecon-edge status        how the box is; exits 1 if the platform has not heard from it in three minutes
+greecon-edge modbus-test --host H --unit N --type input|holding --address A --data-type T [--word-order big|little]
+                           reads one register and prints the raw numbers and the value (address counted from zero)
+greecon-edge enrol --api URL --code C    (the installer runs this)
+greecon-edge version
+journalctl -u greecon-edge -n 50 --no-pager     what it has been saying
 ```
 
-Open the Overview or site detail page for this site in the web app; you should see live-updating
-readings within about 10 seconds. Once confirmed:
+## How much it sends
 
-```sh
-sudo systemctl disable --now greecon-edge-simulator
-```
+One request every ten seconds carrying one message per device that answered, about 5 KB with its headers: roughly
+**1.3 GB a month** at the default for a hotel-size site (three devices, seven readings), and a good deal less when idle
+devices are backed off, plus a heartbeat every 30 seconds (about 0.15 GB): **about 1.5 GB a month in all**, the figure in
+[launch/03](launch/03-hardware-and-wiring.md). A site with more devices sends more. The box sends at most 100 messages
+and 400 KB in one request; the platform accepts up to 100 messages and 1 MB, and rate-limits a box per source address;
+behind Railway set `TRUST_PROXY=1` so that each site is counted by its own address. A cellular site should have a data
+plan of 5 GB or more, and its real figure is worth reading from the router after a week. A poll interval per site is not a setting yet; making one is
+the first thing to do if cellular data becomes the larger cost.
 
-Leave it disabled for a live pilot — it publishes fake numbers under the same site/device IDs your
-real equipment will use, which would corrupt real readings if left running.
+## Hardware
 
-## Step 7 — Wiring in a real device
+Specified, not named, in [launch/03](launch/03-hardware-and-wiring.md): a fanless x86 mini PC with an SSD or eMMC and a real-time
+clock and power-on after power loss; a Modbus TCP to RTU converter; Eastron SDM630 and SDM230 meters; a Modbus analog
+input module for 4 to 20 mA; submersible level and pressure transmitters. Anything that publishes its Modbus
+registers can be mapped on the setup page without a change to the software.
 
-`apps/edge-driver-modbus` reads real Modbus TCP registers and publishes them to the same topic
-the simulator uses — see `docs/16-modbus-driver.md` for the config format. `install.sh` already
-builds and installs it as `greecon-edge-driver-modbus`, just not enabled by default (there's no
-`/etc/greecon/modbus.json` yet — write one for this site's real registers, referencing the
-device/point IDs from Sites/Assets/Devices/Points provisioning, then
-`systemctl enable --now greecon-edge-driver-modbus`).
+## What it does not do
 
-For anything other than Modbus TCP (OPC-UA, Modbus RTU over serial, an analog-to-Modbus I/O
-module), the same principle applies: publish the same `TelemetryMessage` JSON shape (see
-`apps/edge-simulator/src/index.ts` or `apps/edge-driver-modbus/src/index.ts` for the exact shape,
-and `packages/shared`'s `canonicalPoints` for valid `canonicalName` values) to
-`greecon/{tenantId}/{siteId}/telemetry/{deviceId}` on the local broker
-(`mqtt://127.0.0.1:1883` from this box). `greecon-edge-agent` doesn't need to change at all — it
-bridges whatever's on that topic.
-
-## Troubleshooting
-
-- **`journalctl` shows repeated "API unreachable, buffering reading" lines.** The agent can reach
-  the local broker but not `API_URL`. Check the tunnel/VPN is actually up (`tailscale status` or
-  `wg show`) and that `API_URL` resolves and is reachable with `curl $API_URL/health` from the
-  edge box itself.
-- **No readings show up at all, not even a buffering message.** Nothing is publishing to the
-  telemetry topic. Confirm with `mosquitto_sub -h 127.0.0.1 -t 'greecon/#' -v` — if you see nothing
-  there, the problem is upstream of the agent (simulator not running, or a real driver not
-  publishing).
-- **`systemctl status greecon-edge-agent` shows it repeatedly restarting.** Check
-  `journalctl -u greecon-edge-agent -e` for the actual error — most likely `/etc/greecon/edge.env`
-  is missing a required value, or Node.js failed to resolve `@greecon/shared` (re-run
-  `npm run build:packages` in `/opt/greecon`).
-- **Backlog keeps growing and never drains.** The buffer is in-process memory only — if the API
-  stays unreachable for a long outage, restarting the service loses whatever hadn't flushed yet.
-  This is a known limitation (`docs/13-pilot-readiness.md`); for now, fix the connectivity issue
-  rather than relying on the buffer for anything beyond short blips.
-
-## Hardware reference
-
-Recommended unit: **Advantech UNO-2271G V3** (Intel Atom x7211RE, 8GB LPDDR5, 64GB eMMC, dual GbE,
-DIN-rail, 9–36V DC, with the RS-485/RS-232 and 4G/5G iDoor expansion modules for Modbus RTU field
-devices and cellular backhaul). Cheaper alternative for a lean multi-site rollout: OnLogic CL260.
-More headroom if edge-side AI/optimization is planned later: ASUS IoT PE1000U. None of these read
-analog (4-20mA) sensors directly — pair with a Modbus remote I/O module (e.g. an Advantech
-ADAM-4000 series unit) for those.
+- **No local safety logic.** The platform's rules run in the cloud. The box does not decide to stop anything,
+  because it cannot switch anything. Greecon is not a safety system; the equipment's own protection is the
+  safety layer (`23-safety-and-security-case.md`).
+- **No Modbus RTU on the box itself.** A serial meter is reached through a converter in gateway mode. A serial port
+  on the box would need the reader extended; the converter is the cheaper, standard answer.
+- **No OPC-UA, no BACnet, no vendor cloud APIs.** Each would be a new reader beside the Modbus one.
+- **No remote shell.** Nobody can log in to a box from outside; the platform cannot run a command on it. Its
+  software changes only by the update path above (checksummed, with rollback).

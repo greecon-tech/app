@@ -204,8 +204,8 @@ describe("PlatformService", () => {
           siteId: SITE_ID,
           targetDeviceId: PUMP_DEVICE_ID,
           targetPointId: PUMP_POINT_ID,
-          requestedValue: "OFF",
-          reason: "Manual maintenance stop",
+          requestedValue: "ON",
+          reason: "Manual refill run",
           manualOverride: {
             durationMinutes: -5,
             reason: "Backdated override"
@@ -216,6 +216,49 @@ describe("PlatformService", () => {
 
       expect(record.dispatchStatus).toBe("blocked");
       expect(record.safetyEvaluation.reasons.join(" ")).toContain("expired");
+    });
+
+    it("still accepts a stop whose override window has expired: stopping needs no override", async () => {
+      const record = await platform.createCommand(
+        {
+          siteId: SITE_ID,
+          targetDeviceId: PUMP_DEVICE_ID,
+          targetPointId: PUMP_POINT_ID,
+          requestedValue: "OFF",
+          reason: "Manual maintenance stop",
+          manualOverride: {
+            durationMinutes: -5,
+            reason: "Backdated override"
+          }
+        },
+        OWNER
+      );
+
+      expect(record.dispatchStatus).toBe("simulated_dispatch");
+    });
+  });
+
+  describe("what a command is in this build", () => {
+    it("is always a simulation: nothing in this build can reach equipment, and the record says so", async () => {
+      const allowed = await platform.createCommand(
+        { siteId: SITE_ID, targetDeviceId: PUMP_DEVICE_ID, targetPointId: PUMP_POINT_ID, requestedValue: "OFF", reason: "Routine stop" },
+        OWNER
+      );
+      const blocked = await platform.createCommand(
+        {
+          siteId: SITE_ID,
+          targetDeviceId: PUMP_DEVICE_ID,
+          targetPointId: PUMP_POINT_ID,
+          requestedValue: "ON",
+          reason: "Backdated",
+          manualOverride: { durationMinutes: -5, reason: "Backdated override" }
+        },
+        OWNER
+      );
+
+      // A "live" mode is added only when the release gate in docs/23-safety-and-security-case.md is met.
+      for (const record of [allowed, blocked, ...platform.listCommands(OWNER)]) expect(record.executionMode).toBe("simulated");
+      expect(allowed.dispatchStatus).toBe("simulated_dispatch");
     });
   });
 
@@ -444,6 +487,20 @@ describe("PlatformService", () => {
       ).rejects.toThrow();
     });
 
+    it("makes a domain from the company name when none is given, and keeps it unique", async () => {
+      const first = await platform.createTenant({ name: "Hotel Adriatik Sh.p.k", ownerName: "A", ownerEmail: "a@adriatik.example" }, PLATFORM_ADMIN);
+      expect(first.tenant.domain).toBe("hotel-adriatik-sh-p-k.clients.greecon.earth");
+
+      const second = await platform.createTenant({ name: "Hotel Adriatik Sh.p.k", ownerName: "B", ownerEmail: "b@adriatik.example" }, PLATFORM_ADMIN);
+      expect(second.tenant.domain).toBe("hotel-adriatik-sh-p-k-2.clients.greecon.earth");
+
+      const accents = await platform.createTenant({ name: "Fermë Lushnjë", ownerName: "C", ownerEmail: "c@ferme.example" }, PLATFORM_ADMIN);
+      expect(accents.tenant.domain).toBe("ferme-lushnje.clients.greecon.earth");
+
+      const symbols = await platform.createTenant({ name: "!!!", ownerName: "D", ownerEmail: "d@x.example" }, PLATFORM_ADMIN);
+      expect(symbols.tenant.domain).toBe("client.clients.greecon.earth");
+    });
+
     it("lets a platform admin suspend and reactivate a client, blocking a non-admin from doing the same", async () => {
       const { tenant } = await platform.createTenant(
         { name: "Suspend Test Farm", domain: "suspend-test.example", ownerName: "Owner", ownerEmail: "owner@suspend-test.example" },
@@ -474,14 +531,33 @@ describe("PlatformService", () => {
           siteId: SITE_ID,
           targetDeviceId: PUMP_DEVICE_ID,
           targetPointId: PUMP_POINT_ID,
-          requestedValue: "OFF",
-          reason: "Routine shutdown"
+          requestedValue: "ON",
+          reason: "Refill the tank"
         },
         OWNER
       );
 
       expect(record.dispatchStatus).toBe("blocked");
       expect(record.safetyEvaluation.reasons.join(" ")).toContain("exceeds limit");
+    });
+
+    it("does not let that same limit stand in the way of stopping the pump", async () => {
+      // The interlock exists to stop a pump being STARTED into over-pressure. Applied to a stop it
+      // would block the action that relieves the pressure.
+      await platform.updateSite(SITE_ID, { safetyLimits: { maxPressureBar: 1 } }, OWNER);
+
+      const record = await platform.createCommand(
+        {
+          siteId: SITE_ID,
+          targetDeviceId: PUMP_DEVICE_ID,
+          targetPointId: PUMP_POINT_ID,
+          requestedValue: "OFF",
+          reason: "Routine shutdown"
+        },
+        OWNER
+      );
+
+      expect(record.dispatchStatus).toBe("simulated_dispatch");
     });
 
     it("falls back to the global default for any field a site hasn't overridden", async () => {

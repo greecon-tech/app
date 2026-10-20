@@ -1,6 +1,6 @@
 import { GREECON_COMPANY, GREECON_DOMAIN, hasPermission, UserRole, userRoles } from "@greecon/shared";
 import { DataTable } from "../../components/DataTable";
-import { CreateSiteForm } from "../../components/CreateSiteForm";
+import { CreateSiteFromTemplateForm } from "../../components/CreateSiteFromTemplateForm";
 import { CreateUserForm } from "../../components/CreateUserForm";
 import { EditableSiteRow } from "../../components/EditableSiteRow";
 import { Section } from "../../components/Section";
@@ -30,7 +30,7 @@ interface User {
 const roleScopes = [
   { role: "Owner", scope: "Tenant, billing, users, sites, rules, audit" },
   { role: "Admin", scope: "Sites, assets, devices, users, approved rules" },
-  { role: "Operator", scope: "Monitoring and operation within safety policy" },
+  { role: "Operator", scope: "Monitoring and operation within the site's operating limits" },
   { role: "Viewer", scope: "Read-only operational access" },
   { role: "Auditor", scope: "Reports, audit logs, automation history, compliance evidence" }
 ] as const;
@@ -45,21 +45,27 @@ export default async function AdminPage() {
   requirePermission(role, "user:manage");
   const currentUserId = session?.user.id;
   const canManageSites = hasPermission(role, "site:manage");
+  // Greecon staff setting a customer up can see the people but not add or change them: that is the customer's owner.
+  const support = session?.user.support === true;
 
-  const [sites, users] = await Promise.all([apiGet<Site[]>("/sites"), apiGet<User[]>("/users")]);
+  const [sites, users, tenants] = await Promise.all([apiGet<Site[]>("/sites"), apiGet<User[]>("/users"), apiGet<Array<{ name: string; domain: string }>>("/tenants")]);
+  // The account this page is about: the customer's own, also while Greecon staff are inside it.
+  const tenant = tenants[0];
 
   return (
     <Shell title="Admin" subtitle="Tenant, users, roles, devices, retention, and security settings.">
       <Section title="Tenant">
         <div className="panel">
-          <strong>{GREECON_COMPANY}</strong>
-          <p className="muted">{GREECON_DOMAIN}</p>
+          <strong>{tenant?.name ?? GREECON_COMPANY}</strong>
+          <p className="muted">{tenant?.domain ?? GREECON_DOMAIN}</p>
         </div>
       </Section>
-      <Section title="Create user" aside={<span className="muted">Generates a one-time temporary password</span>}>
-        <CreateUserForm />
-      </Section>
-      <Section title="Users">
+      {support ? null : (
+        <Section title="Create user" aside={<span className="muted">Generates a one-time temporary password</span>}>
+          <CreateUserForm />
+        </Section>
+      )}
+      <Section title="Users" aside={support ? <span className="muted">Staff in a setup session see the people but do not change them</span> : undefined}>
         <DataTable
           rows={users}
           columns={[
@@ -68,29 +74,35 @@ export default async function AdminPage() {
             {
               key: "role",
               label: "Role",
-              render: (user) => (
-                <form action={updateUserRoleAction.bind(null, user.id)} className="user-row-form">
-                  <select name="role" defaultValue={user.role} disabled={user.id === currentUserId}>
-                    {userRoles.map((candidate) => (
-                      <option key={candidate} value={candidate}>
-                        {candidate.charAt(0).toUpperCase() + candidate.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                  {user.id === currentUserId ? null : (
-                    <button type="submit" className="button-ghost">
-                      Save
-                    </button>
-                  )}
-                </form>
-              )
+              render: (user) =>
+                support ? (
+                  user.role
+                ) : (
+                  <form action={updateUserRoleAction.bind(null, user.id)} className="user-row-form">
+                    <select name="role" defaultValue={user.role} disabled={user.id === currentUserId}>
+                      {userRoles.map((candidate) => (
+                        <option key={candidate} value={candidate}>
+                          {candidate.charAt(0).toUpperCase() + candidate.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    {user.id === currentUserId ? null : (
+                      <button type="submit" className="button-ghost">
+                        Save
+                      </button>
+                    )}
+                  </form>
+                )
             },
             {
               key: "status",
               label: "Status",
               render: (user) =>
-                user.id === currentUserId ? (
-                  <span className="muted">{user.status} (you)</span>
+                support || user.id === currentUserId ? (
+                  <span className="muted">
+                    {user.status}
+                    {user.id === currentUserId ? " (you)" : ""}
+                  </span>
                 ) : (
                   <form action={updateUserStatusAction.bind(null, user.id, user.status === "active" ? "disabled" : "active")}>
                     <button type="submit" className="button-ghost">
@@ -102,7 +114,7 @@ export default async function AdminPage() {
             {
               key: "id",
               label: "Password",
-              render: (user) => <ResetPasswordButton userId={user.id} />
+              render: (user) => (support ? "" : <ResetPasswordButton userId={user.id} />)
             }
           ]}
         />
@@ -130,7 +142,7 @@ export default async function AdminPage() {
         ) : (
           <div className="empty-state">No records available</div>
         )}
-        {canManageSites ? <CreateSiteForm /> : null}
+        {canManageSites ? <CreateSiteFromTemplateForm /> : null}
       </Section>
       <Section title="Roles">
         <DataTable rows={roleScopes} columns={[{ key: "role", label: "Role" }, { key: "scope", label: "Scope" }]} />

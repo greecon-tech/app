@@ -2,27 +2,47 @@ import "reflect-metadata";
 import helmet from "helmet";
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import { apiDocsEnabled, checkRuntimeConfig, trustedProxyHops } from "./common/runtime-config";
+import { prepareDatabase } from "./database/startup";
+import { PlatformService } from "./platform/platform.service";
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("Bootstrap");
 
   // A missing DATABASE_URL is legitimate (local dev without Postgres, the in-memory-only fallback
-  // every domain in PlatformService has); a missing JWT_SECRET alongside a REAL database is not —
-  // it means login can never work on what's clearly meant to be a real deployment. Warn loudly at
-  // boot rather than letting that surface only when someone's first login attempt fails, so a
-  // misconfigured production deploy is obvious in the deploy logs immediately.
-  if (process.env.DATABASE_URL && !process.env.JWT_SECRET) {
-    logger.warn(
-      "DATABASE_URL is set but JWT_SECRET is not — this deployment has a real database but " +
-        "login will fail for every user until JWT_SECRET is configured (docs/07-security-and-rbac.md)."
-    );
+  // every domain in PlatformService has). A real database with a missing or weak JWT_SECRET is not:
+  // on a production deployment that stops the boot here, so it shows in the deploy logs at once
+  // instead of surfacing as "nobody can sign in" or, worse, as sessions anyone could forge.
+  const config = checkRuntimeConfig(process.env);
+  for (const warning of config.warnings) logger.warn(warning);
+  if (config.errors.length > 0) {
+    for (const error of config.errors) logger.error(error);
+    throw new Error("The deployment's settings are not safe to start with. See the errors above.");
   }
 
-  const app = await NestFactory.create(AppModule, {
-    bufferLogs: true
+  // Brings the schema up to this version and closes accounts that carry a published password,
+  // before anything reads the database (PlatformService hydrates from it when the module starts).
+  await prepareDatabase(process.env, (message) => (message.startsWith("SECURITY") ? logger.warn(message) : logger.log(message)));
+
+  // The default request body limit (100 kB) is smaller than a hundred readings sent at once.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    bodyParser: false
   });
+  app.useBodyParser("json", { limit: "1mb" });
+  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
+
+  // Behind a reverse proxy (Railway, a load balancer) every connection arrives from the proxy, so
+  // without this every caller looks like one address and shares one rate-limit bucket. Opt-in and
+  // exact: TRUST_PROXY is the number of trusted hops (see common/runtime-config.ts).
+  const proxyHops = trustedProxyHops(process.env);
+  if (proxyHops !== undefined) {
+    app.set("trust proxy", proxyHops);
+    logger.log(`Trusting ${proxyHops} reverse proxy hop(s) for the caller's address (TRUST_PROXY).`);
+  }
 
   app.use(helmet());
   app.enableCors({
@@ -42,7 +62,13 @@ async function bootstrap(): Promise<void> {
     .setDescription("Operational API for Greecon sites, devices, telemetry, automation, alerts, and audit evidence.")
     .setVersion("0.1.0")
     .build();
-  SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
+  // The spec lists every route, so a production deployment keeps it off unless asked
+  // (ENABLE_API_DOCS=true) — see common/runtime-config.ts.
+  if (apiDocsEnabled(process.env)) {
+    SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, swaggerConfig));
+  } else {
+    logger.log("API docs (/docs) are disabled in production; set ENABLE_API_DOCS=true to enable them.");
+  }
 
   // PORT is Railway's convention; API_PORT is ours (docker-compose, GCP). Railway's
   // private networking requires listening on "::" (IPv6), which also accepts ordinary
@@ -55,6 +81,32 @@ async function bootstrap(): Promise<void> {
     if ((error as NodeJS.ErrnoException).code !== "EAFNOSUPPORT") throw error;
     await app.listen(port);
   }
+
+  // A host stops a service with SIGTERM when it deploys a new version. Nothing here listens for it by default,
+  // so the energy and water counted since the last save would be lost at every deploy. The counts are saved
+  // first, while the database is still open, and then everything is closed. (Nest's own shutdown hooks are not
+  // used: they close the database before the application's shutdown step, which would leave the counts unsaved.)
+  let stopping = false;
+  const stop = (signal: string): void => {
+    if (stopping) return;
+    stopping = true;
+    logger.log(`${signal} received: saving what has been counted, then stopping.`);
+    setTimeout(() => process.exit(1), 8_000).unref();
+    app
+      .get(PlatformService)
+      .saveBeforeStopping()
+      .then(() => app.close())
+      .then(() => process.exit(0))
+      .catch((error: unknown) => {
+        logger.error(`Stopping did not finish cleanly: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      });
+  };
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", () => stop("SIGINT"));
 }
 
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  new Logger("Bootstrap").error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

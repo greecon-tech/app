@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { GREECON_COMPANY, GREECON_DOMAIN, userRoles } from "@greecon/shared";
+import { GREECON_COMPANY, GREECON_DOMAIN, GREECON_PUBLIC_EMAILS, userRoles } from "@greecon/shared";
 import { DEMO_ROLE } from "../lib/api";
-import { Nav } from "./Nav";
+import { Nav, SectionTabs } from "./Nav";
 
 // Static-export twin of Shell.tsx (see apps/web/scripts/build-static.sh). The live Shell reads a
 // real session (login, logout, the actual signed-in user's name) via lib/session.ts, which
@@ -27,6 +27,9 @@ export function Shell({ children, title, subtitle }: { children: ReactNode; titl
         <div className="sidebar-foot">
           <p>{GREECON_COMPANY}</p>
           <span>{GREECON_DOMAIN}</span>
+          <span className="sidebar-foot__links">
+            <a href={`mailto:${GREECON_PUBLIC_EMAILS[0]}`}>Help</a> · <Link href="/privacy">Privacy</Link>
+          </span>
         </div>
       </aside>
       <div className="workspace">
@@ -63,6 +66,7 @@ export function Shell({ children, title, subtitle }: { children: ReactNode; titl
             </div>
           )}
         </header>
+        <SectionTabs role={DEMO_ROLE} />
         <main>{children}</main>
       </div>
     </div>

@@ -1,15 +1,17 @@
-import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from "class-validator";
-import { pointCapabilities, qualityFlags } from "@greecon/shared";
+import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
+import { PointSource, pointCapabilities, qualityFlags } from "@greecon/shared";
 
 export class UpdatePointDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(160)
   label?: string;
 
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(40)
   unit?: string;
 
   @IsOptional()
@@ -23,4 +25,9 @@ export class UpdatePointDto {
   @IsOptional()
   @IsObject()
   thresholdConfig?: Record<string, number>;
+
+  // null takes the register mapping away; left out, it is left as it is.
+  @IsOptional()
+  @IsObject()
+  source?: PointSource | null;
 }

@@ -11,14 +11,16 @@
     "build:api": "npm run build -w @greecon/api",
     "build:web": "npm run build -w @greecon/web",
     "build:edge": "npm run build -w @greecon/edge-simulator",
-    "build": "npm run build:packages && npm run build:api && npm run build:web && npm run build:edge",
+    "build": "npm run build:packages && npm run build:api && npm run build:web && npm run build:edge && npm run build:edge-bundle",
     "dev:api": "npm run start:dev -w @greecon/api",
     "dev:web": "npm run dev -w @greecon/web",
     "dev:edge": "npm run start:dev -w @greecon/edge-simulator",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
-    "test": "npm run build:packages && npm run test --workspaces --if-present"
+    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "build:edge-bundle": "node scripts/build-edge-bundle.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.27.7",
     "typescript": "^5.7.3"
   }
 }

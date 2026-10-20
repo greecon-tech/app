@@ -66,7 +66,7 @@ export default async function AutomationPage() {
             ]}
           />
         </Section>
-        <Section title="Manual Control" aside={<span className="muted">Automatic (rules/AI) is the default mode</span>}>
+        <Section title="Manual Control" aside={<span className="muted">Simulated: nothing is sent to equipment yet</span>}>
           <div className="panel">
             <p className="muted">
               Manual control requires a live deployment (Railway or Google Cloud) — this build is a static snapshot with no server to dispatch commands to. See docs/12-deployment-github-pages.md.

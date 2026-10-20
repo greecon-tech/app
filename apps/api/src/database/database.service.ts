@@ -10,6 +10,13 @@ export class DatabaseService implements OnModuleDestroy {
     const connectionString = process.env.DATABASE_URL;
     if (connectionString) {
       this.pool = new Pool({ connectionString });
+      // A database that restarts (maintenance, a failover) ends the connections it had open. The pool
+      // reports that as an error event on behalf of its idle connections, and an error event with no
+      // listener takes the whole process down. The pool replaces the connection by itself; all that is
+      // needed here is to say it happened.
+      this.pool.on("error", (error) => {
+        this.logger.warn(`A database connection was lost and will be replaced: ${error.message}`);
+      });
     }
   }
 

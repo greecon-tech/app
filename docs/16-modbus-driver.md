@@ -1,99 +1,80 @@
-# Modbus TCP Driver
+# Reading Modbus devices
 
-`apps/edge-driver-modbus` reads real Modbus TCP registers and publishes them as the same
-`TelemetryMessage` JSON shape/topic `apps/edge-simulator` uses — `apps/edge-agent` bridges it to
-the cloud API with zero changes, exactly as promised in
-`docs/14-edge-hardware-deployment.md`. This is what makes real sensor data reach the platform;
-before it existed, `apps/edge-simulator`'s synthetic sine waves were the only telemetry source
-anywhere in the stack.
+The box reads devices in `apps/edge-agent/src/modbus/` (the reader and the poller) from a configuration the platform
+gives it. There is no separate driver process, no config file on the box, and no broker between the two. This page says what
+a reading is made of and where the platform's description of it lives. The wiring and the converter are in
+[launch/03](launch/03-hardware-and-wiring.md); how a project manager enters a register is in
+[launch/02, step 7.4](launch/02-project-manager-manual.md).
 
-## Configuration
+## Where a register is described
 
-Set `MODBUS_CONFIG_PATH` to a JSON file (or `MODBUS_CONFIG_JSON` to inline the same JSON):
+A device has a **connection** (where the box reaches it) and each reading has a **source** (which register, and how to
+turn it into the reading). Both are typed by a person on the site's setup page, validated by the shared contract
+(`packages/shared/src/modbus.ts`) with a sentence for every mistake, kept by the platform, and handed to the box in
+`GET /edge/config`.
 
 ```json
 {
-  "host": "192.168.1.50",
-  "port": 502,
-  "unitId": 1,
-  "pollIntervalMs": 5000,
-  "tenantId": "11111111-1111-4111-8111-111111111111",
-  "siteId": "22222222-2222-4222-8222-222222222202",
-  "gatewayId": "77777777-7777-4777-8777-777777777702",
-  "registers": [
-    {
-      "siteId": "22222222-2222-4222-8222-222222222202",
-      "assetId": "33333333-3333-4333-8333-333333333304",
-      "deviceId": "44444444-4444-4444-8444-444444444404",
-      "pointId": "55555555-5555-4555-8555-555555555505",
-      "canonicalName": "water.pressure.bar",
-      "label": "Line pressure",
-      "unit": "bar",
-      "address": 0,
-      "registerType": "holding",
-      "dataType": "uint16",
-      "scale": 0.1
-    }
-  ]
+  "connection": { "kind": "modbus_tcp", "host": "192.168.1.50", "port": 502, "unitId": 1 },
+  "source": { "kind": "modbus", "registerType": "input", "address": 52, "dataType": "float32", "wordOrder": "big", "scale": 0.001, "part": "positive" }
 }
 ```
 
-Each entry in `registers` maps one Modbus register to one platform point:
+**Connection.** `host` is an IP address or a host name; `port` 1 to 65535 (502 usually); `unitId` 0 to 247. Meters behind one
+converter share its host and port and differ only by unit ID.
 
-- `address` — zero-based Modbus register address.
-- `registerType` — `"holding"` or `"input"` (function code 3 vs. 4 — check the device's manual;
-  most PLCs and VFDs use holding registers for everything, but dedicated sensor transmitters
-  often expose readings as input registers).
-- `dataType` — `"uint16"`/`"int16"` (one register) or `"float32"` (two registers, decoded
-  big-endian — see the caveat below).
-- `scale` — optional multiplier applied to the raw value. A sensor reporting pressure in 0.1 bar
-  increments uses `scale: 0.1` so a raw reading of 55 becomes 5.5 bar.
-- `siteId`/`assetId`/`deviceId`/`pointId`/`canonicalName` — must match real IDs already
-  provisioned via the Sites/Assets/Devices/Points API (`docs/13-pilot-readiness.md`,
-  "Site/device/point provisioning"). The driver doesn't create these itself.
+**Source.**
 
-**Byte order caveat:** Modbus has no single universal convention for multi-register values.
-This driver assumes big-endian word order, the most common convention — if a real device's
-`float32` values come back nonsensical, the vendor's manual will specify byte/word order, and it
-may need reversing before this driver would read it correctly (not yet configurable — see "How to
-extend further" below).
+| Field | Meaning |
+|---|---|
+| `registerType` | `input` (a manual's 3xxxx, function code 4) or `holding` (4xxxx, function code 3) |
+| `address` | **Zero-based**, as on the wire: a manual's **30053 is address 52**, 40001 is address 0 |
+| `dataType` | `uint16`, `int16`, `uint32`, `int32`, `float32` (the last three take two registers) |
+| `wordOrder` | For two-register values: `big` (the high half first, the usual) or `little` |
+| `scale`, `offset` | `reading = raw × scale + offset` (watts to kilowatts: scale 0.001) |
+| `linear` (alternative) | A straight line between two points for a 4 to 20 mA signal: the register holds `rawLow` at the bottom and `rawHigh` at the top, which are the reading's `engLow` and `engHigh` |
+| `part` | `positive`, `negative` (as a positive number) or `absolute`: one signed value feeding two readings (grid import and export from one meter) |
 
-## Running it
+## What a round of reading does
 
-```sh
-export MODBUS_CONFIG_PATH=/etc/greecon/modbus.json
-export MQTT_URL=mqtt://127.0.0.1:1883
-node dist/index.js
+`DevicePoller.pollAll` reads each device's readings, groups them by device, and returns one telemetry message per
+device that gave something, plus how each device answered. Devices behind **one converter** are read one after another;
+devices behind **different converters** are read at the same time. A reading that cannot be read gives **no** reading and a sentence
+saying why; nothing invents a value, and a reading that stops arriving is itself the signal that the platform turns
+into "out of date".
+
+A failure is classified:
+
+- **transport** (no connection, a timeout, the converter did not answer): nothing else is asked of that device this
+  round; after three failed rounds in a row it is asked once a minute until it answers;
+- **refused** (the device answered with an exception: "has no register at that address", "does not support this kind
+  of register", "is busy", "could not be reached by its converter"): the device is alive, and its other readings are
+  still read.
+
+The sentences are what a person at the site can act on, and they appear on the setup page and in `greecon-edge status`.
+
+## Testing a register from the box
+
+```
+greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input --address 52 --data-type float32
 ```
 
-On the edge box, this runs as its own systemd service alongside `greecon-edge-agent`
-(`infra/edge/greecon-edge-driver-modbus.service`) — see `docs/14-edge-hardware-deployment.md` for
-the full install. Multiple Modbus devices at one site can share a single driver instance (list
-every register from every device in the same config) or run one instance per device if they're on
-different IPs/ports — either works, since each poll cycle groups readings by `deviceId` before
-publishing.
+prints the raw register values and the value they decode to. It uses the same reader as the box. If it cannot read, the
+problem is the wiring, the converter's mode, the speed or the unit number, not Greecon.
 
-## What this doesn't do yet
+## Known profiles
 
-- **No write support.** This driver only reads. Manual/automated commands (`docs/13-pilot-
-  readiness.md`'s irrigation/pump control) still only affect the platform's own state — closing
-  the loop so a dispatched command actually writes a Modbus coil/register on the real device is a
-  separate, not-yet-built piece.
-- **No stale-data detection.** A failed register read is logged and skipped, not published with a
-  degraded quality flag — so a device that goes offline stops producing new readings rather than
-  producing an explicit "no longer reachable" signal. The dashboard would show the last known
-  value going quiet, not a flagged alert.
-- **No configurable byte order** for multi-register values (see the caveat above) — currently
-  fixed to big-endian.
-- **Modbus RTU (serial) isn't wired up**, only TCP — `modbus-serial` (the library this uses)
-  supports RTU too; extending `config.ts`/`index.ts` to open a serial port instead of a TCP socket
-  when configured would cover it.
+`packages/shared/src/device-profiles.ts` holds the registers of the Eastron **SDM630** (three-phase) and **SDM230**
+(single-phase) in three roles each (grid, solar, load): total active power, input register 52 on the SDM630 and 12 on the
+SDM230 (documented 30053 and 30013), 32-bit float, high half first, in watts, shown in kW. Each profile says how it is
+fitted and how to check the direction. Anything else is added by hand from its own datasheet.
 
-## Verification
+**Not verified against a real meter.** The registers are from the makers' published tables, the protocol is exercised
+against a Modbus TCP server and a pretend meter (`scripts/pretend-meter.mjs`), and a real meter has not been read by this
+software. The SDM230's serial speed differs between versions; read it from the meter's display.
 
-Tested against a real Modbus TCP server (not a mock) — `ServerTCP` from the same `modbus-serial`
-library backing a two-register pump station simulation (pressure as scaled `uint16`, flow as
-`float32` across two registers) with values that genuinely drift over time. Confirmed the driver
-correctly decoded both, published them over MQTT, and — through the existing `edge-agent` bridge —
-watched the actual decoded values land in `telemetry_readings` in Postgres, changing on every poll
-cycle exactly as the simulated device's registers changed.
+## What it does not do
+
+- **It never writes.** There is no write path in the reader, so no command can reach a device through a box.
+- **No serial port on the box.** Serial meters are reached through a converter in Modbus TCP to RTU gateway mode.
+- **No OPC-UA, no BACnet, no vendor cloud.** Each would be another reader beside this one.

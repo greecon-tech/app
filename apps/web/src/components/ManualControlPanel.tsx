@@ -14,10 +14,11 @@ export interface ManualControlTarget {
   unit: string;
 }
 
-// Real manual control for any command-capable point (irrigation valves, pumps, and any future
-// writable actuator) — dispatches through POST /commands, the same endpoint and GAIA safety
-// evaluation automated rules use. Automatic (rules/AI) execution remains the default mode;
-// this is the explicit manual path a farmer or operator uses to run equipment on demand.
+// The manual path for any command-capable point (irrigation valves, pumps, and any future writable
+// actuator): it posts to /commands, the same endpoint and the same operating-limit checks that
+// automated rules use. In this build every command is a simulation and the panel says so; rules, not
+// AI, decide in automatic mode, and this is the explicit route a farmer or operator uses to ask for
+// equipment to run on demand.
 export function ManualControlPanel({ targets, emptyMessage }: { targets: ManualControlTarget[]; emptyMessage: string }) {
   const [selectedKey, setSelectedKey] = useState(targets[0] ? targetKey(targets[0]) : "");
   const [value, setValue] = useState("ON");
@@ -60,9 +61,11 @@ export function ManualControlPanel({ targets, emptyMessage }: { targets: ManualC
       if (response.error) {
         setResult(response.error);
       } else if (response.dispatchStatus === "blocked") {
-        setResult(`Blocked by safety policy: ${response.failureReason ?? "safety evaluation failed."}`);
+        setResult(`Not sent. Blocked by an operating limit: ${response.failureReason ?? "the checks did not pass."}`);
       } else {
-        setResult(`Dispatched — ${target.label} set to ${requestedValue}, ${duration} min manual window. Status: ${response.dispatchStatus}.`);
+        // Every command is a simulation in this build, and the wording must not suggest otherwise:
+        // an operator who reads "dispatched" believes the pump was started.
+        setResult(`Simulated only. ${target.label} was not changed: nothing is sent to equipment yet. The request, the checks it passed and who made it are recorded.`);
       }
     });
   }

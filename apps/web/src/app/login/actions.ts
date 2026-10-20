@@ -3,13 +3,14 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_TOKEN_COOKIE, SESSION_USER_COOKIE, SessionUser } from "../../lib/session";
+import { visitorHeaders } from "../../lib/visitor";
 
 const API_BASE_URL = process.env.GREECON_API_URL ?? "http://localhost:4000";
 
 export async function loginAction(email: string, password: string, intendedArea: "client" | "staff" = "client"): Promise<{ error?: string }> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(await visitorHeaders()) },
     body: JSON.stringify({ email, password })
   });
 
@@ -50,6 +51,8 @@ export async function loginAction(email: string, password: string, intendedArea:
   store.set(SESSION_TOKEN_COOKIE, token, cookieOptions);
   store.set(SESSION_USER_COOKIE, JSON.stringify(user), cookieOptions);
 
+  // A temporary password (the one the project manager handed over) is good for choosing a new one.
+  if (user.mustChangePassword) redirect("/change-password");
   redirect(intendedArea === "staff" ? "/platform" : "/");
 }
 
@@ -58,4 +61,13 @@ export async function logoutAction(): Promise<void> {
   store.delete(SESSION_TOKEN_COOKIE);
   store.delete(SESSION_USER_COOKIE);
   redirect("/login");
+}
+
+/** After choosing a new password the old session (opened with the temporary one) is closed, and the
+ * person signs in again with the new one. */
+export async function signOutAfterPasswordChangeAction(): Promise<void> {
+  const store = await cookies();
+  store.delete(SESSION_TOKEN_COOKIE);
+  store.delete(SESSION_USER_COOKIE);
+  redirect("/login?changed=1");
 }

@@ -15,7 +15,7 @@ export function CreateDeviceForm({ siteId, assets = [] }: { siteId: string; asse
   const [name, setName] = useState("");
   const [deviceType, setDeviceType] = useState("");
   const [protocol, setProtocol] = useState("modbus");
-  const [driverType, setDriverType] = useState("");
+  const [driverType, setDriverType] = useState("modbus-tcp");
   const [assetId, setAssetId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState(false);
@@ -34,7 +34,7 @@ export function CreateDeviceForm({ siteId, assets = [] }: { siteId: string; asse
       setCreated(true);
       setName("");
       setDeviceType("");
-      setDriverType("");
+      setDriverType("modbus-tcp");
     });
   }
 
@@ -61,7 +61,7 @@ export function CreateDeviceForm({ siteId, assets = [] }: { siteId: string; asse
         </label>
         <label>
           Driver
-          <input value={driverType} onChange={(event) => setDriverType(event.target.value)} placeholder="e.g. greecon-edge-driver-modbus" required />
+          <input value={driverType} onChange={(event) => setDriverType(event.target.value)} placeholder="modbus-tcp" required />
         </label>
         {assets.length > 0 ? (
           <label>

@@ -1,12 +1,14 @@
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min } from "class-validator";
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min, MaxLength } from "class-validator";
 
 export class EdgeSyncDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   siteId!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64)
   gatewayId!: string;
 
   @IsString()
@@ -19,9 +21,11 @@ export class EdgeSyncDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(40)
   startedAtUtc!: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(40)
   completedAtUtc?: string;
 }

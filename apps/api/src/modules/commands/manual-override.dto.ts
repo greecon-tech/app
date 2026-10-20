@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsString, Min } from "class-validator";
+import { IsInt, IsNotEmpty, IsString, Min, MaxLength } from "class-validator";
 
 export class ManualOverrideDto {
   @IsInt()
@@ -7,5 +7,6 @@ export class ManualOverrideDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(2000)
   reason!: string;
 }

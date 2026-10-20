@@ -1,9 +1,13 @@
 import Link from "next/link";
-import { hasPermission } from "@greecon/shared";
+import { CanonicalPointName, EdgeGateway, EnergyFlowView, HEALTH_LABELS, hasPermission, SiteHealth, SiteProfile, SiteValue, valuePoints } from "@greecon/shared";
+import { Ago } from "../../../components/Ago";
+import { EnergyFlow } from "../../../components/EnergyFlow";
+import { HealthReasons } from "../../../components/HealthHeadline";
+import { LiveRefresh } from "../../../components/LiveRefresh";
 import { CreateAssetForm } from "../../../components/CreateAssetForm";
 import { CreateDeviceForm } from "../../../components/CreateDeviceForm";
-import { CreateGatewayForm } from "../../../components/CreateGatewayForm";
 import { CreatePointForm } from "../../../components/CreatePointForm";
+import { PointLimitsForm } from "../../../components/PointLimitsForm";
 import { DataTable } from "../../../components/DataTable";
 import { DeleteButton } from "../../../components/DeleteButton";
 import { ManualControlPanel } from "../../../components/ManualControlPanel";
@@ -13,19 +17,26 @@ import { SensorMap } from "../../../components/SensorMap";
 import { Shell } from "../../../components/Shell";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { TimeSeriesChart } from "../../../components/TimeSeriesChart";
-import { apiGet, DEMO_ROLE } from "../../../lib/api";
+import { ValueSection } from "../../../components/ValueSection";
+import { apiGet, DEMO_ROLE, isStaticExport } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
-import { groupByCanonicalName } from "../../../lib/telemetry-history";
+import { groupByPointId } from "../../../lib/telemetry-history";
+import { priorityWord, titleCase } from "../../../lib/health";
+import { CONTACT_WORDS } from "../../../lib/setup";
+import { readingLabel, readingMetric, ReadingView } from "../../../lib/readings";
 import { Metric } from "../../../lib/types";
-import { deleteAssetAction, deleteDeviceAction, deleteGatewayAction, deletePointAction } from "./actions";
+import { deleteAssetAction, deleteDeviceAction, deletePointAction } from "./actions";
 
 interface SiteDetail {
   site: { id: string; name: string; type: string; locationName: string; status: string; edgeStatus: string };
+  health: SiteHealth;
+  energyFlow?: EnergyFlowView;
+  lastReadingAtUtc?: string;
   assets: Array<{ id: string; name: string; type: string; status: string }>;
   devices: Array<{ id: string; name: string; deviceType: string; protocol: string; health: string; lastSeenUtc?: string; positionX?: number; positionY?: number; placementNote?: string }>;
-  points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: string; capability: string }>;
-  gateways: Array<{ id: string; name: string; status: string; secureIdentityStatus: string }>;
-  latestTelemetry: Array<{ pointId: string; canonicalName: string; value: number | boolean | string; unit: string; quality: string }>;
+  points: Array<{ id: string; deviceId: string; label: string; unit: string; canonicalName: CanonicalPointName; capability: string; thresholdConfig?: Record<string, number> }>;
+  gateways: EdgeGateway[];
+  latestTelemetry: Array<ReadingView & { pointId: string }>;
   rules: Array<{ id: string; name: string; priority: string; executionMode: string; approvalState: string }>;
   alerts: Array<{ id: string; severity: string; title: string; status: string }>;
 }
@@ -49,19 +60,22 @@ const TRENDS_HOURS = 24 * 7;
 // same combination that forced automation/page.tsx to force-dynamic rendering applies here too.
 export const dynamic = "force-dynamic";
 
-export default async function SiteDetailPage({ params }: { params: Promise<{ siteId: string }> }) {
+export default async function SiteDetailPage({ params, searchParams }: { params: Promise<{ siteId: string }>; searchParams: Promise<{ period?: string }> }) {
   const { siteId } = await params;
-  const [detail, history] = await Promise.all([
+  const period = ["day", "week", "month", "last30"].includes((await searchParams).period ?? "") ? ((await searchParams).period as string) : "month";
+  const [detail, history, value, profile] = await Promise.all([
     apiGet<SiteDetail>(`/sites/${siteId}`),
-    apiGet<TelemetryReading[]>(`/telemetry/history?siteId=${siteId}&hours=${TRENDS_HOURS}`)
+    apiGet<TelemetryReading[]>(`/telemetry/history?siteId=${siteId}&hours=${TRENDS_HOURS}`),
+    apiGet<SiteValue>(`/sites/${siteId}/value?period=${period}`),
+    apiGet<SiteProfile>(`/sites/${siteId}/profile`)
   ]);
   const { site } = detail;
   const metrics = buildMetrics(detail);
-  const historyByCanonicalName = groupByCanonicalName(history);
+  const historyByPointId = groupByPointId(history);
   // One chart per readable point this site actually has — a write-only command point (e.g. the
-  // irrigation valve toggle) has no meaningful trend to plot, and points sharing a canonical name
-  // (rare — usually one device per point) share one chart rather than duplicating it.
-  const trendPoints = Array.from(new Map(detail.points.filter((point) => point.capability !== "write").map((point) => [point.canonicalName, point])).values());
+  // irrigation valve toggle) has no meaningful trend to plot. Each point has its own line: two tanks are two
+  // charts, never one that jumps between them.
+  const trendPoints = detail.points.filter((point) => point.capability !== "write");
   // The real logged-in session's role, not the build-time DEMO_ROLE fallback (which only ever
   // reflects the caller's identity on the static export — see lib/api.ts's requestHeaders) — this
   // page previously gated Manual Control by DEMO_ROLE even on a live deployment, so every visitor
@@ -85,27 +99,47 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
     }));
 
   return (
-    <Shell title={site.name} subtitle={`${site.type} · ${site.locationName}`}>
-      <div className="tabs">
-        {["Summary", "Equipment", "Automation", "Alerts"].map((tab) => (
-          <span key={tab}>{tab}</span>
-        ))}
-      </div>
-      <Section title="Summary" aside={<StatusBadge status={site.status} />}>
+    <Shell title={site.name} subtitle={`${site.type.replace(/_/g, " ")} · ${site.locationName}`}>
+      <LiveRefresh enabled={!isStaticExport()} />
+      <Section title="Summary" aside={<StatusBadge status={HEALTH_LABELS[detail.health.state]} />}>
+        <p className="muted">
+          {detail.health.reasons.length === 0 ? "All readings current. Nothing open." : null}
+          {detail.lastReadingAtUtc ? (
+            <>
+              {detail.health.reasons.length === 0 ? " " : ""}Last reading <Ago iso={detail.lastReadingAtUtc} />.
+            </>
+          ) : (
+            "No readings have been received from this site yet."
+          )}
+        </p>
+        <HealthReasons reasons={detail.health.reasons} showSite={false} />
         <MetricGrid metrics={metrics} />
       </Section>
+      {detail.energyFlow?.hasEnergy ? (
+        <Section title="Energy flow">
+          <EnergyFlow flow={detail.energyFlow} siteName={site.name} />
+        </Section>
+      ) : null}
+      {detail.points.some((point) => (valuePoints as readonly string[]).includes(point.canonicalName)) ? (
+        <section id="value" className="section">
+          <div className="section__header">
+            <h2>Value</h2>
+          </div>
+          <ValueSection value={value} siteId={site.id} profile={hasPermission(role, "site:manage") ? profile : undefined} periodHref={(key) => `/sites/${site.id}?period=${key}#value`} />
+        </section>
+      ) : null}
       <Section title="Trends" aside={<Link href={`/analytics?siteId=${site.id}`}>Full analytics for this site →</Link>}>
         {trendPoints.length === 0 ? (
           <div className="empty-state">No trackable points configured for this site yet.</div>
         ) : (
           <div className="chart-grid">
             {trendPoints.map((point) => (
-              <TimeSeriesChart key={point.id} title={point.label} unit={point.unit} data={historyByCanonicalName.get(point.canonicalName) ?? []} />
+              <TimeSeriesChart key={point.id} title={point.label} unit={point.unit} data={historyByPointId.get(point.id) ?? []} />
             ))}
           </div>
         )}
       </Section>
-      <Section title="Equipment">
+      <Section title="Equipment" id="equipment">
         <SensorMap devices={detail.devices} points={detail.points} readings={detail.latestTelemetry} />
         {canManageAssets ? (
           <div className="stack">
@@ -121,7 +155,6 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
                 columns={[
                   { key: "name", label: "Name" },
                   { key: "type", label: "Type" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
                   {
                     key: "id",
                     label: "",
@@ -135,10 +168,10 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         ) : null}
         {canManageDevices ? (
           <div className="stack">
-            <h3>Gateways</h3>
+            <h3>Boxes</h3>
             <p className="muted">
-              A gateway is the industrial PC physically at this site that sends real readings to the platform. Each one gets its own real
-              credential here — no Railway or hosting configuration needed.
+              A box is the small computer at the site that reads the equipment and sends the readings here. Boxes are installed and replaced on the{" "}
+              <Link href={`/sites/${site.id}/setup`}>setup page</Link>, which gives the command to run on each one.
             </p>
             {detail.gateways.length > 0 ? (
               <DataTable
@@ -146,21 +179,17 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
                 rows={detail.gateways}
                 columns={[
                   { key: "name", label: "Name" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge status={row.status} /> },
-                  {
-                    key: "id",
-                    label: "",
-                    render: (row) => (
-                      <DeleteButton
-                        action={deleteGatewayAction.bind(null, site.id, row.id)}
-                        confirmMessage={`Delete gateway "${row.name}"? Any device pointed at it keeps working but loses that association, and this credential stops working immediately.`}
-                      />
-                    )
-                  }
+                  { key: "contact", label: "Now", render: (row) => <StatusBadge status={CONTACT_WORDS[row.contact ?? "never"]} /> },
+                  { key: "lastSeenUtc", label: "Last heard from", render: (row) => (row.lastSeenUtc ? <Ago iso={row.lastSeenUtc} /> : "never") },
+                  { key: "softwareVersion", label: "Version", render: (row) => row.softwareVersion ?? "—" }
                 ]}
               />
             ) : null}
-            <CreateGatewayForm siteId={site.id} />
+            <p>
+              <Link className="button-primary" href={`/sites/${site.id}/setup`}>
+                Open the setup checklist
+              </Link>
+            </p>
             <h3>Devices</h3>
             <p className="muted">A device is the physical piece of equipment — a sensor, controller, or gateway.</p>
             {detail.devices.length > 0 ? (
@@ -197,6 +226,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
                       { key: "label", label: "Label" },
                       { key: "deviceName", label: "Device" },
                       { key: "capability", label: "Capability" },
+                      { key: "thresholdConfig", label: "Limits", render: (row) => <PointLimitsForm siteId={site.id} point={row} /> },
                       {
                         key: "id",
                         label: "",
@@ -214,7 +244,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         ) : null}
       </Section>
       {canControl ? (
-        <Section title="Manual Control" aside={<span className="muted">Automatic (rules/AI) is the default mode</span>}>
+        <Section title="Manual Control" aside={<span className="muted">Simulated: nothing is sent to equipment yet</span>}>
           <ManualControlPanel targets={controllableTargets} emptyMessage="No manually controllable equipment is configured for this site." />
         </Section>
       ) : null}
@@ -233,9 +263,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
         <DataTable
           rows={detail.alerts}
           columns={[
-            { key: "severity", label: "Severity", render: (row) => <StatusBadge status={row.severity} /> },
+            { key: "severity", label: "Priority", render: (row) => <StatusBadge status={priorityWord(row.severity)} /> },
             { key: "title", label: "Alert" },
-            { key: "status", label: "Status" }
+            { key: "status", label: "Status", render: (row) => titleCase(row.status) }
           ]}
         />
       </Section>
@@ -244,11 +274,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
 }
 
 function buildMetrics(detail: SiteDetail): Metric[] {
-  return detail.latestTelemetry.map((reading) => ({
-    label: reading.canonicalName,
-    value: typeof reading.value === "number" ? reading.value.toFixed(1) : String(reading.value),
-    unit: reading.unit,
-    status: reading.quality === "OK" ? "OK" : reading.quality === "WARN" ? "Watch" : "Critical",
-    note: `Quality: ${reading.quality}`
-  }));
+  return detail.latestTelemetry.map((reading) =>
+    readingMetric(reading, reading.timestampUtc ? <Ago iso={reading.timestampUtc} /> : "No timestamp", readingLabel(reading.canonicalName))
+  );
 }

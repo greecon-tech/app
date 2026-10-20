@@ -1,9 +1,19 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import jwt from "jsonwebtoken";
 import { DEMO_TENANT_ID, UserRole, userRoles } from "@greecon/shared";
 import { DatabaseService } from "../../database/database.service";
+import { forgetUser } from "../../common/active-users";
+import { canonicalEmail } from "../../common/email";
+import { problemWithNewPassword } from "../../common/password-policy";
 import { JwtClaims, jwtSecret } from "../../common/principal";
+
+/** A real bcrypt hash of a password nobody knows. Signing in as an address with no account is compared
+ * against it, so the answer takes as long as one for a real account with a wrong password: a hash of the
+ * wrong length is refused at once, and the difference in time would tell a caller which addresses have
+ * accounts. */
+const UNKNOWN_ACCOUNT_HASH = bcrypt.hashSync(randomBytes(24).toString("hex"), 10);
 
 interface UserCredentialRow {
   id: string;
@@ -13,7 +23,19 @@ interface UserCredentialRow {
   password_hash: string | null;
   role: string;
   is_platform_admin: boolean;
+  must_change_password: boolean;
   tenant_status: string;
+}
+
+/** What Greecon staff are given to set a customer's account up: a session in that account, as an
+ * administrator, that cannot be used for anything in Greecon's own console, and that ends by itself. */
+export const SUPPORT_SESSION_HOURS = 4;
+
+export interface SupportSession {
+  token: string;
+  user: LoginResult["user"] & { support: true };
+  customer: string;
+  expiresInSeconds: number;
 }
 
 export interface LoginResult {
@@ -25,12 +47,29 @@ export interface LoginResult {
     name: string;
     role: UserRole;
     isPlatformAdmin: boolean;
+    /** True while the password is a temporary one: the session can only be used to choose a new one. */
+    mustChangePassword: boolean;
   };
 }
 
 @Injectable()
 export class AuthService {
   constructor(private readonly db: DatabaseService) {}
+
+  /** The session for a staff member working inside one customer's account. It carries the staff member's
+   * own identity, so that everything done is recorded under their name; it is for the customer's account
+   * only (not a platform administrator's, so Greecon's console is closed to it); and it is short. */
+  issueSupportSession(input: { tenantId: string; customer: string; staffUserId: string; staffName: string; staffEmail: string }): SupportSession {
+    const secret = jwtSecret();
+    if (!secret) throw new UnauthorizedException("JWT_SECRET is not configured on this deployment.");
+    const claims: JwtClaims = { sub: input.staffUserId, tenantId: input.tenantId, role: "admin", email: input.staffEmail, isPlatformAdmin: false, support: true };
+    return {
+      token: jwt.sign(claims, secret, { expiresIn: `${SUPPORT_SESSION_HOURS}h` }),
+      user: { id: input.staffUserId, tenantId: input.tenantId, email: input.staffEmail, name: input.staffName, role: "admin", isPlatformAdmin: false, mustChangePassword: false, support: true },
+      customer: input.customer,
+      expiresInSeconds: SUPPORT_SESSION_HOURS * 3600
+    };
+  }
 
   async login(email: string, password: string): Promise<LoginResult> {
     // Real login needs a real, persisted user + password hash to check — there's no in-memory
@@ -45,21 +84,26 @@ export class AuthService {
       throw new UnauthorizedException("JWT_SECRET is not configured on this deployment.");
     }
 
-    const result = await this.db.query<UserCredentialRow>(
-      `SELECT u.id, u.tenant_id, u.email, u.name, u.password_hash, u.is_platform_admin, m.role, t.status AS tenant_status
-       FROM users u
-       JOIN memberships m ON m.user_id = u.id AND m.tenant_id = u.tenant_id
-       JOIN tenants t ON t.id = u.tenant_id
-       WHERE lower(u.email) = lower($1) AND u.status = 'active'
-       LIMIT 1`,
-      [email]
-    );
+    // The address is looked up in the one form accounts are stored in (common/email.ts). An address that is
+    // not plain ASCII cannot belong to an account, and is never handed to the database to be lower-cased
+    // its own way.
+    const wanted = canonicalEmail(email);
+    const result = wanted
+      ? await this.db.query<UserCredentialRow>(
+          `SELECT u.id, u.tenant_id, u.email, u.name, u.password_hash, u.is_platform_admin, u.must_change_password, m.role, t.status AS tenant_status
+           FROM users u
+           JOIN memberships m ON m.user_id = u.id AND m.tenant_id = u.tenant_id
+           JOIN tenants t ON t.id = u.tenant_id
+           WHERE lower(u.email) = $1 AND u.status = 'active'
+           LIMIT 1`,
+          [wanted]
+        )
+      : { rows: [] as UserCredentialRow[] };
 
     const row = result.rows[0];
-    // Compare against a dummy hash even on a missing user so a login attempt against a
-    // nonexistent email takes about as long as one against a real email with a wrong password —
-    // a cheap, standard defense against using response time to enumerate valid accounts.
-    const hash = row?.password_hash ?? "$2b$10$invalidsaltinvalidsaltinvalidsaltinvalidsal";
+    // Compare against a real hash even on a missing user so a login attempt against a nonexistent
+    // email takes about as long as one against a real email with a wrong password.
+    const hash = row?.password_hash ?? UNKNOWN_ACCOUNT_HASH;
     const valid = await bcrypt.compare(password, hash);
 
     if (!row || !row.password_hash || !valid) {
@@ -82,7 +126,8 @@ export class AuthService {
       tenantId: row.tenant_id,
       role,
       email: row.email,
-      isPlatformAdmin
+      isPlatformAdmin,
+      ...(row.must_change_password === true ? { mcp: true } : {})
     };
 
     const token = jwt.sign(claims, secret, { expiresIn: "12h" });
@@ -95,7 +140,8 @@ export class AuthService {
         email: row.email,
         name: row.name,
         role,
-        isPlatformAdmin
+        isPlatformAdmin,
+        mustChangePassword: row.must_change_password === true
       }
     };
   }
@@ -125,7 +171,12 @@ export class AuthService {
       throw new UnauthorizedException("Current password is incorrect.");
     }
 
+    const problem = problemWithNewPassword(newPassword, currentPassword);
+    if (problem) throw new BadRequestException(problem);
+
     const newHash = await bcrypt.hash(newPassword, 10);
-    await this.db.query("UPDATE users SET password_hash = $1 WHERE id = $2", [newHash, userId]);
+    // Every session opened before now, on this password or the old one, ends: the person signs in again.
+    await this.db.query("UPDATE users SET password_hash = $1, must_change_password = false, sessions_valid_after = $3 WHERE id = $2", [newHash, userId, new Date()]);
+    forgetUser(userId);
   }
 }

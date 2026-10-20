@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsIn, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, ValidateNested } from "class-validator";
+import { IsIn, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, ValidateNested, MaxLength } from "class-validator";
 import { siteTypes, statusLabels } from "@greecon/shared";
 import { SiteSafetyLimitsDto } from "./site-safety-limits.dto";
 
@@ -7,6 +7,7 @@ export class UpdateSiteDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(160)
   name?: string;
 
   @IsOptional()
@@ -16,6 +17,7 @@ export class UpdateSiteDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(160)
   locationName?: string;
 
   @IsOptional()

@@ -8,7 +8,7 @@ import { getSession } from "../../lib/session";
 interface AuditEvent {
   id: string;
   createdAtUtc: string;
-  userId: string;
+  actor: string;
   eventType: string;
   entityType: string;
   reason?: string;
@@ -28,7 +28,7 @@ export default async function AuditPage() {
           rows={auditEvents}
           columns={[
             { key: "createdAtUtc", label: "Timestamp" },
-            { key: "userId", label: "User" },
+            { key: "actor", label: "Who" },
             { key: "eventType", label: "Event Type" },
             { key: "entityType", label: "Entity" },
             { key: "reason", label: "Reason" }

@@ -26,6 +26,9 @@ export default function LoginPage() {
           </button>
           <p className="muted">This static preview build has no server to log in against — see docs/12-deployment-github-pages.md.</p>
         </form>
+        <p className="muted">
+          New to Greecon? <a href={`${process.env.NEXT_BASE_PATH ?? ""}/request-access/`}>Request access</a>
+        </p>
       </section>
     </main>
   );

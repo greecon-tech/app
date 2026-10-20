@@ -21,6 +21,11 @@ export interface Principal {
   // Never true from principalFromHeaders(): the header fallback (static export/local dev) must
   // never grant cross-tenant access.
   isPlatformAdmin: boolean;
+  /** Set when the caller is a box at a site, not a person: the gateway whose credential it presented. */
+  gatewayId?: string;
+  /** Set when Greecon staff have opened a customer's account to set it up (a support session): the
+   * person is Greecon's, the account is the customer's, and who may sign in to it is not theirs to change. */
+  support?: boolean;
 }
 
 export interface JwtClaims {
@@ -29,6 +34,12 @@ export interface JwtClaims {
   role: UserRole;
   email: string;
   isPlatformAdmin?: boolean;
+  /** Set while the account still has a temporary password: the session may only be used to choose a new one. */
+  mcp?: boolean;
+  /** Set on the session Greecon staff are given to set a customer's account up. */
+  support?: boolean;
+  /** When the token was issued, in seconds. Added by the signing library. */
+  iat?: number;
 }
 
 export function jwtSecret(): string | undefined {
@@ -49,7 +60,8 @@ export function principalFromClaims(claims: JwtClaims): Principal {
     userId: claims.sub,
     role,
     email: claims.email,
-    isPlatformAdmin: claims.isPlatformAdmin === true
+    isPlatformAdmin: claims.isPlatformAdmin === true,
+    ...(claims.support === true ? { support: true } : {})
   };
 }
 
@@ -80,13 +92,14 @@ export function principalFromHeaders(headers: Record<string, string | string[] |
  * (the token isn't per-gateway yet — see docs/15-master-roadmap.md, Phase 2, "Real device identity
  * for machine traffic") and to "operator"'s permissions, which is more than telemetry:ingest alone
  * needs; the route match in PrincipalGuard is what actually keeps this narrow, not the role. */
-export function edgeDeviceIngestPrincipal(tenantId: string): Principal {
+export function edgeDeviceIngestPrincipal(tenantId: string, gatewayId?: string): Principal {
   return {
     tenantId,
     userId: "edge-device",
     role: "operator",
     email: "edge-device@greecon.earth",
-    isPlatformAdmin: false
+    isPlatformAdmin: false,
+    ...(gatewayId ? { gatewayId } : {})
   };
 }
 

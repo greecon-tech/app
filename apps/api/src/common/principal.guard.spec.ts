@@ -1,6 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import jwt from "jsonwebtoken";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetAllUsers } from "./active-users";
 import { PrincipalGuard } from "./principal.guard";
 import { JwtClaims, RequestWithPrincipal } from "./principal";
 import { DatabaseService } from "../database/database.service";
@@ -24,6 +25,37 @@ function fakeDatabase(configured: boolean, rows: Array<{ tenant_id: string }> = 
     query: vi.fn().mockResolvedValue({ rows })
   } as unknown as DatabaseService;
 }
+
+describe("PrincipalGuard and sessions that outlive the person's access", () => {
+  const ACCOUNT = "22222222-bbbb-4bbb-8bbb-222222222222";
+  const original = process.env.JWT_SECRET;
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = "test-secret";
+    forgetAllUsers();
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = original;
+  });
+
+  const sessionFor = (sub: string) => jwt.sign({ sub, tenantId: "tenant-1", role: "owner", email: "owner@client.example" } satisfies JwtClaims, "test-secret");
+
+  it("lets a session through for an account that is still active", async () => {
+    const guard = new PrincipalGuard({ isConfigured: () => true, query: vi.fn().mockResolvedValue({ rows: [{ status: "active", cut_off: null }] }) } as unknown as DatabaseService);
+    await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": sessionFor(ACCOUNT) }))).resolves.toBe(true);
+  });
+
+  it("turns away a valid, unexpired token once the person has been turned off", async () => {
+    const guard = new PrincipalGuard({ isConfigured: () => true, query: vi.fn().mockResolvedValue({ rows: [{ status: "disabled", cut_off: null }] }) } as unknown as DatabaseService);
+    await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": sessionFor(ACCOUNT) }))).rejects.toThrow(/session has ended/);
+  });
+
+  it("turns away a token signed with the right secret for an account that does not exist", async () => {
+    const guard = new PrincipalGuard({ isConfigured: () => true, query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as DatabaseService);
+    await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": sessionFor(ACCOUNT) }))).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
 
 describe("PrincipalGuard", () => {
   const originalSecret = process.env.JWT_SECRET;
@@ -126,6 +158,38 @@ describe("PrincipalGuard", () => {
     });
   });
 
+  describe("a session opened with a temporary password", () => {
+    const temporary = () => jwt.sign({ sub: "u1", tenantId: "t1", role: "owner", email: "o@x.example", mcp: true } satisfies JwtClaims, "test-secret");
+
+    it("may choose a new password and look at who it is, and nothing else", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/auth/change-password", method: "POST" },
+        { path: "/auth/session", method: "GET" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": temporary() }, route)), `${route.method} ${route.path}`).resolves.toBe(true);
+      }
+    });
+
+    it("is turned away from everything else, and told why", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/overview", method: "GET" },
+        { path: "/sites", method: "GET" },
+        { path: "/auth/change-password", method: "GET" },
+        { path: "/commands", method: "POST" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": temporary() }, route)), `${route.method} ${route.path}`).rejects.toThrow(/Choose a new password/);
+      }
+    });
+
+    it("is an ordinary session once the flag is gone", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      const token = jwt.sign({ sub: "u1", tenantId: "t1", role: "owner", email: "o@x.example" } satisfies JwtClaims, "test-secret");
+      await expect(guard.canActivate(contextWithHeaders({ "x-greecon-session": token }, { path: "/overview", method: "GET" }))).resolves.toBe(true);
+    });
+  });
+
   describe("public routes", () => {
     beforeEach(() => {
       process.env.NODE_ENV = "production";
@@ -143,6 +207,24 @@ describe("PrincipalGuard", () => {
       const context = contextWithHeaders({}, { path: "/health", method: "GET" });
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it("lets an unauthenticated POST /public/access-requests through, because the people asking are not users yet", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      const context = contextWithHeaders({}, { path: "/public/access-requests", method: "POST" });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it("does not let the public form's pass reach Greecon's inbox of requests, or read anything", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/platform-admin/access-requests", method: "GET" },
+        { path: "/platform-admin/access-requests/abc", method: "PATCH" },
+        { path: "/public/access-requests", method: "GET" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({}, route)), `${route.method} ${route.path}`).rejects.toThrow(UnauthorizedException);
+      }
     });
 
     it("does not extend the same pass to a lookalike route", async () => {
@@ -260,5 +342,52 @@ describe("PrincipalGuard", () => {
 
       await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
     });
+  });
+});
+
+describe("PrincipalGuard: what a signed-in person may not do", () => {
+  const original = process.env.JWT_SECRET;
+  const DEMO = "11111111-1111-4111-8111-111111111111";
+  beforeEach(() => {
+    process.env.JWT_SECRET = "test-secret";
+    forgetAllUsers();
+  });
+  afterEach(() => {
+    if (original === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = original;
+  });
+
+  const session = (tenantId: string, role: JwtClaims["role"] = "operator", extra: Partial<JwtClaims> = {}) =>
+    jwt.sign({ sub: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", tenantId, role, email: "someone@example.com", ...extra } satisfies JwtClaims, "test-secret");
+  const guard = new PrincipalGuard(fakeDatabase(false));
+  const call = (token: string, method: string, path: string) => guard.canActivate(contextWithHeaders({ "x-greecon-session": token }, { method, path }));
+
+  it("may not send readings: those come from a box with its own credential", async () => {
+    for (const path of ["/telemetry/ingest", "/telemetry/ingest-batch"]) {
+      await expect(call(session("tenant-1", "owner"), "POST", path), path).rejects.toThrow(/sent by a box with its own credential/);
+    }
+    // Reading them back is still an ordinary thing to do.
+    await expect(call(session("tenant-1", "viewer"), "GET", "/telemetry/latest")).resolves.toBe(true);
+  });
+
+  it("is read-only in the demo account, which is published and so held by anyone: no tasks, commands, rules or people", async () => {
+    const demo = session(DEMO, "operator");
+    for (const [method, path] of [["POST", "/maintenance"], ["POST", "/commands"], ["POST", "/rules"], ["PATCH", "/sites/s1"], ["DELETE", "/devices/d1"], ["POST", "/users"], ["POST", "/gateways"]] as const) {
+      await expect(call(demo, method, path), `${method} ${path}`).rejects.toThrow(/live demo is read-only/);
+    }
+  });
+
+  it("lets the demo account look, acknowledge an alert, arrange its dashboard and be told its password cannot change", async () => {
+    const demo = session(DEMO, "operator");
+    for (const [method, path] of [["GET", "/overview"], ["GET", "/sites/s1"], ["POST", "/alerts/a1/acknowledge"], ["PUT", "/dashboard-preferences"], ["POST", "/auth/change-password"]] as const) {
+      await expect(call(demo, method, path), `${method} ${path}`).resolves.toBe(true);
+    }
+    // Only an alert's own acknowledge route, not something that merely starts like it.
+    await expect(call(demo, "POST", "/alerts/a1/acknowledge/extra")).rejects.toThrow(/live demo is read-only/);
+  });
+
+  it("does not make any other account read-only", async () => {
+    await expect(call(session("tenant-1", "operator"), "POST", "/maintenance")).resolves.toBe(true);
+    await expect(call(session("tenant-1", "owner"), "PATCH", "/sites/s1")).resolves.toBe(true);
   });
 });
