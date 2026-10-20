@@ -43,14 +43,17 @@ never counts silence as good news.
 
 1. Your Greecon project manager onboards your account, makes your site from a template for your kind of
    site, and installs the box and the meters with an electrician. You receive a login and a temporary
-   password; you choose your own the first time you sign in.
+   password, shown once; you choose your own the first time you sign in.
 2. The project manager connects the devices and checks every reading against the real world, and hands
    over a printed sheet saying where everything is (`docs/launch/02-project-manager-manual.md`).
 3. **Say who is told**, in the order they should hear, under **Who is told**, and send each person a test
-   message. Ask each to confirm it arrived. Nothing is commissioned until this is done.
+   message. Ask each to confirm it arrived. Everyone on the list should also have their own login with the
+   Operator role (the owner adds people under **Admin**): only a person who can sign in can acknowledge an alert,
+   which is what stops the chain of messages, and a person with only a phone number cannot. Nothing is
+   commissioned until the list and a test message are done.
 4. Agree the limits that matter for your site (the **Limits** control on each reading point). Greecon
-   has a standard for a tank's low and critical level and a battery's low charge, and none for irrigation
-   or solar surplus: it says nothing about those until you set them.
+   has a standard for a tank's low and critical level, a battery's low charge and a pump's no-flow level
+   (0.2 litres a minute), and none for irrigation or solar surplus: it says nothing about those until you set them.
 5. Watch the Overview. Open **Sites** for each site's own page, with its readings, trends and equipment.
 
 ## What each alert means and what to do first
@@ -59,7 +62,7 @@ never counts silence as good news.
 |---|---|---|
 | Tank level is critical | The level is below the critical limit (standard 15%, or your own) | Check the water supply and refill as soon as it is safe |
 | Tank level is low | The level is below the low limit (standard 35%, or your own) | Plan a refill before it falls further |
-| The pump is running but no water is flowing | The pump reports running and flow has been at or below your no-flow limit for 30 seconds | Stop the pump, then check the water source and the intake line before starting it again. Greecon does not stop the pump; your motor protection does |
+| The pump is running but no water is flowing | The pump reports running and flow has been at or below the no-flow limit (standard 0.2 litres a minute, or your own) for 30 seconds. It needs both a flow reading and the pump's running state | Stop the pump, then check the water source and the intake line before starting it again. Greecon does not stop the pump; your motor protection does |
 | Battery charge is low | Charge is below the low limit (standard 25%, or your own) | Reduce non-essential load or check that the battery is charging |
 | Readings from this site are out of date | One or more readings are older than their limit | Check the gateway's power and network connection. Until readings resume, the values shown are the last ones received |
 | A sensor is reporting bad data | A reading's quality is marked bad | Inspect the sensor and its wiring. Commands that depend on it stay blocked until it recovers |
@@ -67,9 +70,10 @@ never counts silence as good news.
 Alerts are shown by priority: **Act now** (needs a person within minutes), **Check today**, and **For
 your information**. They also reach people, by the rules you can read on **Who is told**:
 
-- **Act now** is emailed to the first person on your list at once, texted ten minutes later if nobody has
-  acknowledged it, and sent to the next person thirty minutes after that, and so on down the list.
-  Acknowledging it in Greecon stops the chain and tells the others who took it.
+- **Act now** is emailed to the first person on your list at once and texted ten minutes later if nobody has
+  acknowledged it. Thirty minutes after the alert began it goes to the next person, by email and text, and so
+  on down the list. Acknowledging it in Greecon stops the messages that have not gone out yet and tells the others
+  who took it. Only a person who can sign in can acknowledge, so each person on your list needs their own login.
 - **Check today** is one email to the first person, held until morning if it comes in quiet hours
   (22:00 to 07:00 unless you change them).
 - **For your information** is only shown, never sent.
@@ -77,14 +81,17 @@ your information**. They also reach people, by the rules you can read on **Who i
   acknowledges an alert, the people who were told hear who took it, and when the problem has stayed clear for
   15 minutes they are told it is resolved.
 
-You choose the people and their order, and see what was sent and what the email or text service said
-about it. "Accepted for delivery" means the service took it; Greecon cannot know a person read it, which is
-why every person is asked to confirm a test message. Texts go only for Act now. There are no phone calls,
+You choose the people and their order. **What was sent**, on the same page, shows each message with its
+result: **Sent** means the email or text service took it, **Not sent** says why, **Not needed** means someone
+acknowledged the alert first. Greecon cannot know a person read a message, which is why every person is asked
+to confirm a test message. Texts go only for Act now (and for test messages). There are no phone calls,
 WhatsApp or Viber messages yet.
 
-**Your data is yours.** Under **Reports** you can download every reading (hourly averages for any period,
-every single reading for up to 31 days), your alerts, and everything about how your account is set up, as
-files a spreadsheet opens. Each download is recorded in your audit log.
+**Your data is yours.** You can download, whenever you like, every reading for the last 31 days, hourly
+averages for up to a year, your alerts, your audit log and how your account is set up. The downloads are under
+**Reports**: the readings, alerts and audit log are files a spreadsheet opens, and the account's setup is one
+file in a plain format (JSON). If you stop, Greecon also gives you every reading it holds, as a file, on
+request. Each download is recorded in your audit log.
 
 ## Getting help
 

@@ -114,9 +114,9 @@ must survive power cuts, which is the hard part.
 credential, readable by the service only), `/var/lib/greecon-edge` (what it remembers), one service called
 `greecon-edge`, one user called `greecon`, and one command, `greecon-edge`. Nothing else.
 
-**What the box does by itself:** restarts if it fails; keeps up to about three days of readings if the internet
-is down and sends them in order when it returns (a long outage keeps one reading a minute so that three days
-fit); takes new versions of its software from the platform and **goes back to the version before** if a new one
+**What the box does by itself:** restarts if it fails; keeps about three days of readings if the internet is down,
+for a site of up to about thirteen devices (a site with more devices keeps fewer days), and sends them in order
+when it returns (a long outage keeps one reading a minute for each reading, so that three days fit); takes new versions of its software from the platform and **goes back to the version before** if a new one
 fails to start three times; reports every 30 seconds so that Greecon knows it is alive.
 
 **Commands the project manager uses:**
@@ -235,8 +235,8 @@ series** with the module's input, as the module's manual draws it (some modules 
 - **Pressure:** on the pipe through an isolating valve, so that it can be removed without draining. A
   plumber does the wet connection.
 - **Flow:** an electromagnetic or turbine meter in the pipe with a 4 to 20 mA output, installed straight-run as
-  its manual says. Without it, "the pump is running but no water is flowing" cannot be raised, and the site
-  should say so in its handover.
+  its manual says. Without it, or without the pump's running contact (next point), "the pump is running but no
+  water is flowing" cannot be raised, and the site should say so in its handover.
 - **Pump running:** a **spare auxiliary contact** of the pump's starter, wired by the electrician to a digital input.
   Never to a control circuit. The contact **only reports**.
 
@@ -253,8 +253,8 @@ it is.** Soil readings mean little without it. Greecon gives no irrigation advic
 | Situation | What to do |
 |---|---|
 | **The customer's network** | Box and converter on the router. Ask for a fixed address (a reservation) for the converter. The box needs only **outgoing HTTPS (443)** to `api.greecon.earth` (and to `nodejs.org` at install) and a time service (UDP 123). |
-| **Cellular** | A 4G router with a data SIM; box and converter plug into its sockets. **Plan for about 2 GB a month** at the standard one reading in ten seconds (that is the estimate; read the router's counter after a week and write the real figure here). Choose a plan of 5 GB or more. |
-| **No internet at all** | Not sold. The box keeps about three days, which is for outages, not for a site that is never connected. |
+| **Cellular** | A 4G router with a data SIM; box and converter plug into its sockets. **Plan for about 1.5 GB a month.** That assumes a hotel-size site (three devices, seven readings) sending one request every ten seconds, about 5 KB each with its headers (about 1.3 GB), plus a heartbeat every 30 seconds (about 0.15 GB); a site with more devices sends more. It is an estimate: read the router's counter after a week and write the real figure here. Choose a plan of 5 GB or more. |
+| **No internet at all** | Not sold. The box keeps about three days (for a site of up to about thirteen devices), which is for outages, not for a site that is never connected. |
 
 **Keep the box and the converter on separate addresses from the customer's own equipment where you can,** and
 never on a guest network.

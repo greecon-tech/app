@@ -15,8 +15,10 @@ designed to find that out cheaply and honestly, and to stop early if the answer 
 > Greecon watches your solar, your grid supply and your water tank and pump from one screen, and tells the right
 > person by email and text when something needs them, one message at night only if it cannot wait. It shows what
 > your own solar kept on site, at your own prices, from real readings. It only reads: it never switches anything,
-> and it is not a safety system, so the protection in your equipment stays as it is. Your data is yours, and you
-> can download all of it whenever you like.
+> and it is not a safety system, so the protection in your equipment stays as it is. Your data is yours: you can
+> download, whenever you like, every reading for the last 31 days, hourly averages for up to a year, your alerts,
+> your audit log and how your account is set up, and if you stop, Greecon also gives you every reading it holds, as
+> a file, on request.
 
 That is the offer. If a sentence is not on this page or in the claims table, do not say it.
 
@@ -60,31 +62,44 @@ reason they buy.** Quote it back to them at the order form.
 **Pitch, in this order:**
 
 1. *"You told me about [their failure]. The thing that would have told you is a small box and a screen."*
-2. *"The box reads your solar meter, your grid meter, your tank level and the pump. It reports to a screen only you and your
-   staff can see, and to the phone of whoever you choose."*
+2. *"The box reads your solar meter, your grid meter, your tank level and the pump. It reports to a screen that you and
+   the people you choose can sign in to, and to the phone of whoever you choose."*
 3. *"Most days it says nothing, apart from one message at half past seven: all fine, or something needs a look."*
-4. *"If the tank gets critically low or the pump runs dry, the first person is emailed at once. If nobody answers in ten
-   minutes, they are texted, and thirty minutes later the next person is. A tank that is only getting low is one email,
+4. *"If the tank gets critically low or, where there is a flow meter, the pump is running and no water is flowing, the
+   first person is emailed at once. If nobody has acknowledged it in the app within ten minutes, they are texted, and
+   thirty minutes after the alert began the next person is told too. A tank that is only getting low is one email,
    held until morning if it is night."*
 5. *"It only reads. It does not switch your pump or your inverter, and it is not a safety system. Your float switches and
    relief valves stay the protection."*
-6. *"Your data is yours. You can download every reading as a spreadsheet at any time."*
+6. *"Your data is yours. You can download, whenever you like, every reading for the last 31 days, hourly averages for
+   up to a year, your alerts, your audit log and how your account is set up. If you stop, we also give you every
+   reading we hold, as a file, on request."*
 7. *"We do it as a paid three-month trial. I come, an electrician fits the meters, it takes an afternoon, and at day 60
    we sit down and you decide against three things we write down today."*
 
 **The demo (always say "simulated" first: it is true, and it is what the screen's own label says).**
 
-Open `https://greecon-tech.github.io/app/` (no sign-in, always there), or for a meeting, sign in at
-`https://app.greecon.earth/login` as **Client login**, `demo@greecon.earth`, `demo123`.
+Open `https://greecon-tech.github.io/app/` (no sign-in, always there; it is a frozen picture), or for a meeting, sign
+in at `https://app.greecon.earth/login` as **Client login**, `demo@greecon.earth`, `demo123` (this one moves as the day
+goes). Both show three simulated sites, a farm, a water site and a solar-plus-battery site; there is no hotel in them.
+Minutes 7 and 9 are shown on another screen: see the note under the table.
 
 | Minute | Show | Say |
 |---|---|---|
 | 1 | **Overview**: one sentence and a word: Stable, Attention needed, Action required, Unknown | "This answers one question: is everything all right? Not twenty graphs. A site that stops reporting is *Unknown*, never 'fine'." |
-| 3 | **The energy picture** (moving dots from the sun to the site and the grid) | "This is measured at the meters, not guessed. It follows the sun on the demo; on your site it follows your roof." |
+| 3 | **The energy picture** (moving dots from the sun to the site and the grid) | "This is measured at the meters, not guessed. On the live demo it follows the sun; on your site it follows your roof." |
 | 4 | **What your solar kept on site**, with the price it uses | "From your own readings at your own price. If you have not given us a price, it shows kWh and says what it needs. We never show money we cannot back." |
-| 6 | **Alerts**: open one; **Acknowledge** | "Act now and Check today are the only two that reach a person. One alert per problem, however long it lasts." |
-| 7 | **Who is told**: the order, the test message, the log | "You choose the people and the order. You can see what was sent and when." |
-| 9 | **Reports**: the downloads | "Everything here is yours to take." |
+| 6 | **Alerts**: open one; **Acknowledge** (this works on the live demo only) | "Act now and Check today are the only two that reach a person. One alert per problem, however long it lasts." |
+| 7 | **Who is told** (on the Rehearsal client, see the note): the order, the test message, **What was sent** | "You choose the people and the order. You can see what was sent and when. Each person you list should also have a login of their own: pressing Acknowledge in the app is what stops the next message, and a phone number alone cannot do that." |
+| 9 | **Reports** (on the Rehearsal client, see the note): the downloads | "Everything here is yours to take." |
+
+**Minutes 7 and 9 are shown on the Rehearsal client, not on either demo.** The live demo's login is an **operator**,
+and an operator cannot open **Who is told** or **Reports**. The GitHub Pages demo cannot show them either: its main
+address is also an operator's view, and in its owner and administrator views those two pages hold only a few lines of
+explanation, because a frozen page cannot keep a list, send a message or make a file. So sign in with **Greecon team**
+and press **Open for setup** on your own **Rehearsal** client
+([02, section 13](02-project-manager-manual.md#13-rehearsal-the-whole-job-on-a-desk)), while its rehearsal site is still
+there (the readings download needs a site). Nobody should be on its list but you.
 
 Then stop talking. The first one to speak after "here is what the trial costs" is usually the owner.
 
@@ -98,7 +113,7 @@ From the claims table, in the words a seller needs. **A second person approves a
 | **Savings** | "It shows what your solar kept on site, at your prices, from real readings." After a full season and a written baseline: "[Y] kWh lower than the adjusted baseline, method [..]." | "saves up to 30%", "cuts your bill by a third", any percentage, any promise of money |
 | **AI** | "It follows plain rules your team sets and can read back." | "AI-powered", "intelligent", "self-learning", "predictive" |
 | **Compliance** | "Designed to support your records." | "NIS2 compliant", "GDPR certified", "certified", "CE marked" |
-| **Uptime** | "The box keeps reading when the internet is down, and sends what it kept in order when it returns, for about three days." | "100% uptime", "always on", any figure before six months of measurement |
+| **Uptime** | "The box keeps reading when the internet is down, and sends what it kept in order when it returns, for about three days, for a site of up to about thirteen devices." | "100% uptime", "always on", any figure before six months of measurement |
 | **Customers** | "We are installing the first few sites now." | Any count, logo or testimonial before there is a signed one |
 | **Support** | "We answer within four business hours, Monday to Saturday." | "24/7", "immediately", any promise nobody staffs |
 | **Control** | "Read-only first. Control only with your written agreement, and not yet." | "It can switch your pump", "automatic control" |
@@ -114,9 +129,9 @@ forgive a claim that turns out false.
 |---|---|
 | "We already have the inverter's app." | "That shows the inverter. Greecon shows the whole site: the grid, the solar, the water, and tells a person. It works with any inverter brand because it reads its own meter at the AC cable." |
 | "It is another monthly bill." | "It is EUR 40 a month for a site like yours, from the fourth month. The first three months you pay once, and you can stop at day 60. Ask me what one day without water costs you in July." |
-| "What if you disappear?" | "The meters and the box are standard parts, yours after the trial. Your data downloads as spreadsheets whenever you like. The meters keep working without us." |
+| "What if you disappear?" | "The meters and the box are standard parts, yours after the trial. You can download, without asking us and whenever you like, every reading for the last 31 days, hourly averages for up to a year, your alerts, your audit log and how your account is set up. The meters keep working without us." |
 | "Is it safe? Can it hurt the pump?" | "It cannot touch the pump. It only reads. Nothing in it can switch anything." |
-| "Who can see our data?" | "You and the people you add. Greecon's own team opens your account only to set it up, and that is written in your audit trail with their name." |
+| "Who can see our data?" | "You and the people you add. Greecon's team opens your account to set it up or to help, and each time is written in your audit trail under their own name. Its team can also see, without opening it, how your sites stand (state, alerts, box status, last reading) and who has a login. No other customer sees any of it." |
 | "Is it AI?" | "No. It follows plain rules and tells you what it saw." |
 | "We have no internet in the pump house." | "We fit a 4G router with a SIM; you pay the SIM at cost." |
 | "My electrician can fit meters." | "Yes, and the electrician fits ours. We do not replace them. We set it up, watch it, and tell you." |
@@ -132,10 +147,10 @@ forgive a claim that turns out false.
 |---|---|
 | **Pilot fee: EUR 250, once, at signing** | Survey, installation visit, setup, 90 days of monitoring and support, the morning message and alerts. The meters and the box are lent by Greecon during the pilot. |
 | **Read-only** | Nothing is switched or controlled. |
-| **Three written goals** (signed with the order form) | 1) Readings are current at least 95 percent of the time. 2) The owner opens the morning message on at least 5 days in 7. 3) At least one real event is caught and confirmed by a person. |
+| **Three written goals** (signed with the order form) | 1) Readings are current at least 95 percent of the time. 2) The owner reads the morning message on at least 5 days in 7, as the owner tells us at the meeting (Greecon does not track whether an email is opened). 3) At least one real event is caught and confirmed by a person. |
 | **Decision meeting on day 60** | Against the three goals. |
 | **If you continue** | You buy the hardware at cost (the list and price are in the order form; the pilot fee is credited against it). The monthly fee starts on day 91. |
-| **If you stop** | Greecon removes its equipment within 14 days at no charge. You keep a download of all your data. Nothing more is owed. |
+| **If you stop** | Greecon removes its equipment within 14 days at no charge. You can download, whenever you like, every reading for the last 31 days, hourly averages for up to a year, your alerts, your audit log and how your account is set up, and Greecon also gives you every reading it holds, as a file, on request. Nothing more is owed. |
 | **Extension** | One, of up to 30 days, only if the owner asks. No more. |
 
 **The monthly fee, from day 91, per site** (a *hypothesis* to be tested with the first five; record what each owner says):
@@ -184,7 +199,8 @@ Date:                [date]
 
 4. Three goals, agreed now:
    a) Readings are current for at least 95% of the pilot's time.
-   b) The customer opens the morning message on at least 5 days of 7.
+   b) The customer reads the morning message on at least 5 days of 7, as the customer confirms at the
+      day-60 meeting (Greecon does not track whether an email is opened).
    c) At least one real event is caught and confirmed by the customer.
    A decision meeting is held on day 60 to review them.
 
@@ -192,8 +208,10 @@ Date:                [date]
    is credited against it), and pays the monthly fee in Annex B from day 91. If it does not: Greecon removes its
    equipment within 14 days at no charge, and gives the customer a copy of all its data. Nothing more is owed.
 
-6. The customer's data is the customer's. It can download every reading, alert and its account's setup at any
-   time. Greecon uses it to run the service, and to improve it only in a form that does not name the customer.
+6. The customer's data is the customer's. At any time the customer can download, from the service, every reading
+   for the last 31 days, hourly averages for up to a year, its alerts, its audit log and the setup of its account.
+   If the customer stops, Greecon also gives it, on request, every reading Greecon holds for it, as a file. Greecon
+   uses the data to run the service, and to improve it only in a form that does not name the customer.
    [Processing terms: per the data processing agreement, to be attached.]
 
 7. Support. Greecon answers within four business hours, Monday to Saturday. It makes no promise of
@@ -236,15 +254,17 @@ or to commercial solar), not push harder.
 >
 > One small box and a few meters. An electrician fits them in an afternoon; nothing is switched or controlled.
 > A screen shows, in one sentence, whether everything is all right. One email at half past seven each morning says
-> so. If the tank gets critically low or the pump runs dry, the person you choose is emailed at once and texted ten
-> minutes later if nobody has answered, and then the next person. A tank that is only getting low is one email.
+> so. If the tank gets critically low or, where there is a flow meter, the pump runs dry, the person you choose is
+> emailed at once and texted ten minutes later if nobody has acknowledged it, and then the next person. A tank that
+> is only getting low is one email.
 >
-> It shows what your solar kept on site, at your own prices, from real readings. Your data is yours: download every
-> reading as a spreadsheet any time.
+> It shows what your solar kept on site, at your own prices, from real readings. Your data is yours: you can
+> download, whenever you like, every reading for the last 31 days, hourly averages for up to a year, your alerts,
+> your audit log and how your account is set up.
 >
 > **Three-month paid trial: EUR 250.** You decide on day 60 against three goals we write down together. If you stop,
-> we take our equipment away and you keep your data. Greecon watches your equipment and tells you; it is not a
-> safety system, and the protection in your equipment remains the safety layer.
+> we take our equipment away and, if you ask, give you every reading we hold, as a file. Greecon watches your
+> equipment and tells you; it is not a safety system, and the protection in your equipment remains the safety layer.
 >
 > Greecon Sh.p.k. · Durana Tech Park · info@greecon.earth · greecon-tech.github.io/app
 
@@ -268,9 +288,9 @@ or to commercial solar), not push harder.
 
 > Subject: Day 60: our meeting
 > Dear [name], we agreed to sit down on day 60. Here is what Greecon saw at [site]: [readings current N% of the time;
-> the morning message was opened on N of the last 14 days; the alerts that were raised and what happened]. Please bring
+> the morning message was sent on N of the last 14 days, and I will ask you on how many you read it; the alerts that were raised and what happened]. Please bring
 > [the person who decides]. We will go through the three goals together, then decide: continue, extend by up to 30
-> days, or stop and take everything away with your data.
+> days, or stop (we take our equipment away and give you every reading we hold).
 
 ## 11. Before the first signature
 

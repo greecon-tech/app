@@ -30,7 +30,7 @@ For a company operating a rooftop array, a ground-mounted plant or an agrivoltai
 
 1. Your Greecon project manager onboards your account and one site for each plant.
 2. Add each inverter, meter and battery controller and what it reports.
-3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it. Reading an inverter over Modbus is
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each person on the list should also have their own login with the Operator role, so that they can acknowledge an alert: see `00-overview.md`). Reading an inverter over Modbus is
    usually off by default and turning it on is your decision and your installer's: ask them first, and
    check what it does to your warranty.
 4. Set the limits that suit the plant: the battery's low level, and the smallest useful surplus if you

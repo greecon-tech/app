@@ -109,7 +109,7 @@ on the current host, so tiered retention is mandatory:
 
 | Tier | Keep | Note |
 |---|---|---|
-| On the box | At least 72 hours (the default buffer is 50,000 messages, about a day for a small site: size it) | Native rate |
+| On the box | About three days for a site of up to about thirteen devices (the buffer holds 60,000 messages; a larger site keeps fewer days: size it) | Native rate while the platform answers; one reading per point per minute while it waits |
 | Raw in the cloud | 30 days, at 60 seconds by default; 10 seconds only for control-relevant points | 1 second stays on the box except around an incident |
 | Five-minute rollup | 13 months | min, max, average, last, count, good count |
 | Hourly rollup | 10 years | |

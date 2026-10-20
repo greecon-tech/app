@@ -7,7 +7,7 @@ the screen and what each alert means.
 
 - **Shows soil and climate readings** per site: soil moisture, air temperature and humidity.
 - **Shows the water path**: tank level, flow and pressure for the pump and tank that feed irrigation,
-  and a pump alert if it runs with no flow.
+  and a pump alert if it runs with no flow (the box must read the pump's running state as well).
 - **Shows solar and battery readings**, if the farm has them.
 - **Tells you how old every reading is**, and says Unknown when a site has stopped sending.
 - **Tells you when irrigation is due, once you tell it what "due" means for each field.** The right
@@ -35,7 +35,7 @@ the screen and what each alert means.
 1. Your Greecon project manager onboards your account and a site for each physical location (a field and a
    greenhouse are usually two sites).
 2. Add each sensor or controller and what it reports, from the site's page.
-3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it. Until hardware is connected you can
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each person on the list should also have their own login with the Operator role, so that they can acknowledge an alert: see `00-overview.md`). Until hardware is connected you can
    set everything up and look at the screens with no live readings; the site reads **Unknown**.
 4. Set **Start irrigating below** on each soil sensor, and the tank's low and critical levels if the
    standard (35% and 15%) does not suit your tank. A starting value is a starting value: check it by

@@ -82,15 +82,17 @@ variables.
 `.up.railway.app`). Use it only to check that the API is alive, below. Then **Custom Domain → `api.greecon.earth`**:
 Railway shows a record to add to your DNS (step 5).
 
-**You should see:** after a minute or two, in the service's **Deployments → View logs**, lines ending with
-`Database is up to date.` or `Database updated: ...`, then `Nest application successfully started`. Also:
+**You should see:** after a minute or two, in the service's **Deployments → View logs**, a line such as
+`Database updated: 16 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
+date.`), then `Nest application successfully started`. Also, the first time:
 
 ```
-Administrator eridon.manuka@greecon.earth created from BOOTSTRAP_ADMIN_PASSWORD. Sign in, change the password in Settings, then remove both BOOTSTRAP_ADMIN variables.
+Password set for eridon.manuka@greecon.earth from BOOTSTRAP_ADMIN_PASSWORD. Sign in, change it in Settings, then remove both BOOTSTRAP_ADMIN variables.
 ```
 
-(or "Password set for ..." if the account already existed). Open `https://<the temporary address>/health` in a
-browser: it must show `"status":"OK"` and `"database":"connected"`.
+(On a database that never had your account the line says "Administrator ... created from BOOTSTRAP_ADMIN_PASSWORD"
+instead; either means it worked.) Open `https://<the temporary address>/health` in a browser: it must show
+`"status":"OK"` and `"database":"connected"`.
 
 **Warnings in the log are information, not failures.** The platform lists what is not set up yet (messages are
 off, and so on). The log line "The deployment's settings are not safe to start with" is a failure: it names
@@ -174,8 +176,10 @@ about USD 20 a month for 50,000. Nothing else changes.
 
 ## 8. Text messages (Twilio)
 
-Text messages are for **Act now** only: a tank nearly empty, a pump running dry. They are sent ten minutes
-after the email if nobody has answered it, and then to the next person on the list.
+Text messages are for **Act now** only: a tank nearly empty, a pump running with no water moving (where there
+is a flow meter). The first person is texted ten minutes after the email if nobody has acknowledged the alert (by
+pressing **Acknowledge** in Greecon: replying to the text does nothing), and the next person is emailed and texted
+thirty minutes after the alert began, and so on down the list.
 
 1. Sign up at twilio.com. Verify your own phone. Add about EUR 20 of credit (a text to Albania costs a few
    cents; check Twilio's price page for Albania).
@@ -201,7 +205,7 @@ after the email if nobody has answered it, and then to the next person on the li
 
 **If the text does not arrive:** Twilio's console shows each message and why it was refused (**Monitor →
 Logs → Messaging**). The commonest reasons are a number not written with its country code and a sender
-name a network does not accept. Greecon's own log under **Who is told** shows what Greecon asked Twilio to do.
+name a network does not accept. **What was sent**, under **Who is told**, shows what Greecon asked Twilio to do.
 
 **You can launch without texts.** Then only email carries Act now. Say so to customers, and do it quickly:
 texts are the reason a manager wakes up at night. The setup checklist will not let a site be commissioned
@@ -216,7 +220,7 @@ Greecon must hear that a customer's box has gone quiet before the customer does.
 3. Leave the morning message on. It is sent at 07:30, Albania time (change it under the list if you prefer).
 
 Each morning you get one email: "Greecon, Mon 19 Oct: Stable. All 3 sites are reporting and nothing needs
-doing." or "Attention needed. 1 of 3 sites needs a look." with the reason under each site. The same list is on
+doing." or "Attention needed. 1 of 3 sites need a look." with the reasons in the line for each site. The same list is on
 **Clients** under **Sites across clients**, worst first. The runbook ([05](05-runbooks.md)) says what to do.
 
 ## 10. The demo
@@ -229,9 +233,12 @@ the product with simulated data, one page per kind of user. To switch it on once
 to `main`, it publishes by itself. Use this for the link in an email.
 
 **The live one, for a meeting:** sign in at `https://app.greecon.earth/login` with **Client login**, email
-`demo@greecon.earth`, password `demo123`. It shows a simulated hotel, farm and water site that move as the day
-goes (the solar picture follows the sun). It holds nothing real, it can only look and try, and it cannot send
-anyone a message. The password is public on purpose; do not give it to a customer as their own login.
+`demo@greecon.earth`, password `demo123`. It shows three simulated sites, a farm, a water site and a
+solar-plus-battery site (there is no hotel in it), that move as the day goes (the solar picture follows the sun).
+It holds nothing real, it can only look and try, and it cannot send anyone a message. This login is an
+**operator**: it has no **Who is told** and no **Reports** page, so those two are shown on your own rehearsal
+client instead ([04, section 4](04-sales-kit.md#4-the-pitch-five-minutes-and-the-demo-ten)). The password is
+public on purpose; do not give it to a customer as their own login.
 
 ## 11. Watching it
 
@@ -270,9 +277,9 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 |---|---|---|
 | The API's log says "The deployment's settings are not safe to start with" | A setting is missing or weak | Read the line above it: it names the setting. Usually `JWT_SECRET` shorter than 32 characters. |
 | The web app shows an error on every page | The web app cannot reach the API | Check `GREECON_API_URL` on the **web** service, and that the API service is running |
-| Sign-in says "Invalid email or password" | Wrong password, or the account was turned off | Check the password manager. If it was lost: set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` again **only if the account has no password**; otherwise ask another owner to reset it, or see [05 Runbooks](05-runbooks.md), "Locked out". |
+| Sign-in says "Invalid email or password" | Wrong password, or the account was turned off | Check the password manager. If it was lost: set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` again **only if the account has no password**; otherwise ask another owner to reset it, or see [05 Runbooks, R14](05-runbooks.md#r14-when-the-founder-is-not-there) (its last point). |
 | Everyone is suddenly sent to the sign-in page | `JWT_SECRET` was changed, which signs everyone out | Nothing is broken. They sign in again. |
-| A page says the install command names a private address | `PUBLIC_API_URL` is missing | Set it (step 3), redeploy, then make a new code |
+| The install command on a site's setup page starts with `http://` and a private name instead of `https://api.greecon.earth` (the API's log also warns of it at start-up) | `PUBLIC_API_URL` is missing | Set it (step 3), redeploy, then make a new code |
 | Emails say "not sent: email is not set up" | `RESEND_API_KEY` is missing or the sender is wrong | Step 7. The API's log names the reason. |
 | Railway shows the service crashed and restarting | Something in the log | Open the logs and read the last red line. [05 Runbooks](05-runbooks.md), "The platform is down". |
 

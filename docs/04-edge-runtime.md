@@ -7,8 +7,9 @@ runs on it today is described in [14 Edge hardware deployment](14-edge-hardware-
 ## What exists
 
 - **Read** the site's devices over Modbus TCP, from a configuration the platform gives the box.
-- **Report** the readings to the platform in order, and keep them on disk for at least three days when the platform
-  cannot be reached, sending them when it can.
+- **Report** the readings to the platform in order, and keep them on disk for about three days (for a site of up to
+  about thirteen devices; a site with more devices keeps fewer days) when the platform cannot be reached, sending them
+  when it can.
 - **Say how it is:** a heartbeat with its version, its clock, its queue and how each device answered.
 - **Take fixes** from the platform, with a checksum, a trial run, and an automatic return to the previous version.
 - **Stay read-only.** There is no write path to any device.
@@ -35,7 +36,8 @@ people. A command is only ever **simulated**: its request, its safety checks and
 ## Messages
 
 The platform's readings contract is `TelemetryMessage` (`packages/shared`). A box sends them in batches to
-`POST /telemetry/ingest-batch` (up to a hundred, up to 400 KB). The topic names from the first design remain the
+`POST /telemetry/ingest-batch` (the box sends up to a hundred messages and 400 KB at a time; the platform accepts up
+to a hundred and 1 MB). The topic names from the first design remain the
 convention for the optional local-broker bridge (`MQTT_URL`) and for `apps/edge-simulator`, used in development:
 
 - `greecon/{tenantId}/{siteId}/telemetry/{deviceId}`

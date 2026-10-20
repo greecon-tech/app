@@ -38,7 +38,7 @@ a form with a plain-words check beside it, and so that the platform tells you wh
 |---|---|
 | **Your login** | Your own, from the founder. Sign in at `https://app.greecon.earth/login` and choose **Greecon team**. You are asked for a password of your own the first time. Never share it. |
 | **Clients** (the console) | Where you see requests, onboard a customer, open their account to set it up, and see every site's state in **Sites across clients**. |
-| **The setup list** | One page per site (`Set up <site name>`) that shows ten steps, what is done, what is next, and what to do. Most steps turn **Done** by themselves when the platform sees them work. A few only a person can check. |
+| **The setup list** | One page per site (`Set up <site name>`) that shows up to ten steps (a step that does not apply to the site is left out), what is done, what is next, and what to do. Most steps turn **Done** by themselves when the platform sees them work. A few only a person can check. |
 | **The box** | A small computer at the site. It reads the meters and sensors and reports to Greecon. One pasted line installs it. |
 | **The converter** | A small unit that puts the meters' cable (RS-485) on the network so that the box can reach them. |
 | **The handover sheet** | One printable page per site: where everything is, who is told, who commissioned it and when. |
@@ -67,7 +67,7 @@ are needed to survey; do not open anything.
 
 **Ask, in this order** (the answers decide what is measured and what it costs):
 
-1. Who decides, and who gets called at night? (Names, mobile numbers, emails: these become **Who is told**.)
+1. Who decides, and who gets called at night? (Names, mobile numbers, emails: these become **Who is told**. Each of them also needs a login of their own, so that they can acknowledge an alert, and a login needs an email address: see [7.7](#7-the-setup-list-step-by-step).)
 2. What went wrong in the last twelve months that cost money or a guest? (Write it in their words. It is the reason they buy.)
 3. The last twelve electricity bills (price per kWh, kWh bought each month) and the water bills. (The platform
    shows what solar kept on site at *their* price; without a price it shows kWh only.)
@@ -116,26 +116,32 @@ You can do all of this before you set foot on site, and it makes the install day
 
 1. **Sign in** with **Greecon team**. You land on **Clients**.
 2. **If the customer asked through the web page:** their request is listed under **Requests**. Click **Onboard**
-   (it fills in the form from their request). **Otherwise,** use **Onboard a new client** (below Requests):
-   company name, owner's name, owner's email. Click **Onboard client**.
+   (it fills in the form from their request). **Otherwise,** use **Onboard a new client** (below Requests and
+   **Sites across clients**): company name, owner's name, owner's email. Click **Onboard client**.
 3. A box appears: **Client onboarded: save this password now.** That is the owner's temporary password. It is
    shown **once**. Write it on the handover page, or tell it to the owner by phone. Do not send it by email.
    The owner signs in at `https://app.greecon.earth/login` with **Client login**, and chooses a password of their
    own straight away.
    - If a message says someone already has an account with that email, the person is already a customer. Do not
-     use a different address to get round it: add the new site to the customer they already have.
+     use a different address to get round it: add the new site to the customer they already have. (The rehearsal
+     in [section 13](#13-rehearsal-the-whole-job-on-a-desk) is the one exception.)
 4. In the customer's row, click **Open for setup**. A banner appears at the top: *You are in <customer> as Greecon
    staff, setting it up.* Everything you do from now is recorded under your own name in their audit trail. You
    cannot add people to their account or reset their passwords while inside; their owner does that.
-5. You land on **Admin**. Under **New site from a template** choose **What kind of site**:
+   **The setup session lasts four hours.** After that the page sends you to the sign-in page: sign in again with
+   **Greecon team** and press **Open for setup** again. What you saved is still there; only what you were in the
+   middle of typing is lost. On install day, open it again when you start commissioning.
+5. You land on **Admin**. Scroll to the end of the **Sites** section (below the list of sites): the form there
+   makes a site from a template. Choose **What kind of site**:
    - **Hotel or guesthouse**: water tank and pump, solar, grid. The usual first site.
    - **Solar plant with grid connection**: solar and grid, with an optional battery and load meter.
    - **Farm or greenhouse with irrigation**: soil probe and weather, with the water supply behind it.
    - **Water tank and pump station**: tank, pump and the pump's electricity.
    - **Empty site**: nothing assumed. Use only when none of the above fits.
 
-   The page lists what the template will contain. Enter **Site name** and **Where it is**, and click
-   **Create the site and start setting it up**.
+   The page lists what the template will contain. Enter **Site name** and **Where it is**, check **Currency of
+   the bills** (it starts as ALL) and **The site's own clock** (Europe/Tirane), and click **Create the site and
+   start setting it up**.
 6. You land on **Set up <site>**. It says `0 of N steps done`, and highlights what comes next: **Install the box**.
 7. Click **Add the box and get its install command**. A line appears, beginning `curl -fsSL https://api...`
    ending in a code like `GRC-XXXX-XXXX-XXXX`. **Copy it** (there is a copy button). It is shown once. The
@@ -143,8 +149,8 @@ You can do all of this before you set foot on site, and it makes the install day
    - The code is the box's key. Anyone with the line can install a box as this site until it is used or expires.
      Treat it like a password: not in email or chat; paste it straight into the box.
    - Lost it, or the seven days passed? On the same step, press **Install a box, or replace this one**. It asks you to
-     confirm, then shows a new line. A new code replaces the old one, and a box already installed with the old one
-     stops working.
+     confirm, then shows a new line. A new code replaces the old one (the old line no longer works), and the box
+     that uses the new line takes the place of the box now installed, which stops working at that moment.
 
 ## 5. Prepare the kit at the office
 
@@ -155,9 +161,11 @@ Do the install of the box's software at the office, on your desk, so that the si
    internet), one user, a strong password, and the time zone set to Europe/Tirane.
    ([03](03-hardware-and-wiring.md) says which box to buy.)
 2. Connect the box to your office network and open a terminal on it (a keyboard and screen, or SSH).
-3. Paste the install line from step 4.7. It begins with `curl` and ends with the code. **Paste it exactly.** It does
-   about a dozen things and tells you each one as it goes: checks the box, checks it can reach Greecon, checks the
-   clock, installs the software and gives the box its own credential. It finishes with:
+3. Paste the install line from step 4.7. It begins with `curl` and ends with the code. **Paste it exactly.** It runs
+   in seven numbered steps and tells you each one as it goes: checking the box (and that it can reach Greecon and
+   agrees with it about the time), installing Node.js, making the places the software uses, fetching and checking
+   the Greecon software, giving the box its own credential, starting the service, and waiting to hear that Greecon
+   can see the box. It finishes with:
 
    ```
    Done. Greecon can see this box. On the site's setup page, give each device its address;
@@ -169,9 +177,16 @@ Do the install of the box's software at the office, on your desk, so that the si
    - The box keeps its credential when it is moved. Unplug it, carry it to the site, plug it in: it reports from
      the new place without anything being typed again.
 
-**If the line stops with `STOP:`** it says what to check and how. Fix it and run the same line again: it is safe
-to repeat. The commonest are: the box cannot reach Greecon (no internet, or a firewall that blocks outgoing
-HTTPS on port 443), a clock that is wrong, or a code already used or older than seven days.
+**If the line stops with `STOP:`** it says what to check and how. If it stopped before step 5, **Giving this box its
+credential**, fix the cause and run the same line again: the code has not been used yet. From step 5 on the code is
+used up (it works once), and the same line would stop with "Greecon did not give the software to this box". Then
+run the line again **with no code at the end**: `curl -fsSL https://api.greecon.earth/edge/install.sh | sudo bash -s --`.
+That repairs the box and keeps its credential. If it answers "This box has no code and has not been installed
+before", the box never got its credential: press **Install a box, or replace this one** and use the new line.
+The commonest stops are: the box cannot reach Greecon (no internet, a firewall that blocks outgoing HTTPS on port
+443, or a clock so far out that secure connections fail), or a code already used or older than seven days. A clock
+that is only minutes out does not stop the install: it prints a WARNING, and the setup page later says "its clock
+is N minutes fast".
 
 ## 6. Install day
 
@@ -206,12 +221,14 @@ showing the address and speed, and the converter's settings page.
 ## 7. The setup list, step by step
 
 Open the site's setup page. Each step is a card. A step opens to show its detail, and stays as you leave it.
-A step is **Done** (a tick and the word), **Next**, **Waiting** for another step, or needs **Attention**. The
-platform works most of them out by itself; you only press buttons for what a person must check.
+A step is **Done**, **To do**, **Waiting** for another step, or **Needs attention**; the banner at the top, **Do
+next: ...**, names the step to do next. The platform works most of them out by itself; you only press buttons for
+what a person must check.
 
 **7.1 Prices from the customer's bills** *(optional, but it is what turns kWh into euros)*
 
-Open **Prices and baseline** on the site's page (the step has the link). Enter: currency; the electricity price
+In this step, open **Enter prices and baseline** (once something is entered it is called **Prices and baseline**; the
+same form is on the site's page). Enter: currency; the electricity price
 per kWh from the latest bill; what is paid for energy sent to the grid (blank if nothing); the water price per m³;
 "a typical month before": the kWh bought and the m³ of water from last year's bills (this is what the platform
 compares with; **without it no comparison is shown**, which is correct); where those numbers came from; whether
@@ -221,19 +238,19 @@ the site **cannot send energy to the grid** (tick it if the plant is zero-export
 **7.2 Install the box.** Done by itself once the box reports ([step 5](#5-prepare-the-kit-at-the-office)).
 If the box says **Late** or **Offline**, it is not reaching Greecon: see [section 12](#12-when-something-is-wrong).
 
-**7.3 Where each device is on the network.** One small form per device ("Address of Grid meter"): **IP address**
-(the converter's address), **Port** (502 unless the converter's page says otherwise) and **Unit number** (the
-number you gave the meter). Meters behind **one converter share its IP address and differ only by unit number.**
-**Save.** A wrong address is refused in words (`The address must be an IP address such as 192.168.1.50`). The
-box picks up a change **within a minute**.
+**7.3 Where each device is on the network.** One small form under each device's name (for example **Grid meter**):
+**IP address** (the converter's address), **Port** (502 unless the converter's page says otherwise) and **Unit
+number** (the number you gave the meter, 0 to 247). Meters behind **one converter share its IP address and differ
+only by unit number.** **Save.** A wrong address is refused in words (`The address must be an IP address such as
+192.168.1.50, or a host name.`). The box picks up a change **within a minute**.
 
 **7.4 Which register holds which reading.**
 
 - For equipment Greecon knows (the Eastron meters in the template), the registers are already filled in.
   Check them against the meter's manual only if the reading looks wrong.
-- For anything else (the water input module, the soil probe, a battery): one form per reading ("Register for
-  Tank level"). Open it and fill:
-  - **Register kind**: **Input** for a manual's 3xxxx, **Holding** for 4xxxx.
+- For anything else (the water input module, the soil probe, a battery): one form per reading. Under the
+  reading's name (for example **Tank level**) press **Choose the register**, and fill:
+  - **Register kind**: **Input** for a manual's 3xxxx, **Holding** for 4xxxx (the form starts on Holding).
   - **Address**: counted from zero, so a manual's **30053 is address 52**, and 40001 is address 0.
   - **Kind of number** and, for two-register numbers, **which half comes first** (the usual is the high half first).
   - **How it becomes the reading**: **Multiply and add** (a meter that reports watts for a reading in kW:
@@ -257,11 +274,12 @@ box picks up a change **within a minute**.
   prints the raw numbers and the value. If it prints `Could not read`, the problem is the wiring or the
   settings, not Greecon.
 - A reading the site does not have (a flow meter that was not fitted; a battery that does not exist): go to
-  **Sites**, open the site, find it under **Devices** or **Readings**, and **Delete** it. A reading with no
-  register holds the list at this step.
+  **Sites**, open the site, find it under **Equipment**, in **Devices** or **Reading points**, and press
+  **Delete**. A reading with no register holds the list at this step.
 
-**7.5 Every device answers the box.** Done by itself. Each device shows **ok** or **not ok**, and for a failure
-the reason in words ("no answer from 192.168.1.50:502 (unit 2)"). A wrong **unit number** is the commonest cause,
+**7.5 Every device answers the box.** Done by itself. Each device shows **Done** ("Answering (N readings)") or
+**Needs attention** with the reason in words ("no answer from 192.168.1.50:502 (unit 2)"); on the box,
+`greecon-edge status` lists each device as **ok** or **NOT OK**. A wrong **unit number** is the commonest cause,
 then a wrong **speed or parity** at the converter, then **A and B swapped** on the meter cable.
 
 **7.6 Readings arrive and look right.** Done by itself when each reading has arrived, in a believable range. A
@@ -273,19 +291,30 @@ register or a wiring fault.
 - **Add a person** for each name from the survey, **in the order they should be told.** Each needs an email, a
   mobile number **with its country code** (`+355 69 123 4567`), or both. The first person hears first.
 - **Save the list.** Then, beside each person, **Send a test message.** It says what happened to the email and
-  to the text ("Accepted for delivery to +355 ••• ••• 567. Ask Besa whether it arrived.").
+  to the text ("Accepted for delivery to +355 ••• ••• 567. Ask Besa whether it arrived."). Tests are limited for the
+  whole account: six an hour (a person with both an email and a number uses two of the twelve test messages
+  allowed). If you reach the limit the page says "Test messages are limited to 6 an hour. Try again later."
 - **Ask each person** whether it arrived: in the inbox, not in spam; on the phone.
+- **Check that each person on the list can also acknowledge.** Only a person who can sign in can press
+  **Acknowledge** on the **Alerts** page, and pressing it is what stops the chain of messages. Replying to an email
+  or a text does not, and a person who has only a phone number has no login. So **everyone on the list should also
+  have their own login with the Operator role**: open **Admin** and look under the people. If someone has none, the
+  customer's owner adds them with **Create user** (a Greecon support session cannot add people), and the new
+  person is given a temporary password, shown once. An Owner or an Administrator can acknowledge too; a Viewer or
+  an Auditor cannot.
 - Back on the setup page, write what you saw if you like, and press **I checked this.** It is greyed out until the
   list has someone on it and a test has been sent, because a site nobody is told about must not be commissioned.
 
 How alerts reach people, for the owner (say this at handover, in these words): **Act now** goes by email at once
-and by text ten minutes later if nobody has acknowledged it, then to the next person after thirty minutes.
-**Check today** is one email, held until morning if it is night. Beyond those, three short notes only: one to the people
-who were told when somebody **acknowledges** the alert (who took it), one when the problem has stayed clear for 15
-minutes (**Resolved**), and one **morning message** at 07:30 saying whether everything is all right. Quiet hours
-(22:00 to 07:00) hold everything except Act now.
+and by text ten minutes later if nobody has acknowledged it; thirty minutes after the alert began, the next person
+is told by email and text, and so on down the list. Acknowledging means pressing **Acknowledge** on the **Alerts**
+page, so each person on the list needs a login of their own (the Operator role is enough). **Check today** is one
+email, held until morning if it is night. Beyond those, three short notes only: one to the people who were told
+when somebody **acknowledges** the alert (who took it), one when the problem has stayed clear for 15 minutes
+(**Resolved**), and one **morning message** at 07:30 saying whether everything is all right. Quiet hours (22:00 to
+07:00) hold everything except Act now.
 
-**7.8 Grid meter direction checked** *(only on sites with a grid meter and solar)*. Greecon cannot see which way
+**7.8 Grid meter direction checked** *(only on sites with a grid meter)*. Greecon cannot see which way
 the meter's clamps point. A reversed clamp swaps what the site buys with what it sells, and every figure with it.
 **With the sun down or the solar switched off, switch on a known load** (a kettle or a heater). **Grid import must
 go up.** If **Grid export** goes up, the clamps are the wrong way round: the electrician turns them (with the lock-out
@@ -293,9 +322,14 @@ on), you check again. Then press **I checked this**, with a note of what you saw
 
 **7.9 Alert limits agreed with the customer.** The step lists each reading that has limits, with what applies. The
 standard ones: tank **Critical below 15 percent** (an Act now alert), **Low below 35 percent** (a Check today
-alert); battery **Low below 25 percent**. Other limits have no standard value, and the platform then says
-nothing rather than guess (irrigation advice, solar surplus, "no flow at or below"). **Go through them with the
-customer.** Change any that do not suit the site on the site's page (**Alert limits**), then press **I checked this.**
+alert); pump **No flow at or below 0.2 litres a minute** (an Act now alert once it has held for 30 seconds, raised
+only when the box reads both a flow and the pump's running state); battery **Low below 25 percent**. Irrigation
+advice and solar surplus have no standard value, and the platform says nothing about them rather than guess.
+**Go through them with the customer.** To change one, open the **Standard** drop-down beside the reading in this
+step (it says **1 set**, **2 set** once changed), type the numbers, press **Save limits**, and when they are agreed
+press **I checked this.** The same drop-down is in the **Limits** column under **Equipment**, **Reading points** on
+the site's page. If the pump's running contact reads the wrong way round, the no-flow alert opens while the pump is
+stopped: the "Pump running" check in [section 9](#9-commissioning-checks-by-kind-of-site) finds that.
 Agree numbers the customer would act on: an alert nobody acts on trains people to ignore the next.
 
 **7.10 Commissioned.** Greyed out until everything above is done. Then it says: *On site, compare what Greecon
@@ -335,12 +369,14 @@ running from its input. Prices (7.1) so that "your solar kept N kWh on site, wor
 can be said.
 
 **Agree with the owner:** the tank limits (the standard 15 and 35 percent are a start: a tank that feeds a
-fifty-room hotel on a hot day should alert earlier), who is told for water and who for electricity, and what
-"Act now" at 02:00 means for them.
+fifty-room hotel on a hot day should alert earlier), the no-flow level if the pump normally runs at a trickle (the
+standard is 0.2 litres a minute), who is told for water and who for electricity, and what "Act now" at 02:00 means
+for them.
 
 **Typical problems:** the solar meter reading zero at midday (a closed clamp on the wrong cable, or the inverter
 is zero-export limited); the level reading wrong (a vented cable blocked, or the transmitter not at the tank's
-bottom); the pump-running contact inverted (reads running when stopped).
+bottom); the pump-running contact inverted (reads running when stopped), which also opens the no-flow alert, an Act
+now, while the pump is stopped ([7.9](#7-the-setup-list-step-by-step)).
 
 ### B. Solar plant with grid connection (with an optional battery)
 
@@ -407,20 +443,21 @@ Compare, in this order, and write the pair of numbers on the handover.
 | **4 to 20 mA channels** | With a loop calibrator, send 4, 12 and 20 mA | Reading at the bottom, the middle and the top |
 | **A test message** | Each person on the list | Arrived |
 | **Power cut** | Unplug the box for 30 seconds, plug it in | Back reporting within 3 minutes, and the box says nothing about readings lost |
-| **Internet cut** *(the first install, and any time the box or its software is new)* | Pull the box's network cable for ten minutes, then plug it back | `greecon-edge status` shows a queue while it is out, and a few minutes after it returns the queue is empty and the readings from the gap are in the downloads. **Write the result down: it is the evidence for the statement that the box keeps its readings.** |
+| **Internet cut** *(the first install, and any time the box or its software is new)* | Cut **only the site's internet** for ten minutes: unplug the router's uplink cable (the one that goes to the wall or the modem), or take the SIM out of the cellular router. **Leave the box and the converter plugged into the router**: if the box cannot reach the converter it reads nothing, and there is nothing to test. Then restore it | `greecon-edge status` shows a queue while it is out, and a few minutes after it returns the queue is empty and the readings from the gap are in the downloads. **Write the result down: it is the evidence for the statement that the box keeps its readings.** |
 
 Do not **start, stop or open** any equipment yourself. The owner's own person does, because they know what else it affects.
 
 ## 10. Handover
 
-1. On the setup page open **Open the handover sheet**. Check it, and print it (the **Print** button hides the menus).
+1. On the setup page open **Open the handover sheet**. Check it, and print it (**Print or save as PDF**; the printed page leaves out the menus).
    It names the customer and site, says where each device is (address, unit number, registers), who is told and
    how to reach them, what was commissioned and by whom, and how to reach Greecon (`info@greecon.earth`).
 2. Show the owner, in ten minutes, in this order: the **Overview** (is everything all right, in one sentence);
    the **energy flow** moving from the solar to the site and the grid; **what the solar kept on site** this month
-   (and the prices it uses); **Who is told** and a live **test message** arriving on their phone; **Reports**
-   where **their data is theirs**: a file of every reading, the alerts and the account's setup can be downloaded
-   whenever they want.
+   (and the prices it uses); **Who is told** and a live **test message** arriving on their phone (and that each person on the list has a login of their own, so that they can acknowledge an alert); **Reports**
+   where **their data is theirs**: every reading for the last 31 days, hourly averages for up to a year, the
+   alerts, the audit log and how the account is set up can be downloaded whenever they want (and if they stop, they
+   can ask Greecon for every reading it holds, as a file).
 3. Say: *Greecon watches your equipment and tells you. The protection built into your equipment remains the
    safety layer. You will get one message each morning. If there is nothing to do, it says so.*
 4. Leave: the printed sheet (signed), the box's label, a card with `info@greecon.earth` and your phone.
@@ -436,7 +473,7 @@ Do not **start, stop or open** any equipment yourself. The owner's own person do
 | **Day 7** | Sit with the owner for 15 minutes: **was every alert useful? what would they change?** Adjust limits. | Alert count at most one a day; every one with a clear action |
 | **Every morning** | The morning check email and the **Clients** page ([05](05-runbooks.md)) | A silent box, or a site that needs a look |
 | **Day 30** | Short call; ask what they have done because of Greecon | One thing, in their words, for the sales story |
-| **Day 60** | The decision meeting, against the three written goals: data current at least 95 percent of the time; the owner opened the morning message on at least 5 days in 7; at least one real event caught | Convert, extend by up to 30 days once, or remove |
+| **Day 60** | The decision meeting, against the three written goals: data current at least 95 percent of the time; the owner says they read the morning message on at least 5 days in 7 (Greecon does not track opens: ask, and write the answer down); at least one real event caught | Convert, extend by up to 30 days once, or remove |
 | **Day 90** | Convert (order hardware at the agreed price; the monthly fee starts at day 91) or take the kit away within 14 days | Data exported to the customer either way |
 
 ## 12. When something is wrong
@@ -445,14 +482,14 @@ Short answers; the longer ones are in [05 Runbooks](05-runbooks.md).
 
 | What you see | Likely cause | What to do |
 |---|---|---|
-| **The install line stops with `STOP:`** | The sentence says: no internet, wrong clock, code used or expired | Do what it says; run the same line again |
+| **The install line stops with `STOP:`** | The sentence says: no internet (or a firewall, or a clock far out), code used or expired | Do what it says. Before step 5 run the same line again; after it, run the line with no code at the end ([section 5](#5-prepare-the-kit-at-the-office)) |
 | **The box says Offline** | Power, network cable, or the site's internet is down | Is the box's light on? Is the router up? On the box: `greecon-edge status` and `journalctl -u greecon-edge -n 50 --no-pager` |
-| **A device says not ok** | Unit number, speed/parity, A/B swapped, converter not in gateway mode, wrong IP | `greecon-edge modbus-test` against the device; check each in that order |
+| **A device needs attention** (on the box: NOT OK) | Unit number, speed/parity, A/B swapped, converter not in gateway mode, wrong IP | `greecon-edge modbus-test` against the device; check each in that order |
 | **A reading is zero or constant** | A wrong register, the wrong register kind (input vs holding), a clamp on the wrong cable | `modbus-test` raw numbers against the manual's table |
 | **A reading is ten or a thousand times too big or small** | A wrong scale (W against kW), or the 4 to 20 mA conversion's bottom or top | Re-enter the conversion; check with the calibrator |
 | **Import and export are swapped** | The clamps are the wrong way round | Electrician turns them; repeat 7.8 |
 | **The clock is out** | The box has no time service | `timedatectl set-ntp true`; the setup page names it ("its clock is N minutes fast") |
-| **The test message did not arrive** | A wrong address, spam, or the number without its country code | Check the log under **Who is told** (it shows what happened); try the other way |
+| **The test message did not arrive** | A wrong address, spam, or the number without its country code | Check **What was sent** under **Who is told** (it shows what happened); try the other way |
 | **The test email arrived in spam** | The sender is new to that mail provider | Mark it not spam; ask them to add `alerts@greecon.earth` to contacts |
 | **A reading went Unknown after a while** | The meter or the converter lost power or the cable came loose | The setup page says which device and why |
 
@@ -466,8 +503,10 @@ needs no hardware except the box (or a spare computer running Debian, Ubuntu or 
    (input registers 52 and 12), and four water readings (registers 0 to 3). Leave it running.
    - To rehearse a plant that exports: `node scripts/pretend-meter.mjs --watts -1800`. To rehearse a low tank:
      `--tank 12`.
-2. In Greecon, onboard a client named **Rehearsal** (use your own address as the owner), open it for setup, and
-   make a site from the **Hotel or guesthouse** template.
+2. In Greecon, onboard a client named **Rehearsal**, open it for setup, and make a site from the **Hotel or
+   guesthouse** template. As the owner use **a second address of your own** (a plus-address such as
+   `you+rehearsal@yourmail.example`, if your mail allows it): your own team address already has an account, an
+   address can have only one, and Greecon refuses it. This is the one case where a different address is right.
 3. Add the box, copy the line, and paste it on the box ([section 5](#5-prepare-the-kit-at-the-office)). Watch **Install the box**
    turn **Done**.
 4. Give each device the **laptop's address**, **port 5020**, and **units 1, 2 and 3** (grid meter 1, solar meter 2,
@@ -483,8 +522,11 @@ needs no hardware except the box (or a spare computer running Debian, Ubuntu or 
    minutes later unless you **Acknowledge** it on the **Alerts** page, which then tells the people who were
    told who took it.
 7. Print the handover sheet. Download the readings from **Reports**. Open the file in a spreadsheet.
-8. Delete the rehearsal client's site when finished (or suspend the client from **Clients**) so that it does not
-   appear in the morning check.
+8. When finished, remove the rehearsal site's devices and then the site (**Admin**, **Sites**: a site that still has
+   devices cannot be deleted), or suspend the client from **Clients**, so that it does not appear in the morning
+   check. If you will use the Rehearsal client to show **Who is told** and **Reports** in a sales demonstration
+   ([04, section 4](04-sales-kit.md#4-the-pitch-five-minutes-and-the-demo-ten)), keep it and its site until then, and
+   start the pretend meter before the meeting: with the meter stopped the site shows as out of date.
 
 **If a step in this manual does not match what you see, fix the manual** (it is a file in `docs/launch/`), or
 tell the founder. It is meant to be corrected by the person who uses it.

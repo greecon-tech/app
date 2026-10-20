@@ -20,7 +20,7 @@ turn it into the reading). Both are typed by a person on the site's setup page, 
 }
 ```
 
-**Connection.** `host` is an IP address or a host name; `port` 1 to 65535 (502 usually); `unitId` 1 to 247. Meters behind one
+**Connection.** `host` is an IP address or a host name; `port` 1 to 65535 (502 usually); `unitId` 0 to 247. Meters behind one
 converter share its host and port and differ only by unit ID.
 
 **Source.**

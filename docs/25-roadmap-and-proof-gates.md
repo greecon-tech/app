@@ -88,8 +88,8 @@ it is not optional: it is desk research, not expert-reviewed.
 
 Design against "pilot purgatory" (a 2017 survey found 60% of IoT initiatives stall at the proof of
 concept): paid from day one for 90 days, with price and conversion in the order form; three written
-success criteria before installation (data current at least 95% of the time; the owner opens the daily
-message 5 days of 7; at least one real event caught and confirmed); a named person with signing
+success criteria before installation (data current at least 95% of the time; the owner reads the daily
+message 5 days of 7, as the owner says: email opens are not tracked; at least one real event caught and confirmed); a named person with signing
 authority; read-only, no actuation; a decision meeting fixed for day 60; the hardware stays Greecon's
 until conversion; no free extension beyond 30 days. Off-the-shelf industrial PC and standard Modbus
 devices, no custom hardware; installation by an electrician under the customer's lock-out procedure.

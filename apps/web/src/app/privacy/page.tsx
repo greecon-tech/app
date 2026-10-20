@@ -41,8 +41,8 @@ export default function PrivacyPage() {
 
       <h2>Who sees it</h2>
       <p>
-        The people in your own account, by the roles it gives them. Greecon&apos;s team opens your account only to set it up or to help, and each time is written in your audit log under their own name. No
-        other customer sees any of it.
+        The people in your own account, by the roles it gives them. Greecon&apos;s team opens your account to set it up or to help, and each time is written in your audit log under their own name. Its team can
+        also see, without opening it, how your sites stand (state, alerts, box status, last reading) and who has a login. No other customer sees any of it.
       </p>
 
       <h2>Who handles it for Greecon</h2>
@@ -53,8 +53,9 @@ export default function PrivacyPage() {
 
       <h2>How long, and how to leave</h2>
       <p>
-        Readings and records are kept while you are a customer. You can download all of your data at any time from <strong>Reports</strong>. When you leave, and have your copy, you can ask in writing
-        for your account and everything in it to be deleted. Copies in backups disappear when the backups expire, which is within weeks.
+        Readings and records are kept while you are a customer. You can download, whenever you like, from <strong>Reports</strong>: every reading for the last 31 days, hourly averages for up to a year, your
+        alerts, your audit log and how your account is set up. If you stop, Greecon also gives you every reading it holds, as a file, on request. When you have your copy, you can ask in writing for your
+        account and everything in it to be deleted. Copies in backups disappear when the backups expire, which is within weeks.
       </p>
 
       <h2>Your rights</h2>

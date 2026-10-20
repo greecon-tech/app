@@ -13,9 +13,10 @@ date, a sensor reporting bad data), raises an alert for each, and computes one a
 Attention needed, Action required or Unknown.
 
 Limits that vary from site to site are yours to set, per reading, from the site's page: a tank's critical
-and low levels, a battery's low charge, how long a reading may go without renewal before it is shown as
-out of date, and, for soil moisture and solar surplus, the value at which irrigation is due or a surplus is
-useful (with no setting, the platform says nothing).
+and low levels, a battery's low charge, the flow at or below which a running pump raises the no-flow alert
+(standard 0.2 litres a minute), how long a reading may go without renewal before it is shown as out of date,
+and, for soil moisture and solar surplus, the value at which irrigation is due or a surplus is useful (with no
+setting, the platform says nothing).
 
 ## What it does not do yet
 
@@ -24,14 +25,16 @@ useful (with no setting, the platform says nothing).
 - It does not control anything. Commands are simulations and the screen says so.
 - It sends email, and text messages for Act now only (see `00-overview.md`). It does not phone anyone and does not use WhatsApp or Viber.
 - It is not a safety system and does not replace hard-wired protection.
-- It keeps no retention rule yet: readings are kept until the account is deleted on request. You can download
-  everything whenever you like (**Reports**), and ask in writing for it to be deleted.
+- It keeps no retention rule yet: readings are kept until the account is deleted on request. You can download,
+  whenever you like (**Reports**), every reading for the last 31 days, hourly averages for up to a year, your
+  alerts, your audit log and how your account is set up. If you stop, Greecon also gives you every reading it
+  holds, as a file, on request, and you can ask in writing for the account and everything in it to be deleted.
 
 ## Setup
 
 1. Your Greecon project manager onboards your account and a site for each physical location.
 2. Add each device and the readings it reports.
-3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it.
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each person on the list should also have their own login with the Operator role, so that they can acknowledge an alert: see `00-overview.md`).
 4. Set the limits that suit your equipment.
 5. Use the Overview as your daily check, and Monitoring (under Sites) when you want every reading.
 

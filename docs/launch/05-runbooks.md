@@ -45,11 +45,11 @@ message says readings are out of date.
 **Check, in this order:**
 
 1. **Is the whole site offline?** Phone the owner or manager. *"Is the power on in the plant room? Is the router's light on?"* A power cut at the site is the commonest cause, and ends by itself.
-2. **Is it the site's internet?** If they have other internet things down, it is the router or the line. Ask them to restart the router. (The box keeps up to three days of readings and sends them when the internet returns. **Nothing is lost.**)
+2. **Is it the site's internet?** If they have other internet things down, it is the router or the line. Ask them to restart the router. (The box keeps about three days of readings, for a site of up to about thirteen devices, and sends them when the internet returns. **Nothing is lost** if it returns within that time.)
 3. **Is it the box?** If power and internet are fine: on the box (keyboard and screen, or SSH on the site's network): `greecon-edge status` and `journalctl -u greecon-edge -n 50 --no-pager`. Read the last lines: they say what is wrong (cannot reach Greecon, a clock far out, the credential refused).
 4. **Is it Greecon?** If every customer's box is offline at once, the platform is down: R7.
 
-**Fix:** restart the service `sudo systemctl restart greecon-edge`; if the clock is out `sudo timedatectl set-ntp true`; if the credential was refused (`status 401`), make a new code: on the site's setup page, **Install a box, or replace this one**, then run the new line on the box. A box that has been off for hours reports in again by itself.
+**Fix:** restart the service `sudo systemctl restart greecon-edge`; if the clock is out `sudo timedatectl set-ntp true`; if the box's log says *the platform does not recognise this box's credential*, make a new code: on the site's setup page, **Install a box, or replace this one**, then run the new line on the box. A box that has been off for hours reports in again by itself.
 
 **Tell the customer:** what you saw and when, what you did, what they need to do. If nothing was lost, say so.
 
@@ -57,7 +57,7 @@ message says readings are out of date.
 
 ## R2. The box is online but a site has no readings, or a device "does not answer"
 
-**You see:** the box is **Online** and the site is **Attention needed** or **Unknown**; the setup page says *NOT OK <device>: no answer from 192.168.1.50:502 (unit 2)*.
+**You see:** the box is **Online** and the site is **Attention needed** or **Unknown**; the setup page shows the device as **Needs attention** with *no answer from 192.168.1.50:502 (unit 2)*, and on the box `greecon-edge status` lists it as *NOT OK*.
 
 **Check:**
 
@@ -81,7 +81,7 @@ message says readings are out of date.
 | **x1000 too big** | Watts shown as kilowatts | In the register form: multiply by **0.001** |
 | **Tank above 100 percent** | The reading at the top is wrong for the tank's height | Range ÷ height × 100 ([02](02-project-manager-manual.md), 7.4) |
 | **Import and export swapped** | Clamps the wrong way round | The electrician turns them; repeat the direction check |
-| **The pump shows running when stopped** | The contact is inverted | Swap the contact's normally-open and normally-closed wires, or use the opposite contact |
+| **The pump shows running when stopped** | The contact is inverted | Swap the contact's normally-open and normally-closed wires, or use the opposite contact. Until it is right, and if a flow meter is fitted, the platform sees a running pump with no flow and opens the no-flow alert (an Act now) whenever the pump is stopped; when the pump really runs it shows stopped |
 
 **Tell the customer** when a number they relied on was wrong, and for how long. **Do not edit history:** a wrong
 reading stays as it was, with a note. The platform keeps what was measured.
@@ -91,13 +91,15 @@ reading stays as it was, with a note. The platform keeps what was measured.
 **Check:**
 
 1. **Who is told** at that customer (sign in, **Open for setup**): is the person on the list, with the right email and number *with the country code*?
-2. The **log** on the same page: what was sent, to whom, when, and **what the email or text provider answered** ("Accepted for delivery", or why not). *Accepted* means the provider took it; it does not mean the person saw it.
+2. **What was sent**, on the same page: each message, to whom, when, and its result: **Sent** (the email or text provider took it), **Not sent** (the **Why** column says why), **Waiting**, or **Not needed** (for example, someone acknowledged the alert before it went). **Sent** does not mean the person saw it. After **Send a test message** the page says *Accepted for delivery*, which means the same, so ask the person whether it arrived.
 3. **Email in spam?** Ask them to look, and to mark it not spam. **Text:** which network? (some operators replace a sender name; see [01, step 8](01-founder-go-live.md)).
 4. **Quiet hours** hold Check today until morning; only Act now is sent at night.
 5. **Hourly limits:** an account is limited to 60 emails and 20 texts an hour. A condition flapping all day should not hit it; if it did, find out why.
 6. **Is the platform's messaging off?** The API's log at start-up says so ("Alert messages are OFF").
 
 **Fix:** correct the list and send a test message to the person, and confirm it arrived.
+
+**An Act now alert that nobody acknowledged** (the messages went on down the list until it ended): Act now is passed down the list, the first person at once, the second 30 minutes after the alert began, the third 60 minutes after, and so on, until the list ends or someone presses **Acknowledge** on the **Alerts** page. Replying to the email or the text, or phoning someone, does not stop it: the platform cannot hear that. Only a person who can sign in as an **Owner**, an **Administrator** or an **Operator** can press **Acknowledge**; a **Viewer** or an **Auditor** cannot, and neither can a person who is on the list with only an email address or a phone number. So **everyone on the Who is told list should also have their own login with the Operator role**: the customer's owner adds it under **Admin**, **Create user** (a Greecon support session cannot add people), and shows the person the **Acknowledge** button. Check **Admin** for who has a login and with which role.
 
 ## R5. Too many alerts
 
@@ -126,7 +128,7 @@ day**, every one with an action.
 2. **Open the api service's Deployments → View logs.** The last red line says why: a setting wrong, the database unreachable, out of memory.
 3. **If a deploy just went out:** go back to the previous one (Deployments, the earlier one, **Redeploy**). The database is not rolled back, and does not need to be: new versions only add to it.
 4. **If the database is down:** look at Railway's Postgres service; it restarts by itself; if it is full, R8.
-5. **While it is down:** boxes keep their readings (about three days) and send them when the platform returns. **Customers' own equipment is not affected: Greecon only reads.** Say both, in these words.
+5. **While it is down:** boxes keep their readings (about three days, for a site of up to about thirteen devices) and send them when the platform returns. **Customers' own equipment is not affected: Greecon only reads.** Say both, in these words.
 6. **Tell customers** within 30 minutes of finding out (the template in [21](../21-communication-system.md): "[time, zone] Investigating. Since [time], Greecon's screens and messages are unavailable. Effect on your site: your equipment is not affected; the box keeps its readings and sends them when we are back. Next update by [time]."). Update at the promised time **even if nothing changed.**
 7. **Afterwards:** a short written summary within five working days: what happened, how long, what was lost (nothing, if the boxes had it), what changes.
 
@@ -134,7 +136,7 @@ day**, every one with an action.
 
 - **Railway Usage** shows which service costs what. The database grows with readings: raw readings are kept by the platform; if it nears its volume size, increase the volume in Railway (Postgres service, **Settings → Volume**), then plan how long raw readings are kept (a decision for the founder: a retention rule is not built).
 - **A box sending too much:** a box that cannot reach the platform keeps one reading a minute; a site with many devices sends more. `greecon-edge status` shows each device. A runaway is unusual: look at the audit log for the site.
-- **Slow pages:** the chart history is bucketed (about 288 points); a very long window is refused with words rather than slow.
+- **Slow pages:** a chart is averaged into a few hundred points however long the window, and the longest window is 90 days (**Quarter** on **Analytics**; the platform cuts a longer request to 90 days).
 
 ## R9. A bad software release
 
@@ -158,23 +160,44 @@ A failed box, a stolen one, or a customer who moved the equipment.
 
 ## R11. A customer asks for their data, or to leave, or to be deleted
 
-- **A copy of their data:** they can do it themselves: **Reports**: every reading (hourly averages for any period; every reading for up to 31 days), the alerts, and the account's setup as one file. Every download is recorded in their audit trail. If they cannot, do it for them from inside their account and send it by a means you trust, **not by plain email if it holds readings of a named site that they would not want public**.
-- **They stop at day 60 or day 90:** take the equipment away within 14 days; give them the files; set the client **Suspended** in **Clients** (it can be turned back on); keep the account until they confirm in writing that they have their data.
+- **A copy of their data:** they can take it themselves, whenever they like, from **Reports**: every reading for the last 31 days, hourly averages for up to a year, their alerts, their audit log and how their account is set up. Every download is recorded in their audit trail. If they cannot, do it for them from inside their account (**Open for setup**; the download is then recorded under your name).
+- **Every reading Greecon holds** (when they stop, or when they ask for more than **Reports** gives): **Reports** stops at 31 days of every reading and a year of hourly averages, so make the file by hand. On your laptop, as in R13, open `psql "$DATABASE_PUBLIC_URL"` and paste this as **one line** (`<client id>` is on **Clients**; `<client>` is a short name for the file):
+
+  ```
+  \copy (SELECT timestamp_utc, site_id, device_id, point_id, canonical_name, value_numeric, value_bool, value_text, unit, quality FROM telemetry_readings WHERE tenant_id = '<client id>' ORDER BY timestamp_utc, canonical_name, point_id) TO 'readings-<client>.csv' WITH (FORMAT csv, HEADER)
+  ```
+
+  The times are UTC. In that file the site, the device and the reading are only ids, so make the key to them as well and send both (also one line):
+
+  ```
+  \copy (SELECT s.name AS site, s.id AS site_id, d.name AS device, d.id AS device_id, p.label AS reading, p.canonical_name, p.id AS point_id FROM points p JOIN devices d ON d.id = p.device_id JOIN sites s ON s.id = p.site_id WHERE p.tenant_id = '<client id>' ORDER BY s.name, d.name, p.label) TO 'names-<client>.csv' WITH (FORMAT csv, HEADER)
+  ```
+
+  Greecon keeps one reading a minute for each reading point, so a hotel's ten points make about a million rows in 90 days: a large file, which a spreadsheet may not open whole.
+- **The messages that were sent** (**What was sent**, under **Who is told**) are in none of the downloads. If the customer asks for them as a file, in the same way:
+
+  ```
+  \copy (SELECT created_at, due_at, sent_at, contact_name, channel, destination, kind, priority, subject, body, status, error FROM notifications WHERE tenant_id = '<client id>' ORDER BY created_at) TO 'messages-<client>.csv' WITH (FORMAT csv, HEADER)
+  ```
+
+- **Sending a file you made by hand:** it holds readings of a named site, and the message file holds the names, email addresses and phone numbers of the people who were told, so **not by plain email**. Put it in a shared-drive folder that only the customer's owner can open (by their email address, not "anyone with the link"), tell them by phone that it is there, and delete it when they confirm in writing that they have it. A download from **Reports** is written in the customer's audit trail; **a file made by hand is written in no audit trail**, so write it in the same sheet as the data-deletion log below: who asked, when, which files, how they were sent, when it was confirmed.
+- **They stop at day 60 or day 90:** take the equipment away within 14 days; give them the files (the downloads from **Reports**, and every reading Greecon holds, made by hand as above); set the client **Suspended** in **Clients** (it can be turned back on); keep the account until they confirm in writing that they have their data.
 - **Deletion (they ask in writing, after they have their data):** this is the only time anything is deleted. The founder does it, in a transaction, after the files are with the customer and the request is in writing:
 
   ```
   -- in the Railway Postgres service, Data tab or psql with the public connection string
   BEGIN;
-  DELETE FROM tenants WHERE id = '<the client's id, from Clients>';
-  -- check "DELETE 1", then:
+  DELETE FROM tenants WHERE id = '<client id, from Clients>';
+  DELETE FROM access_requests WHERE lower(email) = lower('<owner email>');
+  -- the first must say DELETE 1 (if not, ROLLBACK instead); the second says DELETE 1 if the owner
+  -- asked through the request-access page from that address, and DELETE 0 if not. Then:
   COMMIT;
   ```
 
-  One statement removes the account and everything under it: sites, devices, readings, alerts, people, messages sent, audit trail (tested).
+  The first statement removes the account and everything under it: sites, devices, readings, alerts, people, messages sent, audit trail. The database does this by itself: every table that holds a client's data is tied to the client's row, so it goes when the row does (the automatic test checks the people, the settings and the messages sent; for the other tables it follows from how they are built). The one table that is not tied to a client is the list of requests from the request-access page, which holds the name, company, email and phone the owner gave: that is what the second statement removes (if they asked from another address, run it again with that address).
   **Then restart the API service** (a redeploy) so that the platform's memory forgets them. **Write in the data-deletion log**
-  (a sheet, outside the platform): who asked, when, what was deleted, when it was confirmed to them. Tell the customer that copies in **backups
-  disappear when the backups expire** (Railway's daily ones within a week; the weekly dumps you keep: delete those that hold
-  them as you rotate).
+  (a sheet, outside the platform): who asked, when, what was deleted, when it was confirmed to them.
+  **What stays, and what to tell the customer:** copies in **backups** disappear when the backups expire (Railway's daily ones within a week; the weekly dumps you keep: delete those that hold them as you rotate); Greecon's own morning messages to its team, already sent, still name the client and its sites in their text; Resend and Twilio keep their own records of the emails and texts they delivered, on their own schedule; and files already downloaded (by the customer, or by hand) stay where they are.
 
 ## R12. A security incident, or a vulnerability report
 
@@ -190,7 +213,7 @@ with thanks; fix it; do not threaten the reporter; say when it is fixed.
 5. **Tell customers** with the template in [21](../21-communication-system.md) ("Security notice"): what is known, what is not, what to do, when the next update is. **Never** say "no evidence data was accessed" while the investigation is open, and never say "fully secure".
 6. **Afterwards:** a written report within one month; what changed.
 
-**What is built, and what is not** (so that nobody over-promises): a one-time-password for each new account; passwords checked
+**What is built, and what is not** (so that nobody over-promises): a temporary password for each new account, shown once; passwords checked
 for length and against published ones; sign-in rate limited; sessions that end when a person is turned off or
 changes their password; every staff action in a customer's account recorded under their name; all customer data separated by account and tested for it; a
 download recorded in the audit trail. **Not built yet:** two-factor sign-in (the first security work after the
@@ -215,10 +238,10 @@ Put the file in the company's shared drive (not the laptop), in a folder named `
 
 1. In Railway, add a **new** Postgres service named `restore-test` (never restore over the live one).
 2. `pg_restore --no-owner --dbname="<its public URL>" greecon-<date>.dump`
-3. Look at it: `psql "<its public URL>" -c "select count(*) from users; select count(*) from sites; select count(*) from telemetry_readings;"`. The numbers are about what you expect.
+3. Look at it: `psql "<its public URL>" -c "select count(*) from users" -c "select count(*) from sites" -c "select count(*) from telemetry_readings"` (one `-c` for each, so that every version of psql shows all three numbers). They are about what you expect.
 4. Delete the `restore-test` service.
 
-**A real loss:** restore into a **new** Postgres service, point the **api** service's `DATABASE_URL` at it (a variable change, then a redeploy), check sign-in and a customer's site, then tell customers what the gap is. Boxes resend what they kept; the readings between the backup and the loss are recovered from them for up to three days.
+**A real loss:** restore into a **new** Postgres service, point the **api** service's `DATABASE_URL` at it (a variable change, then a redeploy), check sign-in and a customer's site, then tell customers what the gap is. Boxes resend what the platform could not take while it was down (about three days, for a site of up to about thirteen devices). They do not keep what the platform had already accepted, so the readings between the last backup and the loss are gone: tell customers which period that is.
 
 ## R14. When the founder is not there
 

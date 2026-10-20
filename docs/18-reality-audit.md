@@ -12,8 +12,8 @@ the platform does updates this page in the same commit.
 
 ## 1. How things were checked
 
-- `npm run typecheck` and `npm test` for every package. At the time of writing: API 697 tests,
-  edge agent 113, edge simulator 1, GAIA core 106, shared 78, all passing. (The separate Modbus
+- `npm run typecheck` and `npm test` for every package. At the time of writing: API 775 tests,
+  edge agent 123, edge simulator 1, GAIA core 107, shared 78, all passing. (The separate Modbus
   driver service of the first pass is gone: its job is done inside the edge agent.)
 - A real PostgreSQL 16, not a fake, for the parts where a fake would hide the bug: the migration
   ledger and account safeguards, requests for access, sign-in, the messages outbox, chart history,
@@ -35,6 +35,12 @@ the platform does updates this page in the same commit.
   founder's password: the password survives (`scripts/e2e/upgrade-from-legacy.sh`).
 - The GitHub Pages export built for all five roles against the seeded API, then served and opened
   in a real browser (no console errors) (`scripts/e2e/static-export.sh`).
+- The two container images the host builds (`infra/docker`) built from their Dockerfiles and started the way a
+  host starts them: the API against a real PostgreSQL (it migrated itself, made the first administrator, answered
+  `/health` and served the box installer), the web image serving its public pages. CI now does the same on every change.
+- Three independent reviews by reviewers who had not written the code (security and access; reliability and data
+  flow; the launch pages against the code), and then a second review of the reworked alert messaging. Their
+  findings are 44 to 66; each was checked against the code before anything was changed.
 - The live app built and opened in a real browser as a seeded client account in every state
   (critical, warning, stable, never reported, gone quiet), on a desktop and a phone width.
 
@@ -141,6 +147,39 @@ All commands are still simulated; nothing is written to equipment (see 2 in the 
 | 42 | A download put two readings taken in the same second in whatever order their random identifiers sorted, so the same file could differ from one day to the next. Found as a flaky test. | Low | Fixed. Name first, identifier last (`e7c8dd1`); `exports.postgres.spec` asserts which row comes first when two share a second |
 | 43 | The note for one Eastron meter model gave another model's serial speed. | Low | Fixed. Notes are per model, and the SDM230's note says its speed depends on the version and sends the person to the meter's own display (`f53ef12`); `edge-catalog.spec` (mutation-checked) |
 
+### Found by independent review (added 2026-10-20)
+
+Three reviewers who had not written the code went over the finished platform: one for security and access, one for
+reliability and data flow, one for the launch pages against the code. Each ran real code where it could, and each
+finding below was checked against the code again before anything was changed. Several are in the platform's two most
+trusted parts, who can sign in and whether an alert reaches a person.
+
+| # | Finding | Severity | Status and evidence |
+|---|---|---|---|
+| 44 | Any member of Greecon's team could take over the owner's account: the ordinary people routes let anyone with the right to manage users reset the owner's password, promote a colleague or turn the owner off, and every team member has that right in Greecon's own account. In a customer's account an admin could do the same to their owner. | High | Fixed. The team is managed only through the team's own routes, which are the owner's alone; in every account only an owner adds an owner, changes one or resets one's password. `platform.staff.postgres.spec` (three tests, each rule removed in turn and the test failed) |
+| 45 | A role changed, or a person turned off and on again, did not end their open sessions: a session carries the role it was opened with, so a demoted admin kept the role for up to twelve hours, and an old session came back to life when someone was turned back on. | High | Fixed. The cut-off is written on a role change and on every status change; `platform.staff.postgres.spec` |
+| 46 | The demo login is published, and an operator could send unlimited text and readings: with no length limit on a note, a body of a megabyte stayed in the platform's memory for each request, and 2,700 readings fitted in one. Anyone on the internet could have filled the memory and disk every customer's alerting depends on. Any customer's operator could have done the same. | High | Fixed. Every piece of text and every list in every request has a limit (a test fails for one added later without it, `dto-bounds.spec`); readings may come only from a box with its own credential; the demo login is read-only apart from acknowledging an alert and arranging its dashboard; what a person's actions can add to memory is bounded per account (5,000 maintenance tasks, the newest 1,000 audit lines, 500 commands). `principal.guard.spec` |
+| 47 | A temporary password had 23,040 possibilities and never expired, and the sign-in limit counted attempts under a spelling of the address that the database disagrees with for some letters, so one account could be tried under thirty-odd spellings at once: a patient caller could have tried all of them in a couple of hours. | High | Fixed, except expiry. The password is about 59 bits; an account's address is plain ASCII in one written form (also a unique index in the database); the limit counts the account in that form. `generate-password.spec`, `email.spec`, `client-throttler.spec`, `auth.postgres.spec`. **A temporary password still does not expire (open 16)** |
+| 48 | Anyone who knew an address could keep it locked for its owner with a few attempts a minute, and a flood from one visitor used up the sign-in limit of every visitor, because every sign-in reaches the API from the web service. | Medium | Fixed. Each source has its own count for an account, over all sources there is a higher ceiling, and the web service passes on the visitor's address. `client-throttler.spec` |
+| 49 | Sign-in took a hundred times longer for an address with an account than for one without, so timing said which addresses had accounts. | Low | Fixed. `auth.postgres.spec` |
+| 50 | A viewer could read the audit trail through the site page. | Low | Fixed |
+| 51 | The audit-trail download held only what the platform keeps in memory: after a restart, the newest 500 lines of every account together. | Medium | Fixed. It is read from the database a page at a time (and the download's own line is in it). `exports.postgres.spec` (2,500 lines) |
+| 52 | A box accepted a plain-http address for the platform, so anyone on the path could read its credential or hand it software. | Medium | Fixed. https unless the platform is on the same private network. `identity.spec` |
+| 53 | `security.txt` redirected to the sign-in page, so a researcher who found a fault could not read where to write. | Low | Fixed; checked in the built web image |
+| 54 | A deploy dropped up to thirty seconds of counted energy and water: nothing listened for the stop signal. | Medium | Fixed. The counts are saved while the database is still open, then everything closes (Nest's own hooks close the database first, so they were not used). Checked in a real process: the log says it saved, it exits with 0 |
+| 55 | The box's updates stopped working after the second: the installer left the first release owned by root, and on the third update the box could not remove it, so it stayed on its old software and tried again every six hours. | High | Fixed. The installer gives the service its files, and clearing old versions cannot stop an update. `updater.spec` |
+| 56 | A clock set back while the box was running could stall a loop for the length of the step, a day for a day. | Medium | Fixed. `runtime.spec` |
+| 57 | One dead converter held up every other converter's readings, and each device behind it waited out its own connection attempt (thirteen meters, most of a minute). | Medium | Fixed. A converter that cannot be reached is tried once a round. `poller.spec` |
+| 58 | After a long outage the box read its whole queue file into memory at every start, up to twice what it keeps: a crash on every start until someone deleted the file. | Medium | Fixed. Only what is kept is read into memory; the service may use 768 MB instead of 384. `offline-buffer.spec` |
+| 59 | The first hours of a month were compared with a typical month, so night readings looked like a saving ("52 percent less") from the platform's own arithmetic. | Medium | Fixed. A comparison needs seven days. `compute-value.spec` |
+| 60 | The Analytics page, and a site's trends, drew several sites' or points' readings of the same kind as one line that jumped between them. | Medium | Fixed. One line for each point; an account with several sites sees one at a time |
+| 61 | The setup list, the handover sheet and the limits form said the no-flow limit was "not set, so no advice is given", while the platform raised an Act now alert at 0.2 litres a minute. A pump contact wired backwards would have paged people. | High (honesty) | Fixed. It is shown as the standard it is, and a test pins the words to what the engine does. `limits.spec`, `setup.service.spec` |
+| 62 | An Act now message that hit the hourly cap was marked failed and never sent, and a customer who had left (suspended) was paged about silence their own leaving caused. | High | Fixed. Act now has its own, higher ceiling and past it is held and retried, never failed; a suspended account gets nothing. `notifications.service.spec`, `notifications.postgres.spec` |
+| 63 | An alert that cleared and came back inside the window lost an escalation step for good; and one acknowledged, cleared and returned paged the next person that the first "has not answered" without having told the first. | High | Fixed. A step waits out the clear window; a return after an acknowledgement starts a fresh round; the wording says who was told only when they were |
+| 64 | A provider failure (a revoked key, an empty text balance, an outage at two in the morning) lost the Act now message for good, and nothing said so. | High | Fixed. It is planned again every five minutes while the alert is open and unacknowledged, each failure stays in the log, and the status says "N alert messages could not be delivered, the last because ..." (and Greecon's morning message names the customers) |
+| 65 | A round of messages was saved row by row (a database that dropped half way left a chain with its second person missing), the same alert could be planned twice by two paths, and two platforms during a deploy each worked alone. | Medium | Fixed. One statement saves a round; step keys have no timestamps; one platform at a time holds a lock. `notifications.postgres.spec` |
+| 66 | The launch pages said things the platform did not do: downloads of every reading at any time (every reading for 31 days, hourly averages for a year), an "internet cut" test that could not show what it claimed, a demo script whose pages answer "not found" for the demo login, a rehearsal step the platform refuses, a privacy claim that left out what the team can see without opening an account, and a pilot goal (the owner "opens" the morning message) that nothing measures. | High (honesty) | Fixed in the pages, the order form and the privacy page; the goal is now the owner's word (`docs/27`, A1) |
+
 ## 3. Mistakes in our own first pass, caught by testing
 
 A short list, because they are the kind a reader should expect more of:
@@ -197,7 +236,7 @@ of this list, so that an earlier reference still points at the same thing.
 
 1. **Alerts are built, and have never reached a real phone or inbox.** Email and text for Act now, an
    email for Check today, the morning message, acknowledgement, escalation and the log are built and
-   tested against stand-ins for the providers (finding 29). Not known until someone tries: whether
+   tested against stand-ins for the providers (findings 29 and 62 to 65). Not known until someone tries: whether
    `alerts@greecon.earth` lands outside spam once the domain is verified, and whether a sender name
    survives each Albanian network. Twilio is the only text provider tried for; none was compared.
    There is no WhatsApp, Viber or voice call.
@@ -211,10 +250,11 @@ of this list, so that an earlier reference still points at the same thing.
 4. **No asset health model.** Sites, devices and readings have computed health; assets do not.
 5. **Security hardening, partly done.** Done: one demo login with its own password, staff accounts of
    Greecon's own, sessions that end the moment a person is turned off or changes password, one account
-   per address, temporary passwords that only let a person choose their own (findings 33 and 36 to
-   41). Still open: **two-factor sign-in** (decided to wait until after the fifth site and before any
-   control), **a tamper-evident audit log**, and a **forgot-password email** (a locked-out person is
-   reset by the owner of Greecon's account after a phone call).
+   per address, temporary passwords that only let a person choose their own, an owner who cannot be
+   taken over by the team, a read-only demo login (findings 33, 36 to 41 and 44 to 50). Still open:
+   **two-factor sign-in** (decided to wait until after the fifth site and before any control), **a
+   tamper-evident audit log**, and a **forgot-password email** (a locked-out person is reset by the
+   owner of Greecon's account after a phone call). See 16 to 19 and 26 below for the smaller gaps.
 6. **Customer data export: built** (finding 31). Deleting a customer's data on their written request is
    a documented statement the founder runs by hand, not a button (`docs/launch/05-runbooks.md`, R11).
 7. **Retention and deletion, processor records, a sub-processor register, an incident workflow.** The
@@ -244,3 +284,38 @@ of this list, so that an earlier reference still points at the same thing.
     electrician must give a written price, before the first signature (`docs/27-launch-decisions.md`,
     L19). Every price in `docs/launch/03-hardware-and-wiring.md` is a planning estimate and the monthly
     fees are hypotheses.
+16. **A temporary password does not expire** if nobody uses it. It is a strong one (about 59 bits) behind a
+    rate limit, and is shown once; 72 hours would be right and is not built.
+17. **A customer's administrator can put any international number in the list and send it test messages.**
+    Limits are per account (six test sends an hour; sixty emails and twenty texts an hour for the
+    non-urgent kinds); a number is not confirmed by a code first, a premium-rate number is allowed, there is
+    no country restriction and no cap across the platform. Confirming each number and restricting
+    countries is the fix.
+18. **The "Request access" form has one flood cap for the whole platform** (forty an hour), so a spammer can
+    keep real prospects out of the inbox; each visitor is limited separately (twenty an hour), and there
+    is no CAPTCHA.
+19. **A box takes new software on the word of the platform it reports to.** The checksum comes from the same
+    platform, so whoever controls the platform controls every box; code signing is not built. A box now
+    refuses a plain-http platform address except on a private network.
+20. **After a restart that follows more than about four minutes of platform downtime**, every site reads
+    "Readings out of date" until its box reports again, and each customer's first contact gets one Check
+    today email. A grace period at start is not built.
+21. **One bad sample from a level sensor opens an Act now alert.** There is deliberately no delay on a tank
+    (a delay would lengthen every real alert); the alert resolves itself after fifteen minutes of clear
+    readings. To decide with real sites' numbers.
+22. **A person who is told by message but has no login cannot acknowledge**, so cannot stop the chain. The
+    manual says everyone on the list needs their own login (Operator); an acknowledge link in the message
+    is the better answer and is not built.
+23. **A box whose clock is more than five minutes wrong has its readings refused**, and the box discards
+    what the platform refuses. The installer warns about the clock; the platform's heartbeat reports the
+    difference.
+24. **The offline queue's memory grows with the readings in each message.** About three days holds for a
+    site of up to about thirteen devices (a 25-device site holds about a day and a half); the service may use
+    768 MB. A power cut straight after the box writes its queue or its identity file may leave an empty file
+    on some disks (no fsync).
+25. **The log of messages sent is in no download.** The readings, alerts, audit trail and the account's set-up
+    are; a customer who asks for the message log is given it by hand (`docs/launch/05-runbooks.md`, R11).
+26. **Signing out does not end the token** (twelve hours); turning a person off, a new password or a
+    changed role do.
+27. **The second pilot goal is the owner's word, not a measurement:** Greecon does not know whether an
+    email was opened (`docs/27`, A1).
