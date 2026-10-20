@@ -12,7 +12,7 @@ the platform does updates this page in the same commit.
 
 ## 1. How things were checked
 
-- `npm run typecheck` and `npm test` for every package. At the time of writing: API 784 tests,
+- `npm run typecheck` and `npm test` for every package. At the time of writing: API 790 tests,
   edge agent 123, edge simulator 1, GAIA core 107, shared 78, all passing. (The separate Modbus
   driver service of the first pass is gone: its job is done inside the edge agent.)
 - A real PostgreSQL 16, not a fake, for the parts where a fake would hide the bug: the migration
@@ -155,7 +155,7 @@ finding below was checked against the code again before anything was changed. Se
 trusted parts, who can sign in and whether an alert reaches a person (findings 44 to 66). A fourth reader then
 looked only at the alert messaging as it was after the rework those findings led to: it ran the code against a real
 PostgreSQL, cut the connection under it, and changed a copy of the code in forty-six ways to see whether a test
-noticed (findings 67 to 72).
+noticed (findings 67 to 75).
 
 | # | Finding | Severity | Status and evidence |
 |---|---|---|---|
@@ -187,7 +187,10 @@ noticed (findings 67 to 72).
 | 69 | A Check today email whose first try failed was tried again with no regard for the quiet hours, and, with tries that no longer stop while the alert stands, an outage that lasted into the night would have been followed by an email at three in the morning. | Medium | Fixed. Only Act now ignores the quiet hours; a try again of anything else waits for them to end |
 | 70 | An alert that came back after someone had acknowledged it was told again from the first person only if the platform heard the announcement of its return at that moment. A restart, or a database that dropped, at that moment lost it for good: the alert stood open and unacknowledged, and nobody was told. | High | Fixed. A round also notices, from the alert itself, that it was acknowledged after its messages began and is open again, and starts the messages again. `notifications.service.spec` |
 | 71 | A text or email service that is not set up on the platform at all was "tried again" every five minutes for as long as an alert stood: about a hundred lines of "failed" a day for each alert. | Low | Fixed. It is tried once an hour, so that setting it up while an alert is open still reaches the people |
-| 72 | Three tests of the rework did not fail when the code they claimed to guard was taken out: that no next try is planned for an alert acknowledged as its message fails; that one alert that cannot be planned does not stop the others announced with it; and that the tries of one message stay together under one key, so that its arrival clears the failures before it from the screen. | Low (test) | Fixed. Each now fails without the code it guards. Found by changing a copy of the code in forty-six ways, one at a time: all are caught but two that do no harm (`SKIP LOCKED` only saves waiting, and the pool drops a connection that is already dead) |
+| 72 | Three tests of the rework did not fail when the code they claimed to guard was taken out: that no next try is planned for an alert acknowledged as its message fails; that one alert that cannot be planned does not stop the others announced with it; and that the tries of one message stay together under one key, so that its arrival clears the failures before it from the screen. Two more were empty: a test of the plan compared a call with an identical call, and one claimed to cover an alert that clears and never made one clear. | Low (test) | Fixed. Each now fails without the code it guards. Found by changing a copy of the code in forty-six ways, one at a time: all are caught but two that do no harm (`SKIP LOCKED` only saves waiting, and the pool drops a connection that is already dead) |
+| 73 | A Check today email was kept out of the quiet hours when it was planned but not when it was sent: a platform that was down until the evening, or a database that dropped near ten o'clock, sent it at 22:30 or at three in the morning. | Low to medium | Fixed. The hold is kept where the message is sent, whatever delayed it. `notifications.service.spec` |
+| 74 | The time of an acknowledgement was stamped by the database's own clock, and read back from it after a restart, while the messages' timing is kept on the platform's. With the two clocks half a minute apart, an alert that came back soon after an acknowledgement was paged again every thirty seconds until the clocks agreed. | Low (needs clocks that disagree) | Fixed at the source: the platform writes its own time, so there is one clock. `platform.alerts.spec` |
+| 75 | On a platform with email but no text provider (a supported way to start), every Act now alert showed "2 alert messages could not be delivered" to the customer, and Greecon's morning message listed the customer for it, though nobody had made a mistake. | Low | Fixed. A way of sending that is not set up is shown as **Not sent** in the log and once on the screen as off; it is not counted as a failure to put right. `notifications.service.spec` |
 
 ## 3. Mistakes in our own first pass, caught by testing
 
@@ -338,3 +341,16 @@ of this list, so that an earlier reference still points at the same thing.
     taken and never finished, once a round; the count of what went out in the last hour, for each message).
     Measured at 600,000 rows each takes about a seventh of a second; at five customers that is years away.
     Before about fifty customers: a retention rule and two partial indexes.
+30. **Small things in the alert messaging that were seen, understood and left as they are:**
+    - A person with a phone number and no email address is texted the urgent alert and escalations, and is
+      never told that a colleague acknowledged it or that it cleared (texts are for Act now only,
+      `docs/27`, L11). The manual says to give everyone an email address.
+    - The note that someone acknowledged an alert, or that it cleared, is planned once; one database failure at
+      that instant loses the note. The alert itself is right on screen, and the people told keep thinking it
+      is unacknowledged.
+    - A Check today email dropped by the sixty-an-hour limit is shown as **Not sent**, and the line on the
+      screen says Greecon keeps trying although it does not. Needs a flood of non-urgent alerts.
+    - A person put at the top of the list after the first Check today email went is sent a second one; a person
+      moved up the list does not have their steps pulled forward.
+    - If the database fails between an Act now message being refused and its next try being saved, the message
+      can be sent twice. That was chosen over the loss it prevents.

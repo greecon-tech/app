@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Principal } from "../common/principal";
 import { DatabaseService } from "../database/database.service";
 import { PlatformService } from "./platform.service";
@@ -61,6 +61,29 @@ describe("alerts follow the facts", () => {
     // Once it clears it clears, acknowledged or not.
     await sendReadings(platform, client, provisioned, [{ name: "water.tank.level.percent", value: 80 }]);
     expect(alertsFor(provisioned.site.id)[0]?.status).toBe("resolved");
+  });
+
+  it("gives the database the time of an acknowledgement rather than letting it stamp its own, so that every clock the alert's messages use is the platform's", async () => {
+    const database = new DatabaseService();
+    platform = new PlatformService(database);
+    client = await onboardClient(platform);
+    const provisioned = await tankSite();
+    await sendReadings(platform, client, provisioned, [{ name: "water.tank.level.percent", value: 5 }]);
+    const [alert] = alertsFor(provisioned.site.id);
+
+    const queries: Array<{ text: string; params: unknown[] }> = [];
+    vi.spyOn(database, "isConfigured").mockReturnValue(true);
+    vi.spyOn(database, "query").mockImplementation(async (text: string, params: unknown[] = []) => {
+      queries.push({ text, params });
+      return { rows: [], rowCount: 0 } as never;
+    });
+    const acknowledged = await platform.acknowledgeAlert(alert?.id as string, client);
+
+    // After a restart the time comes back from the database; stamped there, it is on another machine's clock than the one the
+    // messages' timing is kept on, and an acknowledgement a few seconds "ahead" can start a second round of messages.
+    const update = queries.find((query) => query.text.includes("UPDATE alerts SET status"));
+    expect(update?.text).not.toContain("now()");
+    expect(update?.params.some((param) => param instanceof Date && param.toISOString() === acknowledged.acknowledgedAtUtc)).toBe(true);
   });
 
   it("re-opens the same alert, rather than raising a new one, when a level hovers around its limit", async () => {

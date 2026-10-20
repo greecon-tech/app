@@ -302,6 +302,9 @@ register or a wiring fault.
   customer's owner adds them with **Create user** (a Greecon support session cannot add people), and the new
   person is given a temporary password, shown once. An Owner or an Administrator can acknowledge too; a Viewer or
   an Auditor cannot.
+- **Give everyone an email address as well as a number.** The note that a colleague has acknowledged an alert, and the
+  note that it has cleared, go by email only. A person who has only a phone number is texted the urgent alert and then
+  hears nothing more: they may still set off for something that is already being dealt with.
 - Back on the setup page, write what you saw if you like, and press **I checked this.** It is greyed out until the
   list has someone on it and a test has been sent, because a site nobody is told about must not be commissioned.
 

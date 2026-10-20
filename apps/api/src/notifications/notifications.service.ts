@@ -28,6 +28,7 @@ import {
   digestWindow,
   generationFor,
   generationOfKey,
+  inQuietHours,
   latestChain,
   planAlertEvent,
   quietHoursEnd,
@@ -116,8 +117,8 @@ const SUSPENDED = "The account is suspended, so nothing is sent for it.";
 const STARTED_AGAIN = "The condition came back after someone had acknowledged it, so the messages started again from the first person.";
 
 type Outcome = "sent" | "failed" | "skipped" | "retried";
-/** Whether a message has stopped being wanted (skip it), or should wait and be looked at again (hold it). */
-type Verdict = { skip: string } | { hold: string } | undefined;
+/** Whether a message has stopped being wanted (skip it), or should wait and be looked at again (hold it), at a time of its own when it has one. */
+type Verdict = { skip: string } | { hold: string; until?: number } | undefined;
 const TEST_LIMIT_PER_HOUR = 6;
 const BATCH = 25;
 
@@ -374,7 +375,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
     const facts = this.source.digestOf(tenantId, nowMs);
     // Greecon's own account is also told which customers' alert messages are not arriving: its own team can do something about it.
-    const failing = this.source.isOperatorTenant?.(tenantId) ? await this.outbox.undeliveredAlertMessages(nowMs - UNDELIVERED_WINDOW_MS) : [];
+    const failing = this.source.isOperatorTenant?.(tenantId) ? (await this.outbox.undeliveredAlertMessages(nowMs - UNDELIVERED_WINDOW_MS)).filter(failedToArrive) : [];
     const notes = [...(facts.notes ?? []), ...this.deliveryNotes(failing)];
     const message = digestEmail({ ...facts, ...(notes.length > 0 ? { notes } : {}) }, nowMs, settings.timezone, settings.digestAt, this.link("/"));
     const planned: PlannedMessage[] = recipients.map((contact) => ({
@@ -422,6 +423,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           return { skip: CLEARED };
         }
         if (alertPriority(alert.severity) !== row.priority) return { skip: "The alert changed priority before this was sent." };
+        // Check today is held through the quiet hours whatever delayed it to this moment (a platform that was down until the
+        // evening, a database that dropped, a try again): it is kept where it is sent, not only where it is planned.
+        if (row.kind === "alert" && row.priority === "check_today") {
+          const settings = this.config.settings(row.tenantId);
+          if (inQuietHours(nowMs, settings)) return { hold: "Held until the quiet hours end.", until: quietHoursEnd(nowMs, settings) };
+        }
         return undefined;
       }
       case "resolved": {
@@ -446,7 +453,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       return "skipped";
     }
     if (verdict && "hold" in verdict) {
-      await this.outbox.retryAt(row.id, nowMs + HOLD_WHILE_CLEARED_MS, row.attempts, verdict.hold);
+      await this.outbox.retryAt(row.id, verdict.until ?? nowMs + HOLD_WHILE_CLEARED_MS, row.attempts, verdict.hold);
       return "retried";
     }
 
@@ -660,7 +667,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   /** The alert messages of this account that did not arrive and whose alert is still open. */
   private async undeliveredFor(tenantId: string, nowMs: number): Promise<UndeliveredAlertMessage[]> {
     const found = await this.outbox.undeliveredAlertMessages(nowMs - UNDELIVERED_WINDOW_MS, tenantId);
-    return found.filter((message) => message.alertId !== undefined && this.source.alertById(tenantId, message.alertId)?.status === "open");
+    return found.filter(failedToArrive).filter((message) => message.alertId !== undefined && this.source.alertById(tenantId, message.alertId)?.status === "open");
   }
 
   contacts(tenantId: string): NotificationContact[] {
@@ -713,6 +720,13 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   async log(tenantId: string, limit: number): Promise<NotificationLogEntry[]> {
     return (await this.outbox.recent(tenantId, Math.min(Math.max(limit, 1), 200))).map(toLogEntry);
   }
+}
+
+/** A message that was refused, or that the provider could not take: a failure to put right. A way of sending the platform has not set up at all is
+ * not that. It is in the log as not sent, and the screen says once that it is off; calling every Act now alert on an email-only platform "a message
+ * that could not be delivered" would alarm people about a choice nobody has made a mistake in. */
+function failedToArrive(message: UndeliveredAlertMessage): boolean {
+  return message.error !== NOT_SET_UP.email && message.error !== NOT_SET_UP.sms;
 }
 
 /** Whether someone acknowledged the alert after its newest round of messages began. Open again, that means it has come back. */

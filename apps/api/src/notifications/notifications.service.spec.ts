@@ -241,6 +241,25 @@ describe("telling people", () => {
       expect(sentTo()).toEqual(["email:besa@hotel.example"]);
     });
 
+    it("still waits for the morning when it fell due in the evening and the platform was down until the quiet hours had begun", async () => {
+      const evening = Date.parse("2026-10-19T19:45:00Z"); // 21:45: not quiet, so it is due at once
+      const alert = source.add({ severity: "warning", title: "Tank level is low", createdAtUtc: new Date(evening).toISOString() });
+      await service.onAlertEvents([opened(alert, evening)], evening);
+
+      // The platform comes back at 22:30. Quiet hours are kept when the message is sent, not only when it is planned.
+      expect(await service.tick(Date.parse("2026-10-19T20:30:00Z"))).toMatchObject({ sent: 0, retried: 1 });
+      expect(outbox.rows.find((row) => row.kind === "alert")).toMatchObject({ status: "planned", dueAtMs: Date.parse("2026-10-20T05:00:00Z") });
+      expect(await service.tick(Date.parse("2026-10-20T04:59:00Z"))).toMatchObject({ sent: 0 });
+      expect(sentTo()).toEqual([]);
+      expect(await service.tick(Date.parse("2026-10-20T05:00:00Z"))).toMatchObject({ sent: 1 }); // 07:00
+    });
+
+    it("is not held by the quiet hours when it is Act now: that is only for Check today", async () => {
+      const night = Date.parse("2026-10-19T23:30:00Z"); // 01:30
+      await service.onAlertEvents([opened(source.add({ createdAtUtc: new Date(night).toISOString() }), night)], night);
+      expect(await service.tick(night)).toMatchObject({ sent: 1 });
+    });
+
     it("is dropped, not sent late, if someone acknowledged it while it waited", async () => {
       const night = Date.parse("2026-10-19T23:30:00Z");
       const alert = source.add({ severity: "warning" });
@@ -480,6 +499,16 @@ describe("telling people", () => {
       expect(await service.tick(NOON + 61 * MIN)).toMatchObject({ failed: 1 });
       expect(outbox.rows.filter((row) => row.alertId === other.id)).toHaveLength(1);
       expect(await service.tick(NOON + 70 * MIN)).toMatchObject({ failed: 0, retried: 0, sent: 0 });
+
+      // And one that clears for good while its next try waits: the try waits out the clear window, and is then dropped.
+      const third = source.add({ id: "a-10", title: "Battery is low" });
+      service = build({ email: down, problems: [] });
+      await service.onAlertEvents([opened(third, NOON + 80 * MIN)], NOON + 80 * MIN);
+      expect(await service.tick(NOON + 80 * MIN)).toMatchObject({ failed: 1 });
+      source.alerts.set(third.id, { ...third, status: "resolved", resolvedAtUtc: new Date(NOON + 82 * MIN).toISOString() });
+      expect(await service.tick(NOON + 85 * MIN)).toMatchObject({ retried: 1, sent: 0 });
+      expect(await service.tick(NOON + 98 * MIN)).toMatchObject({ skipped: 1, sent: 0 });
+      expect(outbox.rows.filter((row) => row.alertId === third.id).map((row) => row.status).sort()).toEqual(["failed", "skipped"]);
     });
 
     it("tells the screen that alert messages did not arrive, how many, and why the last one failed", async () => {
@@ -497,6 +526,46 @@ describe("telling people", () => {
       // Once the alerts are no longer open there is nothing to say.
       for (const alert of source.alerts.values()) source.alerts.set(alert.id, { ...alert, status: "acknowledged" });
       expect((await service.status(T1, NOON + 2 * MIN)).words.join(" ")).not.toContain("could not be delivered");
+    });
+  });
+
+  describe("a platform that has not set up text messages", () => {
+    it("does not call that a message that could not be delivered: the screen says once that texts are off", async () => {
+      service = build({ email: fake.email, problems: [] }); // email is set up; text messages are not
+      await service.onAlertEvents([opened(source.add())], NOON);
+      for (let minute = 0; minute <= 60; minute += 1) await service.tick(NOON + minute * MIN);
+
+      // The texts are in the log, as not sent, with the reason...
+      expect(outbox.rows.filter((row) => row.channel === "sms" && row.status === "failed").every((row) => row.error === "Not sent: text messages are not set up on this Greecon platform.")).toBe(true);
+      expect(outbox.rows.some((row) => row.channel === "sms" && row.status === "failed")).toBe(true);
+      // ...and the screen says it is off, but does not alarm anyone with "could not be delivered" for a way of sending nobody set up.
+      const words = (await service.status(T1, NOON + 61 * MIN)).words.join(" ");
+      expect(words).toContain("Text messages are off, so Act now alerts reach people by email only.");
+      expect(words).not.toContain("could not be delivered");
+    });
+
+    it("treats a platform that has not set up email in the same way: it is off, said once, and not a failure to put right", async () => {
+      service = build({ sms: fake.sms, problems: [] }); // text messages are set up; email is not
+      await service.onAlertEvents([opened(source.add())], NOON);
+      for (let minute = 0; minute <= 40; minute += 1) await service.tick(NOON + minute * MIN);
+      expect(outbox.rows.some((row) => row.channel === "email" && row.status === "failed")).toBe(true);
+      const words = (await service.status(T1, NOON + 41 * MIN)).words.join(" ");
+      expect(words).toContain("Email is off on this Greecon platform.");
+      expect(words).not.toContain("could not be delivered");
+    });
+
+    it("does not name the customer in Greecon's own morning message for it either", async () => {
+      source.operator.add("t-greecon");
+      await config.setContacts("t-greecon", [{ name: "Greecon team", email: "team@greecon.example" }]);
+      service = build({ email: fake.email, problems: [] });
+      await service.onAlertEvents([opened(source.add())], NOON);
+      for (let minute = 0; minute <= 40; minute += 1) await service.tick(NOON + minute * MIN);
+      expect(outbox.rows.some((row) => row.channel === "sms" && row.status === "failed")).toBe(true);
+
+      await service.tick(Date.parse("2026-10-20T05:30:00Z")); // the next morning, 07:30
+      const note = fake.sent.find((message) => message.to === "team@greecon.example");
+      expect(note).toBeDefined();
+      expect(note?.body).not.toContain("could not be delivered");
     });
   });
 

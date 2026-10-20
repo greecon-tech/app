@@ -3257,10 +3257,13 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (!alert) throw new NotFoundException("Alert not found.");
     const before = { status: alert.status };
     alert.status = "acknowledged";
-    alert.acknowledgedAtUtc = new Date().toISOString();
+    const acknowledgedAt = new Date();
+    alert.acknowledgedAtUtc = acknowledgedAt.toISOString();
 
     if (this.db.isConfigured()) {
-      await this.db.query(`UPDATE alerts SET status=$1, acknowledged_at=now() WHERE id=$2 AND tenant_id=$3`, [alert.status, alert.id, principal.tenantId]);
+      // The time is the platform's own, not the database's now(): after a restart it is read back, and the messages that depend on
+      // it (an alert that returns after an acknowledgement is told again) keep their time on the platform's clock.
+      await this.db.query(`UPDATE alerts SET status=$1, acknowledged_at=$4 WHERE id=$2 AND tenant_id=$3`, [alert.status, alert.id, principal.tenantId, acknowledgedAt]);
     }
 
     const acknowledger = this.users.find((user) => user.id === principal.userId);

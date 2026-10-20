@@ -163,9 +163,15 @@ describe("an Act now alert", () => {
   });
 
   it("starts a person's steps from when the round began, in the order of the list, whenever the missing ones are planned", () => {
-    const whole = planAlertEvent(opened("critical", NOON), context([besa, arben]));
-    const replanned = planAlertEvent(opened("critical", NOON), context([besa, arben]));
-    expect(replanned.map((m) => `${m.dedupeKey}@${m.dueAtMs}`)).toEqual(whole.map((m) => `${m.dedupeKey}@${m.dueAtMs}`));
+    // The round began at 12:00. A step planned later (by a round of work that found it missing, or for a person added to the list) is
+    // timed from 12:00, not from when it is planned, so that a lost step keeps its place in the order.
+    expect(summary(planAlertEvent(opened("critical", NOON), context([besa, arben])))).toEqual([
+      "Besa email +0min alert",
+      "Besa sms +10min alert",
+      "Arben email +30min escalation",
+      "Arben sms +30min escalation"
+    ]);
+    expect(summary(planAlertEvent(opened("critical", NOON), context([besa, arben, office]))).slice(4)).toEqual(["Office email +60min escalation"]);
   });
 
   it("plans nothing when nobody is on the list", () => {
