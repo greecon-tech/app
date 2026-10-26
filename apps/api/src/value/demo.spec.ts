@@ -111,6 +111,26 @@ describe("the demo tenant when the platform starts and while it runs", () => {
     expect(value.energy?.producedKwh).toBeLessThan(8000);
   });
 
+  it("shows the demo's alerts as raised a few hours ago, however old the database is, and keeps an acknowledgement", async () => {
+    const { platform, feed } = await started();
+    const tank = () => platform.listAlerts(DEMO_OWNER).find((alert) => alert.title === "Water tank approaching low threshold");
+    const soil = () => platform.listAlerts(DEMO_OWNER).find((alert) => alert.title === "Soil moisture below irrigation threshold");
+    const hour = 3_600_000;
+
+    // Two months on (a database that was made in September): the alerts still read as a live day's.
+    const twoMonthsOn = Date.now() + 60 * 24 * hour;
+    await feed.tick(twoMonthsOn);
+    expect(Date.parse(tank()?.createdAtUtc as string)).toBe(twoMonthsOn - 26 * hour);
+    expect(Date.parse(soil()?.createdAtUtc as string)).toBe(twoMonthsOn - 5 * hour);
+
+    // A visitor acknowledges one; the next pass keeps it acknowledged, and after it was raised.
+    await platform.acknowledgeAlert(tank()?.id as string, DEMO_OWNER);
+    await feed.tick(twoMonthsOn + 15_000);
+    expect(tank()?.status).toBe("acknowledged");
+    expect(Date.parse(tank()?.acknowledgedAtUtc as string)).toBeGreaterThan(Date.parse(tank()?.createdAtUtc as string));
+    expect(Date.parse(tank()?.createdAtUtc as string)).toBe(twoMonthsOn + 15_000 - 26 * hour);
+  });
+
   it("reports what a real site would: current simulated readings that balance, flowing on the screen", async () => {
     const { platform, feed } = await started();
     const now = Date.now();
