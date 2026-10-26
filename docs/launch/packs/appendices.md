@@ -69,11 +69,11 @@ Compare in this order and write the pair of numbers. Do not start, stop or open 
 | **Grid direction.** A known load on, the sun down. | Import rises, export does not | | | {{pf}} |
 | **Solar at night.** | Zero, or a few watts | | | {{pf}} |
 | **Solar at midday.** Against the inverter's display. | Within about 5 percent | | | {{pf}} |
-| **Tank level.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
+| **{{ui.reading_tank}}.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
 | **Pressure.** Against the gauge on the same line. | Within 0.2 bar | | | {{pf}} |
 | **Flow.** A bucket test, or the flow meter's display. | Within 10 percent | | | {{pf}} |
-| **Pump running.** The owner starts the pump. | Shown within 30 seconds, changes both ways | | | {{pf}} |
-| **Soil probe.** In the air, in a glass of water, in the soil. | Three different readings | | | {{pf}} |
+| **{{ui.reading_pump}}.** The owner starts the pump. | Shown within 30 seconds, changes both ways | | | {{pf}} |
+| **{{ui.device_soil}}.** In the air, in a glass of water, in the soil. | Three different readings | | | {{pf}} |
 | **4 to 20 mA channels.** With a loop calibrator, send 4, 12 and 20 mA. | Bottom, middle and top | | | {{pf}} |
 {{include:_shared/rows-common.md}}
 :::
@@ -87,12 +87,12 @@ Signed off by: {{line}} Date: {{line:short}} Site: {{line}}
 |---------------------|---------------------|
 | Customer and site | |
 | Date, and who was there | |
-| Who is told, in order (name, mobile with country code, email) | |
+| {{ui.who_is_told}}, in order (name, mobile with country code, email) | |
 | Alert limits agreed with the customer | |
 | Anything the site cannot raise (no flow meter, no pump contact), said to the owner | |
 | Prices entered and where they came from | |
-| Setup list: every step Done and the site Commissioned | {{cb}} Yes |
-| Handover sheet printed and signed | {{cb}} Yes |
+| {{ui.setup_list}}: every step Done and the site Commissioned | {{cb}} Yes |
+| {{ui.handover_sheet_link}} printed and signed | {{cb}} Yes |
 | Shown: {{ui.overview}}, {{ui.energy_now}} or the site's page, {{ui.value}}, {{ui.who_is_told}} with a live test message, {{ui.reports}} | {{cb}} Yes |
 | Left: label on the box; card with `info@greecon.earth` and your phone | {{cb}} Yes |
 | Photographs and survey form filed in the customer's folder | {{cb}} Yes |
@@ -111,11 +111,11 @@ Once before the first real site, and again when anything in the manual changes (
 | | # | Who | Step |
 |--|-|-----|--------------------------------------------|
 | {{cb}} | 1 | {{who:pm}} | Run the pretend meter on the laptop: `node scripts/pretend-meter.mjs` (port 5020, units 1, 2 and 3). |
-| {{cb}} | 2 | {{who:pm}} | Onboard a client named Rehearsal, with a second address of your own for the owner. Open it for setup and make a site from the **{{kit.H.template}}** template. |
+| {{cb}} | 2 | {{who:pm}} | On **{{ui.clients}}** press **{{ui.onboard_a_client}}** for a client named Rehearsal, with a second address of your own for the owner. Open it for setup and make a site from the **{{kit.H.template}}** template. |
 | {{cb}} | 3 | {{who:pm}} | Add the box, paste the line on the box, and watch **{{step:2}}** turn Done. |
 | {{cb}} | 4 | {{who:pm}} | Give each device the laptop's address, port 5020 and units 1, 2 and 3. Map the water module's four readings: Input registers 0 to 3, each Multiply and add: tank level by 0.1, pressure by 0.01, flow by 0.1, pump running by 1. |
 | {{cb}} | 5 | {{who:pm}} | Watch every step turn Done. Add yourself under **{{ui.who_is_told}}**, send a test message, confirm the steps that need a person, and commission the rehearsal site. |
-| {{cb}} | 6 | {{who:pm}} | Stop the pretend meter. After about five minutes **{{ui.today}}** says, under **{{ui.needs_a_look}}**, that the readings are out of date. Start it again with `--tank 12`: Tank level is critical is an Act now. It arrives by email at once and by text ten minutes later unless you press **{{ui.acknowledge}}**. |
+| {{cb}} | 6 | {{who:pm}} | Stop the pretend meter. After about five minutes **{{ui.today}}** says, under **{{ui.needs_a_look}}**, that the readings are out of date. Start it again with `--tank 12`: The tank is critical, an **{{ui.act_now}}**. It arrives by email at once and by text ten minutes later unless you press **{{ui.acknowledge}}**. |
 | {{cb}} | 7 | {{who:pm}} | Print the handover sheet. Download the readings from **{{ui.reports}}** (**{{ui.downloads}}**) and open the file in a spreadsheet. |
 | {{cb}} | 8 | {{who:pm}} | Clean up: remove the rehearsal site's equipment and then the site, or suspend the client, so that it does not appear in the morning check. Keep it if you will use it for a sales demonstration. |
 :::
@@ -148,18 +148,18 @@ Once before the first real site, and again when anything in the manual changes (
 | **Heartbeat** | The box reports every 30 seconds, so that Greecon knows it is alive |
 | **Queue** | The readings the box keeps while the internet is down: about three days for a site of up to about thirteen devices |
 | **Template** | The plan of a kind of site in the platform: the equipment it usually has, with the readings each gives |
-| **Setup list** | The platform's own list of up to ten steps for a site. A step that does not apply is left out |
-| **Handover sheet** | One printable page per site: where everything is, who is told, who commissioned it and when |
+| **{{ui.setup_list}}** | The platform's own list of up to ten steps for a site. A step that does not apply is left out |
+| **{{ui.handover_sheet_link}}** | One printable page per site: where everything is, who is told, who commissioned it and when |
 | **Install line, code** | The line shown once on the setup page that installs the box. Its code works once, for seven days |
 | **Owner, Administrator, Operator, Viewer, Auditor** | A person's role in the customer's account. An Owner, an Administrator or an Operator can acknowledge an alert; a Viewer or an Auditor cannot |
 | **Morning message** | The one email at 07:30 that says whether everything is all right |
-| **Quiet hours** | 22:00 to 07:00: everything is held except Act now |
+| **Quiet hours** | 22:00 to 07:00: everything is held except {{ui.act_now}} |
 | **Zero-export** | A plant that is not allowed to send energy to the grid. Tick the box in the prices |
 | **Pretend meter** | A program for the laptop that answers like meters, for practice |
 
 ## [C]{.num} Symptoms {.intoc #appendix-c}
 
-Start from what you see. Each table says what it probably is and what to do; the runbooks (Part 7) have the longer answers.
+Start from what you see. Each table says what it probably is and what to do; the longer answers are in {{ref:runbooks}}.
 
 @@MANUAL 12@@
 
@@ -232,18 +232,18 @@ Fill in, print, and keep a copy in the password manager.
 
 | What | Value |
 |----------------|--------------------------------------------|
-| Unit numbers | Grid meter 1, solar meter 2, water module 3, optional load or pump meter 4 |
+| Unit numbers | Grid 1, solar 2, water module 3, optional load or pump meter 4 |
 | The data cable and the converter | 9600 baud, 8 data bits, no parity, 1 stop bit; converter on port 502, in Modbus TCP to RTU gateway mode, at a fixed address |
 | Eastron meters | Total active power: input register 52 on the SDM630, 12 on the SDM230; 32-bit floating point, high half first; watts to kW by 0.001 |
 | A register counted from zero | A manual's 30053 is address 52; 40001 is address 0 |
-| Tank level from a transmitter longer than the tank | Reading at the top = range ÷ tank height × 100 |
+| A tank reading from a transmitter longer than the tank | Reading at the top = range ÷ tank height × 100 |
 | The box needs outside | Outgoing HTTPS (443) to `api.greecon.earth` (and `nodejs.org` at install) and a time service (UDP 123). Nothing needs to come in |
 | The box keeps | About three days of readings, for a site of up to about thirteen devices. It reports every 30 seconds |
 | The install code | Works once, for seven days |
 | A setup session in a customer's account | Four hours |
 | Test messages | Six an hour for the whole account |
-| Standard limits | Tank Critical below 15 percent (Act now), Low below 35 percent (Check today); pump no flow at or below 0.2 litres a minute held for 30 seconds (Act now); battery Low below 25 percent |
-| How alerts reach people | Act now: email at once, text after ten minutes if not acknowledged, the next person at 30 minutes. Check today: one email, held until morning at night. Morning message 07:30. Quiet hours 22:00 to 07:00 hold everything except Act now. Resolved after 15 minutes clear |
+| Standard limits | Tank Critical below 15 percent ({{ui.act_now}}), Low below 35 percent ({{ui.check_today}}); pump no flow at or below 0.2 litres a minute held for 30 seconds ({{ui.act_now}}); battery Low below 25 percent |
+| How alerts reach people | {{ui.act_now}}: email at once, text after ten minutes if not acknowledged, the next person at 30 minutes. {{ui.check_today}}: one email, held until morning at night. Morning message 07:30. Quiet hours 22:00 to 07:00 hold everything except {{ui.act_now}}. Resolved after 15 minutes clear |
 | After install | Day 1, 3 and 7 checks, then the morning check; day 30 call; day 60 decision meeting; day 90 convert or remove within 14 days |
 
 ```

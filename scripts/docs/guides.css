@@ -189,12 +189,12 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 
 /* tests: tick, what, how, the pass line, pass/fail, the numbers */
 .tests table { font-size: 8.4pt; table-layout: fixed; }
-.tests table th:nth-child(1) { width: 38%; }
-.tests table th:nth-child(2) { width: 25%; }
+.tests table th:nth-child(1) { width: 36%; }
+.tests table th:nth-child(2) { width: 24%; }
 .tests table th:nth-child(3), .tests table th:nth-child(4) { width: 12%; }
-.tests table th:nth-child(5) { width: 13%; }
+.tests table th:nth-child(5) { width: 16%; }
 .tests table tbody tr:nth-child(even) td { background: #fff; }
-.tests table td { height: 11mm; }
+.tests table td { height: 10mm; }
 
 /* ------------------------------------------------------------------ who tags */
 
@@ -208,12 +208,12 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 
 .callout, .do, .check, .stop, .tip, .say {
   position: relative;
-  margin: 0 0 4mm;
-  padding: 2.6mm 4mm 2.2mm 15mm;
+  margin: 0 0 3.4mm;
+  padding: 2.3mm 4mm 1.9mm 15mm;
   border-radius: 1.6mm;
   break-inside: avoid;
-  font-size: 9.6pt;
-  line-height: 1.42;
+  font-size: 9.4pt;
+  line-height: 1.38;
 }
 .callout > :last-child, .do > :last-child, .check > :last-child, .stop > :last-child, .tip > :last-child, .say > :last-child { margin-bottom: 0; }
 .callout p, .do p, .check p, .stop p, .tip p, .say p { margin: 0 0 1.6mm; }
@@ -307,7 +307,7 @@ figure.diagram.tall svg { max-height: 214mm; }
 .toc a { display: flex; align-items: baseline; gap: 2.5mm; border: 0; color: var(--ink); font: 400 9.4pt/1.35 var(--sans); padding: 0.55mm 0; }
 .toc a .t { flex: 0 1 auto; min-width: 0; }
 /* the leader is text, not a dotted border: Chromium draws a dotted border as thousands of tiny squares and repeats them on every page */
-.toc a .dots { flex: 1 1 auto; min-width: 4mm; overflow: hidden; white-space: nowrap; color: #9aa39d; letter-spacing: 0.9mm; font-size: 8pt; line-height: 1; }
+.toc a .dots { flex: 1 1 0; min-width: 4mm; overflow: hidden; white-space: nowrap; color: #9aa39d; letter-spacing: 0.9mm; font-size: 8pt; line-height: 1; }
 .toc a .dots::before { content: "........................................................................................................................................................................"; }
 .toc a .p { flex: none; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--forest); min-width: 7mm; text-align: right; }
 .toc li.l1 { margin-top: 3.4mm; }
@@ -327,9 +327,9 @@ figure.diagram.tall svg { max-height: 214mm; }
 .tearoff h2 { margin-top: 0; }
 .tearoff h2::before { display: none; }
 
-h2.formtitle, h3.formtitle { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1.4pt solid var(--forest); padding-bottom: 2mm; margin: 0 0 4mm; font-size: 15pt; }
+h2.formtitle, h3.formtitle { display: flex; justify-content: flex-start; align-items: flex-end; border-bottom: 1.4pt solid var(--forest); padding-bottom: 2mm; margin: 0 0 4mm; font-size: 15pt; }
 h2.formtitle::before, h3.formtitle::before { display: none; }
-h2.formtitle::after, h3.formtitle::after { content: attr(data-kit); font: 700 7.6pt var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--action); }
+h2.formtitle::after, h3.formtitle::after { margin-left: auto; content: attr(data-kit); font: 700 7.6pt var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--action); }
 
 .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 9mm; font: 600 8pt var(--sans); color: var(--forest); break-inside: avoid; }
 .sign div { border-top: 0.8pt solid var(--forest); padding-top: 1.6mm; min-height: 16mm; }
@@ -350,8 +350,7 @@ h2.formtitle::after, h3.formtitle::after { content: attr(data-kit); font: 700 7.
 
 /* ------------------------------------------------------------------ a platform step: do, see, if not */
 
-.stepcard { border: 0.7pt solid var(--rule); border-radius: 1.6mm; margin: 0 0 4.5mm; background: #fff; }
-.stepcard dt, .stepcard dd { break-inside: avoid; }
+.stepcard { border: 0.7pt solid var(--rule); border-radius: 1.6mm; margin: 0 0 4.5mm; background: #fff; break-inside: avoid; }
 .stepcard dl { margin: 0; display: grid; grid-template-columns: 22mm 1fr; }
 .stepcard dt { padding: 2.2mm 2.4mm; font: 700 6.8pt/1.35 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--action); background: var(--zebra); border-bottom: 0.5pt solid var(--hair); border-right: 0.5pt solid var(--hair); }
 .stepcard dd { margin: 0; padding: 2mm 3mm; border-bottom: 0.5pt solid var(--hair); font-size: 9.2pt; line-height: 1.4; }

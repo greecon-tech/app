@@ -19,17 +19,20 @@ import { escapeRegExp, githubSlug } from "./util.mjs";
 export function applyLegacyUi(text, config, { exclude = [], file, notes }) {
   let out = text;
   const counts = new Map();
+  const used = (config.legacy.used ??= new Set());
   const entries = Object.entries(config.legacy.map).filter(([literal]) => !exclude.includes(literal));
   entries.sort((a, b) => b[0].length - a[0].length);
   for (const [literal, key] of entries) {
     const pattern = new RegExp(String.raw`\*\*${escapeRegExp(literal)}(\.?)\*\*`, "g");
     out = out.replace(pattern, (_, stop) => {
+      used.add(literal);
       counts.set(key, (counts.get(key) ?? 0) + 1);
       return `**{{ui.${key}}}${stop}**`;
     });
   }
   for (const composite of config.legacy.composite ?? []) {
     if (out.includes(composite.old)) {
+      used.add(`composite:${composite.old}`);
       out = out.split(composite.old).join(composite.new);
       notes.info(`${file}: rewrote "${composite.old}" as ${composite.new} (${composite.about})`);
     }
@@ -107,8 +110,12 @@ export function rewriteLinks(text, ctx, { file, notes }) {
     const key = LAUNCH_DOCS[number];
     if (key && ctx.refs[key]) {
       const ref = ctx.refs[key];
-      const text = `${ref.text}${suffix}`;
-      return ref.href ? `[${text}](${ref.href})` : text;
+      // "05 Runbooks, R14" is "Part 7, R14", and jumps to that runbook where the document has it
+      const runbook = key === "runbooks" ? rest.match(/,\s*(R\d+)\b/)?.[1] : null;
+      const text = `${ref.text}${runbook ? `, ${runbook}` : suffix}`;
+      const anchor = runbook ? target.match(/#(r\d+-[\w-]+)$/)?.[1] : null;
+      const href = ref.href && anchor ? `#${anchor}` : ref.href;
+      return href ? `[${text}](${href})` : text;
     }
     // not part of the guides: say what it is and where it lives
     if (labelMatch) {
@@ -189,4 +196,26 @@ export function normalizeHeadings(md, { shift = 0, usedIds, notes, file }) {
       return `${"#".repeat(tag)} ${text} {#${id} ${[...classes, `lv${role}`].map((name) => `.${name}`).join(" ")}${dataAttributes ? ` ${dataAttributes}` : ""}}`;
     })
     .join("\n");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// References that start a sentence
+// ---------------------------------------------------------------------------------------------------------------------------
+
+const REFERENCE_PATTERN =
+  /(\[?)\b(the (?:Complete Deployment Guide|Project Manager Field Manual|Hardware Reference|Founder Go-Live Guide|site packs|Appendices|Sales kit|runbooks)|this (?:guide|manual|reference|book))/g;
+
+/** Is the text before this point the start of a sentence: the start of the text or a paragraph, a list item, a table cell, or after a full stop? */
+function startsSentence(before) {
+  if (/(^|\n\s*\n)\s*$/.test(before)) return true;
+  const line = before.slice(before.lastIndexOf("\n") + 1);
+  if (/^\s*(?:[-*+]|\d+\.)\s+(?:\[[ xX]\]\s+)?(?:\*\*)?$/.test(line)) return true;
+  if (/\|\s*$/.test(line)) return true;
+  const trimmed = before.replace(/[\s*_"“(]+$/, "");
+  return /[.!?]$/.test(trimmed) && !/\b(?:e\.g|i\.e|etc|vs)\.$/.test(trimmed);
+}
+
+/** A rewritten cross-reference ("the Complete Deployment Guide, Part 7 (PDF 00)") is written with a small first letter; where it begins a sentence it gets a capital. */
+export function capitaliseReferences(markdown) {
+  return markdown.replace(REFERENCE_PATTERN, (whole, bracket, phrase, offset, text) => (startsSentence(text.slice(0, offset)) ? `${bracket}${phrase[0].toUpperCase()}${phrase.slice(1)}` : whole));
 }

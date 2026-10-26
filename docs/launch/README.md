@@ -11,6 +11,14 @@ Each page says what to do, in what order, and what you should see when it worked
 | [04 Sales kit](04-sales-kit.md) | The founder and the project manager | The offer and its price, who to call, the questions, the pitch and a ten-minute demo, what may and may not be said, objections, the pilot order form (a draft for a lawyer), follow-up, and emails |
 | [05 Runbooks](05-runbooks.md) | The founder and the project manager | The morning check, and what to do when a box is offline, a reading is wrong, a message did not arrive, the platform is down, a release is bad, a person is locked out, data is asked for or deleted, there is a security incident, and for backups |
 
+## Printable guides (PDF)
+
+The same material, laid out for paper, is in [`pdf/`](pdf/README.md): one guide for the founder, one for the project manager,
+one for the hardware, and **one pack for each kind of site** (hotel or guesthouse, solar plant, farm or greenhouse, water tank
+and pump station) with the survey form, the drawings, the setup steps in order, the commissioning tests and the handover sheet.
+`00` holds everything in one file. They are built from these pages and from [`packs/`](packs/) by `npm run docs:pdf`: change
+the sources and rebuild, never the PDFs.
+
 **The decisions behind all of this** (who the first customers are, what is sold and at what price, who does what, what
 is deliberately left for later) are in [27 Launch decisions](../27-launch-decisions.md). Every one can be changed:
 that page says how, and what would make you.

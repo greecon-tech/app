@@ -115,7 +115,7 @@ const PARTS = {
   pack: (letter) => ({ ctx }) => {
     const kit = ctx.kits.kits[letter];
     return part(
-      { id: `pack-${letter.toLowerCase()}-part`, label: `Site pack ${letter}`, title: kit.name, runningHead: `Site pack ${letter} · ${kit.name}` },
+      { id: `pack-${letter.toLowerCase()}-part`, label: `Site pack ${letter}`, title: kit.name, runningHead: `Site pack ${letter} · ${kit.running}` },
       { lead: `*${kit.short}.* ${read("pack-lead.md").trim()}`, body: PACK_SOURCE[letter] }
     );
   }
@@ -153,9 +153,9 @@ const elsewhere = (self) => ({
   founder: self === "founder" ? { text: "this guide" } : { text: "the Founder Go-Live Guide (PDF 01)" },
   manual: self === "manual" ? { text: "this manual" } : { text: "the Project Manager Field Manual (PDF 02)" },
   hardware: self === "hardware" ? { text: "this reference" } : { text: "the Hardware Reference (PDF 03)" },
-  runbooks: self === "manual" ? { text: "Part 7", href: "#part-7" } : { text: "the Complete Deployment Guide, Part 7 (PDF 00)" },
+  runbooks: self === "manual" ? { text: "the runbooks", href: "#part-7" } : { text: "the Complete Deployment Guide, Part 7 (PDF 00)" },
   appendices: self === "manual" ? { text: "the Appendices", href: "#appendices" } : { text: "the Appendices of the Complete Deployment Guide (PDF 00)" },
-  packs: { text: "the site packs, PDFs 04 to 07" },
+  packs: { text: "PDFs 04 to 07" },
   sales: { text: "the Sales kit (document 04, not part of these guides)" },
   book: { text: "the Complete Deployment Guide (PDF 00)" }
 });
@@ -168,7 +168,7 @@ export function documents(kits) {
       id: n,
       file: PDF_NAMES[n],
       title: `Site Pack ${letter}: ${kit.name}`,
-      runningTitle: `Site pack ${letter} · ${kit.name}`,
+      runningTitle: `Site pack ${letter} · ${kit.running}`,
       kit: letter,
       tocDepth: 3,
       refs: elsewhere("pack"),
@@ -191,6 +191,7 @@ export function documents(kits) {
       file: PDF_NAMES["00"],
       title: "Greecon Complete Deployment Guide",
       runningTitle: "Complete Deployment Guide",
+      partNumbers: true,
       tocDepth: 2,
       refs: BOOK_REFS,
       readme: { who: "Everyone: the founder, the project manager and the electrician", when: "Once, to keep in the office. For a job, print the pack or guide that fits it (04 to 07, 01 to 03)" },
@@ -213,7 +214,7 @@ export function documents(kits) {
       refs: elsewhere("founder"),
       readme: { who: "The founder (nothing technical is assumed)", when: "Once, before the first customer. The last page tears off as the go-live checklist" },
       cover: {
-        kicker: "Guide 01 · Part 2",
+        kicker: "Guide 01 · For the founder",
         title: "Founder Go-Live Guide",
         subtitle: "Put the platform on the internet: Railway, the two addresses, the first sign-in, email and text messages, the demo, the outside checks and backups.",
         forWho: "The founder, once. Nothing technical is assumed",
@@ -231,7 +232,7 @@ export function documents(kits) {
       refs: elsewhere("manual"),
       readme: { who: "The project manager, for every site", when: "Once for the office and the car; print the forms (Appendix A) for each site" },
       cover: {
-        kicker: "Guide 02 · Parts 3, 6, 7",
+        kicker: "Guide 02 · For the project manager",
         title: "Project Manager Field Manual",
         subtitle: "A customer from the first call to day 90: survey, preparing the box, install day, the setup list, commissioning, handover, the morning check and the forms.",
         forWho: "The project manager, for every site",
@@ -250,7 +251,7 @@ export function documents(kits) {
       refs: elsewhere("hardware"),
       readme: { who: "The project manager who buys and fits hardware, and the electrician", when: "Once, to keep with the spares kit" },
       cover: {
-        kicker: "Guide 03 · Part 4",
+        kicker: "Guide 03 · For the project manager and the electrician",
         title: "Hardware Reference",
         subtitle: "Every part of a kit: the box, the converter, the meters, the input modules, the level, pressure, flow, soil and climate sensors, the cellular router, power, the UPS, the enclosure, labels, tools and spares.",
         forWho: "The project manager who buys and fits hardware, and the electrician",

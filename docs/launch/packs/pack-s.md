@@ -10,7 +10,7 @@ A solar plant with a grid connection, with or without a battery. It works with a
 ::: fact
 **What it measures**
 
-Solar production, grid import and export, and, if wanted, the site's own consumption (a load meter) and a battery's charge and power.
+How much the solar produces, the grid (import and export) and, if wanted, the site's own consumption (a load meter) and a battery's charge and power.
 :::
 
 ::: fact
@@ -190,11 +190,11 @@ greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input --address 52 
 
 ### The battery, if there is one
 
-Two readings, mapped by hand from the maker's register table (step 4 of the setup list): press **{{ui.choose_the_register}}** under each reading's name. The register kind is **Input** for a manual's 3xxxx and **Holding** for 4xxxx; the address is counted from zero.
+Two readings, mapped by hand from the maker's register table (step 4 of the setup list): press **{{ui.choose_the_register}}** under each reading's name. The register kind is **{{ui.register_input}}** for a manual's 3xxxx and **{{ui.register_holding}}** for 4xxxx; the address is counted from zero.
 
 ::: {.form .short}
 | Reading | Register kind | Address | Kind of number | How it becomes the reading | Notes |
-|-----------|--------|-----|-----------|-----------|-----------|
+|-----------|--------|-------|-----------|-----------|-----------|
 | {{ui.reading_battery_charge}} | | | | | percent |
 | {{ui.reading_battery_power}} | | | | | kW, positive while charging |
 :::
@@ -209,24 +209,24 @@ Two readings, mapped by hand from the maker's register table (step 4 of the setu
 
 {{include:_shared/commissioning-intro.md}}
 
+{{include:_shared/internet-cut.md}}
+
 ::: tests
 | Check and how | Pass when | Greecon shows | Real | Result |
 |----------------------|-----------------|--------|--------|--------|
-| **Grid meter's display against Greecon.** Read the display (kW or W) and Greecon at the same time. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
-| **Solar meter's display against Greecon.** The same, on the solar meter. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
+| **{{ui.device_grid_meter}}'s display against Greecon.** Read the display (kW or W) and Greecon at the same time. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
+| **{{ui.device_solar_meter}}'s display against Greecon.** The same, on the solar meter. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
 | **Load meter's display against Greecon** (if fitted). | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
 | **Grid direction.** A known load on (a kettle or a heater), the sun down or the solar off. On a plant that exports at noon, do it at night or with the inverter off. | Import rises; export does not | | | {{pf}} |
 | **Solar at night.** | Zero, or a few watts | | | {{pf}} |
 | **Solar at midday.** Against the inverter's own display. | Within about 5 percent; grid export is the difference between production and what the site is using | | | {{pf}} |
-| **Battery charge** (if fitted). Against the battery's own display. | The two agree (write both numbers) | | | {{pf}} |
+| **{{ui.reading_battery_charge}}** (if fitted). Against the battery's own display. | The two agree (write both numbers) | | | {{pf}} |
 {{include:_shared/rows-common.md}}
 :::
 
-{{include:_shared/internet-cut.md}}
-
 Signed off by: {{line}} Date: {{line:short}}
 
-## Handover
+## Handover {.newpage}
 
 {{include:_shared/handover-1.md}}
 - {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); **{{ui.energy_now}}**, the flow moving from the solar to the site and the grid; **{{ui.value}}**, what the solar kept on site this month and the prices it uses; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each person on the list has a login of their own, so that they can acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
@@ -239,12 +239,12 @@ Signed off by: {{line}} Date: {{line:short}}
 |---------------------|---------------------|
 | Customer and site | |
 | Date, and who was there | |
-| Who is told, in order (name, mobile with country code, email) | |
+| {{ui.who_is_told}}, in order (name, mobile with country code, email) | |
 | Prices entered (electricity, export) and where they came from; zero-export box ticked if needed | |
 | Battery: limits agreed (Low below), or no battery | |
-| Setup list: every step Done and the site Commissioned | {{cb}} Yes |
-| Handover sheet printed and signed | {{cb}} Yes |
-| Shown: Overview, Energy now, Value, Who is told with a live test message, Reports | {{cb}} Yes |
+| {{ui.setup_list}}: every step Done and the site Commissioned | {{cb}} Yes |
+| {{ui.handover_sheet_link}} printed and signed | {{cb}} Yes |
+| Shown: {{ui.overview}}, {{ui.energy_now}}, {{ui.value}}, {{ui.who_is_told}} with a live test message, {{ui.reports}} | {{cb}} Yes |
 | Left: label on the box; card with `info@greecon.earth` and your phone | {{cb}} Yes |
 | Photographs and survey form filed in the customer's folder | {{cb}} Yes |
 :::
@@ -254,7 +254,7 @@ Signed off by: {{line}} Date: {{line:short}}
 <div>Owner: name and signature</div>
 :::
 
-## The three most likely problems
+## The three most likely problems {.newpage}
 
 | What you see | Likely cause | What to do |
 |----------------|--------------------|------------------------------|

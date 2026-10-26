@@ -10,7 +10,7 @@ A hotel or guesthouse with a water tank and a pump, solar on the roof and a grid
 ::: fact
 **What it measures**
 
-Grid import and export, solar production, tank level, line pressure, pump flow (with a flow meter) and whether the pump runs.
+The grid (import and export), the solar production, the tank, the line pressure, the pump's flow (with a flow meter) and whether the pump runs.
 :::
 
 ::: fact
@@ -50,9 +50,9 @@ The template **{{kit.template}}** makes three devices. What each gives:
 |------------|-------------------------|--------|-------------------------|
 | **{{ui.reading_grid_import}}** and **{{ui.reading_grid_export}}** | {{ui.device_grid_meter}}: an Eastron SDM630 where the supply enters, unit 1. One meter gives both: positive power is energy coming in, negative is energy sent out | kW | None |
 | **{{ui.reading_solar}}** | {{ui.device_solar_meter}}: an Eastron SDM630 on the inverter's AC output, unit 2 | kW | None |
-| **{{ui.reading_tank}}** | {{ui.device_water_module}}, unit 3: the level transmitter's 4 to 20 mA | % | Critical below 15 % (Act now); Low below 35 % (Check today) |
+| **{{ui.reading_tank}}** | {{ui.device_water_module}}, unit 3: the level transmitter's 4 to 20 mA | % | Critical below 15 % ({{ui.act_now}}); Low below 35 % ({{ui.check_today}}) |
 | **{{ui.reading_pressure}}** | {{ui.device_water_module}}, unit 3: the pressure transmitter's 4 to 20 mA | bar | None |
-| **{{ui.reading_flow}}** | {{ui.device_water_module}}, unit 3: the flow meter's 4 to 20 mA (optional) | litres a minute | No flow at or below 0.2 litres a minute (Act now, once it has held for 30 seconds, and only when the box reads both a flow and the pump's running state) |
+| **{{ui.reading_flow}}** | {{ui.device_water_module}}, unit 3: the flow meter's 4 to 20 mA (optional) | litres a minute | No flow at or below 0.2 litres a minute ({{ui.act_now}}, once it has held for 30 seconds, and only when the box reads both a flow and the pump's running state) |
 | **{{ui.reading_pump}}** | {{ui.device_water_module}}, unit 3: the pump starter's spare contact | on or off | None |
 
 Without the flow meter, or without the pump's running contact, "the pump is running but no water is flowing" cannot be raised, and the handover should say so. Solar surplus has no standard limit: the platform says nothing about it rather than guess.
@@ -193,18 +193,18 @@ greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input --address 52 
 
 ### The water module
 
-One form for each of its four readings (step 4 of the setup list). The register kind is **Input** for a manual's 3xxxx and **Holding** for 4xxxx; the address is counted from zero. The module's own manual gives what the register holds at 4 and at 20 mA: check those two with a loop calibrator (send 4, 12 and 20 mA, read the register with `greecon-edge modbus-test`) and write what you read.
+One form for each of its four readings (step 4 of the setup list). The register kind is **{{ui.register_input}}** for a manual's 3xxxx and **{{ui.register_holding}}** for 4xxxx; the address is counted from zero. The module's own manual gives what the register holds at 4 and at 20 mA: check those two with a loop calibrator (send 4, 12 and 20 mA, read the register with `greecon-edge modbus-test`) and write what you read.
 
 ::: {.form .short}
 | Reading | Register kind | Address | Conversion | Register at 4 mA | Register at 20 mA | Reading from bottom to top |
-|-----------|--------|-----|-----------|--------|--------|--------------|
+|-----------|--------|-------|-----------|--------|--------|--------------|
 | {{ui.reading_tank}} | | | A straight line | | | 0 to 100 (rule below) |
 | {{ui.reading_pressure}} | | | A straight line | | | 0 to the range, in bar |
 | {{ui.reading_flow}} | | | A straight line | | | 0 to the range, in litres a minute |
 | {{ui.reading_pump}} | | | Multiply and add | | | on or off |
 :::
 
-**Tank level when the transmitter's range is longer than the tank is high:** reading at the top = range ÷ tank height × 100. A 0 to 5 m transmitter in a tank 3 m high: 5 ÷ 3 × 100 = 166.7. At the tank's full height the reading is then 100. Delete the {{ui.reading_flow}} reading if there is no flow meter (open **{{ui.equipment_and_readings}}**, find it under **Readings** and press **{{ui.remove}}**): a reading with no register holds the setup list at step 4.
+**When the transmitter's range is longer than the tank is high:** reading at the top = range ÷ tank height × 100. A 0 to 5 m transmitter in a tank 3 m high: 5 ÷ 3 × 100 = 166.7. At the tank's full height the reading is then 100. Delete the {{ui.reading_flow}} reading if there is no flow meter (open **{{ui.equipment_and_readings}}**, find it under **Readings** and press **{{ui.remove}}**): a reading with no register holds the setup list at step 4.
 
 ## The platform's setup list
 
@@ -214,27 +214,27 @@ One form for each of its four readings (step 4 of the setup list). The register 
 
 {{include:_shared/commissioning-intro.md}}
 
+{{include:_shared/internet-cut.md}}
+
 ::: tests
 | Check and how | Pass when | Greecon shows | Real | Result |
 |----------------------|-----------------|--------|--------|--------|
-| **Grid meter's display against Greecon.** Read the display (kW or W) and Greecon at the same time. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
-| **Solar meter's display against Greecon.** The same, on the solar meter. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
+| **{{ui.device_grid_meter}}'s display against Greecon.** Read the display (kW or W) and Greecon at the same time. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
+| **{{ui.device_solar_meter}}'s display against Greecon.** The same, on the solar meter. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
 | **Grid direction.** A known load on (a kettle or a heater), the sun down or the solar off. | Import rises; export does not | | | {{pf}} |
 | **Solar at night.** | Zero, or a few watts | | | {{pf}} |
 | **Solar at midday.** Against the inverter's own display. | Within about 5 percent | | | {{pf}} |
-| **Tank level.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
+| **{{ui.reading_tank}}.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
 | **Pressure.** Against the pressure gauge on the same line. | Within 0.2 bar | | | {{pf}} |
 | **Flow** (if there is a flow meter). A bucket test (fill a measured volume, time it), or the flow meter's own display. | Within 10 percent | | | {{pf}} |
-| **Pump running.** The owner starts the pump. | Greecon shows running within 30 seconds, and changes both ways | | | {{pf}} |
+| **{{ui.reading_pump}}.** The owner starts the pump. | Greecon shows running within 30 seconds, and changes both ways | | | {{pf}} |
 | **4 to 20 mA channels.** With a loop calibrator, send 4, 12 and 20 mA. | The reading at the bottom, the middle and the top | | | {{pf}} |
 {{include:_shared/rows-common.md}}
 :::
 
-{{include:_shared/internet-cut.md}}
-
 Signed off by: {{line}} Date: {{line:short}}
 
-## Handover
+## Handover {.newpage}
 
 {{include:_shared/handover-1.md}}
 - {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); **{{ui.energy_now}}**, the flow moving from the solar to the site and the grid; **{{ui.value}}**, what the solar kept on site this month and the prices it uses; the site's own page under **{{ui.sites}}**, with the tank level, the pressure and whether the pump runs; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each person on the list has a login of their own, so that they can acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
@@ -247,13 +247,13 @@ Signed off by: {{line}} Date: {{line:short}}
 |-------------------|-------------------------------------|
 | Customer and site | |
 | Date, and who was there | |
-| Who is told, in order (name, mobile with country code, email) | |
+| {{ui.who_is_told}}, in order (name, mobile with country code, email) | |
 | Alert limits agreed (tank Critical below, Low below; no-flow level) | |
 | Without a flow meter or the pump's run contact the no-flow alert cannot be raised: said to the owner | {{cb}} Said  {{cb}} Not applicable |
 | Prices entered (electricity, export, water) and where they came from | |
-| Setup list: every step Done and the site Commissioned | {{cb}} Yes |
-| Handover sheet printed and signed | {{cb}} Yes |
-| Shown: Overview, Energy now, Value, Who is told with a live test message, Reports | {{cb}} Yes |
+| {{ui.setup_list}}: every step Done and the site Commissioned | {{cb}} Yes |
+| {{ui.handover_sheet_link}} printed and signed | {{cb}} Yes |
+| Shown: {{ui.overview}}, {{ui.energy_now}}, {{ui.value}}, {{ui.who_is_told}} with a live test message, {{ui.reports}} | {{cb}} Yes |
 | Left: label on the box; card with `info@greecon.earth` and your phone | {{cb}} Yes |
 | Photographs and survey form filed in the customer's folder | {{cb}} Yes |
 :::
@@ -263,12 +263,12 @@ Signed off by: {{line}} Date: {{line:short}}
 <div>Owner: name and signature</div>
 :::
 
-## The three most likely problems
+## The three most likely problems {.newpage}
 
 | What you see | Likely cause | What to do |
 |----------------|--------------------|------------------------------|
 | **The solar meter reads zero at midday** | A clamp closed on the wrong cable, a closed breaker upstream, or the inverter is limited to zero export | Compare with the meter's own display and test the register from the box (`greecon-edge modbus-test`). Ask the electrician to confirm that the clamps are on the inverter's output phases. If the plant is zero-export, midday solar can honestly be low: check the inverter's display |
 | **The tank level is wrong** (above 100 percent, or does not move) | A wrong reading at the top for the tank's height, a blocked vented cable, or the transmitter not at the bottom of the tank | Re-enter the reading at the top (range ÷ tank height × 100). Check that the transmitter hangs at the bottom with its vented cable free and fixed. Send 4, 12 and 20 mA with the loop calibrator and compare |
-| **The pump shows running when it is stopped** (and the no-flow alert, an Act now, opens while the pump is stopped) | The pump's running contact is inverted | The electrician swaps the contact's normally-open and normally-closed wires, or uses the opposite contact. Until it is right the no-flow alert cannot be trusted |
+| **The pump shows running when it is stopped** (and the no-flow alert, an {{ui.act_now}}, opens while the pump is stopped) | The pump's running contact is inverted | The electrician swaps the contact's normally-open and normally-closed wires, or uses the opposite contact. Until it is right the no-flow alert cannot be trusted |
 
 More, by symptom, are in the Appendices of the Complete Deployment Guide (Appendix C) and in the Field Manual. A device that does not answer is, in this order: a wrong unit number (the commonest), a wrong speed or parity at the converter, A and B swapped on the data cable, the converter not in gateway mode, a wrong IP address.

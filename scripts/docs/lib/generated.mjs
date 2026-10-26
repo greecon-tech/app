@@ -24,7 +24,7 @@ export function bomTable(ctx) {
   });
   return [
     "| | Item | Specification | Qty | Planning estimate (EUR) |",
-    "|--|---------|--------------------------|----|----------|",
+    "|--|-----------|-------------------------|-------|----------|",
     ...rows
   ].join("\n") + "\n";
 }
@@ -94,13 +94,13 @@ function oneShoppingTable(ctx, letter) {
     return `| {{cb}} | ${cell(name)} | ${cell(line.qty)} | ${cell(part.estimate)} | | | |`;
   });
   return [
-    `### [${letter}]{.num} ${kit.name} {.lv3 .newpage #shopping-${letter.toLowerCase()}}`,
-    "",
-    "| | Item and specification | Qty | Planning estimate (EUR) | Quote 1 | Quote 2 | Quote 3 |",
-    "|--|------------------|---|-------|-----|-----|-----|",
-    ...rows,
+    `### [${letter}]{.num} ${kit.name} {.lv3${letter === KIT_ORDER[0] ? "" : " .newpage"} #shopping-${letter.toLowerCase()}}`,
     "",
     `**Planning total:** ${kit.headline}`,
+    "",
+    "| | Item and specification | Qty | Planning estimate (EUR) | Quote 1 | Quote 2 | Quote 3 |",
+    "|--|------------------------|-------|------------|-----|-----|-----|",
+    ...rows,
     ""
   ].join("\n");
 }
@@ -168,12 +168,12 @@ export function stepCards(ctx) {
     out.push("");
   }
   if (left.length > 0) {
-    out.push(
+    out.unshift(
       `**Not on this kit.** The platform leaves out a step that does not apply to the site, so the list for kit ${letter} has no ${left
         .map((step) => `step ${step.n} (${step.title})`)
-        .join(" and no ")}. The steps keep their order; the count on the setup page is out of the steps that do apply, not out of ${total}.`
+        .join(" and no ")}. The steps keep their order; the count on the setup page is out of the steps that do apply, not out of ${total}.`,
+      ""
     );
-    out.push("");
   }
   return out.join("\n");
 }

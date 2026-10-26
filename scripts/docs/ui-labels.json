@@ -105,16 +105,22 @@
     "where_it_is": "Where it is",
     "currency_of_bills": "Currency of the bills",
     "site_clock": "The site's own clock",
-    "no_export": "This site cannot send energy to the grid"
+    "no_export": "This site cannot send energy to the grid",
+    "status_done": "Done",
+    "status_todo": "To do",
+    "status_waiting": "Waiting",
+    "status_attention": "Needs attention",
+    "ip_address": "IP address",
+    "port": "Port",
+    "unit_number": "Unit number",
+    "register_input": "Input",
+    "register_holding": "Holding",
+    "multiply_and_add": "Multiply and add",
+    "straight_line": "A straight line, such as 4-20 mA"
   },
   "legacy": {
-    "about": "The launch documents spell the screen names out literally, in plain Markdown that GitHub shows as it is. Where a name stands alone in bold (**Clients**) the build treats it as the label with the key on the right, so that the guides follow the labels above: when the web app is renamed, change \"labels\" and the guides print the new name even though the documents still carry the old spelling. This map lists the spellings the documents use today, including the older ones that docs/launch/05-runbooks.md (which is being changed by someone else) still uses and which no longer exist in the app (Sites across clients, Admin, Create user, Analytics). A trailing full stop inside the bold (**I checked this.**) is kept. When the documents have been reconciled with a rename, update the spellings here.",
+    "about": "The launch documents (01, 02 and 05) spell screen names out literally, in plain Markdown that GitHub shows as it is. Where a name stands alone in bold (**Clients**) the build treats it as the label with the key on the right, so that the guides follow the labels above: when the web app is renamed, change \"labels\" and the guides print the new name even though the documents still carry the old spelling. This map lists the spellings the documents use today, including three that docs/launch/05-runbooks.md still uses and that no longer exist in the app (Admin, Create user, Analytics), which the coordinator is to reconcile. A trailing full stop inside the bold (**I checked this.**) is kept. At every full build the build lists any spelling here that no document uses any more, so that it can be removed. \"composite\" is for a longer phrase that has to be replaced as a whole; it is empty at present.",
     "map": {
-      "Sites across clients": "today",
-      "Admin": "people",
-      "Create user": "add_person",
-      "Analytics": "trends",
-      "Onboard a new client": "onboard_a_client",
       "Clients": "clients",
       "Sites": "sites",
       "Alerts": "alerts",
@@ -129,7 +135,6 @@
       "Open for setup": "open_for_setup",
       "Back to the Greecon console": "back_to_console",
       "What kind of site": "what_kind_of_site",
-      "Create the site and start setting it up": "create_the_site",
       "Add the box and get its install command": "add_box",
       "Install a box, or replace this one": "replace_box",
       "Enter prices and baseline": "enter_prices",
@@ -152,63 +157,32 @@
       "Check today": "check_today",
       "Today": "today",
       "Team": "team",
-      "Help": "help",
       "Needs a look": "needs_a_look",
       "Requests waiting": "requests_waiting",
-      "Being set up": "being_set_up",
       "Open account": "open_account",
       "Continue setup": "continue_setup",
       "Onboard a client": "onboard_a_client",
-      "Client onboarded: save this password now": "client_onboarded",
-      "Mark contacted": "mark_contacted",
-      "Decline": "decline",
       "More": "more",
       "Suspend this client": "suspend_client",
       "Reactivate this client": "reactivate_client",
       "Downloads": "downloads",
       "Trends": "trends",
-      "Needs you": "needs_you",
       "Energy now": "energy_now",
       "Value": "value",
       "Add a site": "add_a_site",
-      "New site from a template": "new_site_form",
-      "Setup list": "setup_list",
-      "Handover sheet": "handover_sheet_link",
       "Equipment and readings": "equipment_and_readings",
       "The site itself": "the_site_itself",
       "Remove": "remove",
-      "Do next": "do_next",
-      "Copy the command": "copy_command",
       "I have copied it": "i_have_copied_it",
       "People": "people",
       "Add person": "add_person",
-      "Can sign in": "can_sign_in",
-      "Turn on": "turn_on",
-      "What each role may do": "what_each_role_may_do",
       "Account": "account",
       "Change your password": "change_your_password",
       "Audit log": "audit_log",
       "Add to the team": "add_to_team",
       "Client onboarded — save this password now": "client_onboarded",
-      "Change password": "change_password",
-      "Person added — save this password now": "person_added"
+      "Change password": "change_password"
     },
-    "composite": [
-      {
-        "about": "05, R0: the morning routine opens the team's list; it is now Today, where the sites that need a look come first.",
-        "old": "**Clients → Sites across clients**",
-        "new": "**{{ui.today}}**"
-      },
-      {
-        "about": "05, R6: turning off a member of Greecon's team is now on the Team page.",
-        "old": "**Clients → Greecon team → Turn off**",
-        "new": "**{{ui.team}} → {{ui.turn_off}}**"
-      },
-      {
-        "about": "05, R6: a client's people are a fold-out in its row on Clients (no longer a section called Users).",
-        "old": "opens **People** under **Users**",
-        "new": "opens **{{ui.people}}** in its row"
-      }
-    ]
+    "composite": []
   }
 }

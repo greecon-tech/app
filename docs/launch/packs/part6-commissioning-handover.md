@@ -33,7 +33,7 @@ A check that fails is not commissioned. Do not press **{{ui.commission_this_site
 | A meter's display and Greecon differ by more than 5 percent | The register and its scale (W against kW: multiply by 0.001); on a meter with 5 A current transformers, the CT ratio set in the meter's menu; a clamp on the wrong phase or cable. Test the register from the box with `greecon-edge modbus-test` against the meter's display |
 | Grid direction: export rises when the load is switched on | The clamps are the wrong way round: the electrician turns them, with the lock-out on, and you repeat the check |
 | Solar reads more than a few watts at night, or nothing at midday | The solar meter's clamps are on the wrong cable; or the inverter is limited to zero export |
-| Tank level is off by more than 5 percentage points, or above 100 | The reading at the top (range ÷ tank height × 100); the transmitter at the bottom of the tank with its vented cable free; the 4 to 20 mA conversion |
+| The tank reading is off by more than 5 percentage points, or above 100 | The reading at the top (range ÷ tank height × 100); the transmitter at the bottom of the tank with its vented cable free; the 4 to 20 mA conversion |
 | Pressure is off by more than 0.2 bar | The conversion's bottom and top; the transmitter's range; check the channel with the loop calibrator |
 | Flow is off by more than 10 percent | The flow meter's range and conversion; its straight run in the pipe |
 | The pump shows running when it is stopped (and the no-flow alert opens) | The pump's running contact is inverted: the electrician swaps its normally-open and normally-closed wires, or uses the opposite contact |

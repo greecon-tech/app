@@ -3,11 +3,11 @@ This book takes the platform from nothing to live, and a customer from the first
 ## [1.1]{.num} Who does what
 
 | Who | Does | Never does |
-|--------|------------------------------------|-------------------------------------|
+|-------------|------------------------------|-----------------------------|
 | **The founder** | Puts the platform on the internet, once (Part 2). Gives the project manager a login. Owns every incident about the platform or about security. Reads the morning check when the project manager is away. Meets the customer at day 60 and day 90 | Hands out hardware, or installs anything at a customer, before the go-live checklist is ticked |
-| {{who:pm}} **The project manager** | Surveys, prepares the customer in Greecon and the box at the office, installs the low-voltage side with the electrician, works down the setup list, commissions, hands over, and looks after the site (Parts 3 and 6) | Works inside a distribution board. Touches the solar panels' wiring, a tank that must be entered, wastewater or chemicals. Promises a saving. Says Greecon is a safety system |
-| {{who:e}} **The electrician** | All the mains-voltage work: meters' voltage taps and current clamps, the pump's run contact, anything inside a distribution board, under the customer's lock-out procedure | Works on a live conductor for Greecon's sake. Connects anything of Greecon's to a control circuit |
-| **The customer** | Names the people who are told, gives access and a socket that stays on, starts and stops their own equipment, signs the handover | |
+| {{who:pm}} | Surveys, prepares the customer in Greecon and the box at the office, installs the low-voltage side with the electrician, works down the setup list, commissions, hands over, and looks after the site (Parts 3 and 6) | Works inside a distribution board. Touches the solar panels' wiring, a tank that must be entered, wastewater or chemicals. Promises a saving. Says Greecon is a safety system |
+| {{who:e}} | All the mains-voltage work: meters' voltage taps and current clamps, the pump's run contact, anything inside a distribution board, under the customer's lock-out procedure | Works on a live conductor for Greecon's sake. Connects anything of Greecon's to a control circuit |
+| {{who:c}} | Names the people who are told, gives access and a socket that stays on, starts and stops their own equipment, signs the handover | |
 
 The colours used for these people in every step table are the same all through the book: black for the electrician, green for the project manager, sand for the customer.
 
@@ -62,7 +62,7 @@ Tick these before the first customer is surveyed. Nothing here needs a technicia
 **The set.** The same text is printed in eight PDFs, so that each reader prints only what they need. A part has the same number and the same words in every PDF it appears in.
 
 | PDF | For | Print |
-|------|--------------------|----------------------------|
+|------------------------|---------------|-------------------|
 | 00 Complete Deployment Guide | Everyone | Once, to keep in the office |
 | 01 Founder Go-Live Guide (Part 2) | The founder | Once, before the first customer |
 | 02 Project Manager Field Manual (Parts 3 and 6, the runbooks a project manager uses, the appendices) | The project manager | Once, and the forms for each site |
@@ -73,6 +73,6 @@ Tick these before the first customer is surveyed. Nothing here needs a technicia
 
 **Prices** are planning estimates in EUR, excluding VAT and labour, from public shop prices seen in October 2026. They are not quotes. Replace them with real quotes in the first week.
 
-**Screen names** follow the web app as it was redesigned in October 2026: Greecon's team has **{{ui.today}}**, **{{ui.clients}}**, **{{ui.requests}}**, **{{ui.team}}** and **{{ui.settings}}**; a customer has **{{ui.overview}}**, **{{ui.sites}}**, **{{ui.alerts}}**, **{{ui.reports}}** and **{{ui.settings}}**. Where the book says "where a button has a different name today, look for the one that means the same", it means it.
+**Screen names** follow the web app as redesigned in October 2026: Greecon's team has **{{ui.today}}**, **{{ui.clients}}**, **{{ui.requests}}**, **{{ui.team}}** and **{{ui.settings}}**; a customer has **{{ui.overview}}**, **{{ui.sites}}**, **{{ui.alerts}}**, **{{ui.reports}}** and **{{ui.settings}}**.
 
-**What this book is made from, and what it is not.** It is built from the launch documents in `docs/launch/` and from the platform's own code, and it is rebuilt with `npm run docs:pdf`. If something in it does not match what you see, fix the source and rebuild; do not mark up the PDF. The ten setup-list step titles are checked against the platform at every build. What the book cannot know is a particular maker's terminal numbers, register tables and menus: those are in the maker's manual that came with the part.
+**What this book is made from.** The launch documents in `docs/launch/` and the platform's own code; it is rebuilt with `npm run docs:pdf`. If something in it does not match what you see, fix the source and rebuild, and do not mark up the PDF. The ten setup-list step titles are checked against the platform at every build. A maker's terminal numbers, register tables and menus are in the maker's manual that came with the part.

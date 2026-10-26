@@ -10,7 +10,7 @@ A farm or a greenhouse with irrigation: soil moisture and weather at the field, 
 ::: fact
 **What it measures**
 
-Soil moisture (one probe for each zone), air temperature and humidity, tank level, line pressure, and, if there is a pump to watch, pump flow and whether the pump runs.
+The moisture of the soil (one probe for each zone), the air temperature and humidity, the tank, the line pressure and, if there is a pump to watch, the pump's flow and whether it runs.
 :::
 
 ::: fact
@@ -54,9 +54,9 @@ The template **{{kit.template}}** makes three devices. What each gives:
 |------------|-------------------------|--------|-------------------------|
 | **{{ui.reading_soil}}** | {{ui.device_soil}}: a soil moisture probe that speaks RS-485 Modbus, one for each zone, unit number chosen and written down | % | None. **Start irrigating below** has no standard value: the grower's own is entered after the first week |
 | **{{ui.reading_air_temp}}** and **{{ui.reading_humidity}}** | {{ui.device_weather}}: a temperature and humidity sensor that speaks RS-485 Modbus, unit number chosen and written down | degrees Celsius, % | None |
-| **{{ui.reading_tank}}** | {{ui.device_water_module}}, unit 3: the level transmitter's 4 to 20 mA | % | Critical below 15 % (Act now); Low below 35 % (Check today) |
+| **{{ui.reading_tank}}** | {{ui.device_water_module}}, unit 3: the level transmitter's 4 to 20 mA | % | Critical below 15 % ({{ui.act_now}}); Low below 35 % ({{ui.check_today}}) |
 | **{{ui.reading_pressure}}** | {{ui.device_water_module}}, unit 3: the pressure transmitter's 4 to 20 mA | bar | None |
-| **{{ui.reading_flow}}** (if there is a pump to watch) | {{ui.device_water_module}}, unit 3: the flow meter's 4 to 20 mA | litres a minute | No flow at or below 0.2 litres a minute (Act now, once it has held for 30 seconds, and only when the box reads both a flow and the pump's running state) |
+| **{{ui.reading_flow}}** (if there is a pump to watch) | {{ui.device_water_module}}, unit 3: the flow meter's 4 to 20 mA | litres a minute | No flow at or below 0.2 litres a minute ({{ui.act_now}}, once it has held for 30 seconds, and only when the box reads both a flow and the pump's running state) |
 | **{{ui.reading_pump}}** (if there is a pump to watch) | {{ui.device_water_module}}, unit 3: the pump starter's spare contact | on or off | None |
 
 A sensor whose maker does not document its registers cannot be mapped, so it cannot be used. Soil readings are only as good as the contact between the probe and the soil: the handover records the probe's depth and where it is.
@@ -153,7 +153,7 @@ About four to six hours. The electrician and the project manager work at the sam
 | {{cb}} | 1 | {{who:e}} {{who:pm}} {{who:c}} | **Walk the site together,** with the grower. Agree where each probe and the weather sensor go (typical of the zone, not the wettest or driest spot), and where the enclosure sits. Photograph everything before you start. |
 | {{cb}} | 2 | {{who:c}} | Show the way to the pump house, the tank and the starter. Have a socket that stays on ready. |
 | {{cb}} | 3 | {{who:e}} | **Apply the customer's lock-out** on the circuit that feeds the pump house. |
-| {{cb}} | 4 | {{who:e}} | **Connect the mains to the 24 V DIN supply** in the enclosure, through its fuse or small breaker. Nothing else of Greecon's is connected to mains. |
+| {{cb}} | 4 | {{who:e}} | **Connect the mains to the 24 V DIN supply** in the enclosure, as its manual shows, with a fuse or small breaker as needed. |
 | {{cb}} | 5 | {{who:e}} | **If there is a pump to watch:** connect the pump's run contact (a spare auxiliary contact of the starter) to the digital input of the water module. Never to a control circuit: the contact only reports. |
 | {{cb}} | 6 | {{who:e}} | **Fit the level and pressure transmitters** (and the flow meter, if there is one) with the customer's plumber for the wet parts. The level transmitter hangs at the bottom of the tank and must be rated for drinking water. The pressure transmitter goes on the pipe through an isolating valve. |
 | {{cb}} | 7 | {{who:pm}} | **Mount the enclosure** and in it the converter, the water module, the 24 V supply, the 4G router (and the box, if there is room, otherwise on a shelf beside it). Figure F-4. |
@@ -185,11 +185,11 @@ Devices behind one converter share its IP address and differ only by unit number
 
 ### Registers: all of them from the makers' manuals
 
-There is no ready-made profile for a probe or a sensor: each reading is mapped by hand from the maker's register table (step 4 of the setup list). Under each reading's name press **{{ui.choose_the_register}}**. The register kind is **Input** for a manual's 3xxxx and **Holding** for 4xxxx; the address is counted from zero (30053 is address 52). Write what you enter:
+There is no ready-made profile for a probe or a sensor: each reading is mapped by hand from the maker's register table (step 4 of the setup list). Under each reading's name press **{{ui.choose_the_register}}**. The register kind is **{{ui.register_input}}** for a manual's 3xxxx and **{{ui.register_holding}}** for 4xxxx; the address is counted from zero (30053 is address 52). Write what you enter:
 
 ::: {.form .short}
 | Reading | Register kind | Address | Kind of number | How it becomes the reading |
-|-----------|--------|-----|-----------|--------------------|
+|-----------|--------|-------|-----------|--------------------|
 | {{ui.reading_soil}} (zone 1) | | | | |
 | {{ui.reading_air_temp}} | | | | |
 | {{ui.reading_humidity}} | | | | |
@@ -199,14 +199,14 @@ For the water module's four readings (tank, pressure, flow and pump running), us
 
 ::: {.form .short}
 | Reading | Register kind | Address | Conversion | Register at 4 mA | Register at 20 mA | Reading from bottom to top |
-|-----------|--------|-----|-----------|--------|--------|--------------|
+|-----------|--------|-------|-----------|--------|--------|--------------|
 | {{ui.reading_tank}} | | | A straight line | | | 0 to 100 (rule below) |
 | {{ui.reading_pressure}} | | | A straight line | | | 0 to the range, in bar |
 | {{ui.reading_flow}} | | | A straight line | | | 0 to the range, in litres a minute |
 | {{ui.reading_pump}} | | | Multiply and add | | | on or off |
 :::
 
-**Tank level when the transmitter's range is longer than the tank is high:** reading at the top = range ÷ tank height × 100. A 0 to 5 m transmitter in a tank 3 m high: 5 ÷ 3 × 100 = 166.7. Delete the readings the site does not have (no flow meter, no pump to watch): open **{{ui.equipment_and_readings}}**, find them under **Readings** and press **{{ui.remove}}**. A reading with no register holds the setup list at step 4.
+**When the transmitter's range is longer than the tank is high:** reading at the top = range ÷ tank height × 100. A 0 to 5 m transmitter in a tank 3 m high: 5 ÷ 3 × 100 = 166.7. Delete the readings the site does not have (no flow meter, no pump to watch): open **{{ui.equipment_and_readings}}**, find them under **Readings** and press **{{ui.remove}}**. A reading with no register holds the setup list at step 4.
 
 ## The platform's setup list
 
@@ -216,24 +216,24 @@ For the water module's four readings (tank, pressure, flow and pump running), us
 
 {{include:_shared/commissioning-intro.md}}
 
+{{include:_shared/internet-cut.md}}
+
 ::: tests
 | Check and how | Pass when | Greecon shows | Real | Result |
 |----------------------|-----------------|--------|--------|--------|
-| **Soil probe.** In the air, then in a glass of water, then in the soil. | Three different readings: low in the air, high in the water, plausible in the soil | | | {{pf}} |
-| **Weather sensor.** Against a hand-held thermometer at the sensor. (This check is added by the pack: the launch documents give no tolerance, so write both numbers and judge.) | Plausible for the time of day | | | {{pf}} |
-| **Tank level.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
+| **{{ui.device_soil}}.** In the air, then in a glass of water, then in the soil. | Three different readings: low in the air, high in the water, plausible in the soil | | | {{pf}} |
+| **{{ui.device_weather}}.** Against a hand-held thermometer at the sensor. (This check is added by the pack: the launch documents give no tolerance, so write both numbers and judge.) | Plausible for the time of day | | | {{pf}} |
+| **{{ui.reading_tank}}.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
 | **Pressure.** Against the pressure gauge on the same line. | Within 0.2 bar | | | {{pf}} |
 | **Flow** (if there is a flow meter). A bucket test (fill a measured volume, time it), or the flow meter's own display. | Within 10 percent | | | {{pf}} |
-| **Pump running** (if there is a pump to watch). The owner starts the pump. | Greecon shows running within 30 seconds, and changes both ways | | | {{pf}} |
+| **{{ui.reading_pump}}** (if there is a pump to watch). The owner starts the pump. | Greecon shows running within 30 seconds, and changes both ways | | | {{pf}} |
 | **4 to 20 mA channels.** With a loop calibrator, send 4, 12 and 20 mA. | The reading at the bottom, the middle and the top | | | {{pf}} |
 {{include:_shared/rows-common.md}}
 :::
 
-{{include:_shared/internet-cut.md}}
-
 Signed off by: {{line}} Date: {{line:short}}
 
-## Handover
+## Handover {.newpage}
 
 {{include:_shared/handover-1.md}}
 - {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the soil moisture, the air temperature and humidity, the tank level and the pressure; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each person on the list has a login of their own, so that they can acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
@@ -248,13 +248,13 @@ Signed off by: {{line}} Date: {{line:short}}
 |---------------------|---------------------|
 | Customer and site | |
 | Date, and who was there | |
-| Who is told, in order (name, mobile with country code, email) | |
+| {{ui.who_is_told}}, in order (name, mobile with country code, email) | |
 | Each probe: depth, and where it is | |
 | Alert limits agreed (tank Critical below, Low below; no-flow level if a pump is watched) | |
 | "Start irrigating below": not set yet; to be asked after the first week, on | |
-| Setup list: every step Done and the site Commissioned | {{cb}} Yes |
-| Handover sheet printed and signed | {{cb}} Yes |
-| Shown: Overview, the site's page, Who is told with a live test message, Reports | {{cb}} Yes |
+| {{ui.setup_list}}: every step Done and the site Commissioned | {{cb}} Yes |
+| {{ui.handover_sheet_link}} printed and signed | {{cb}} Yes |
+| Shown: {{ui.overview}}, the site's page, {{ui.who_is_told}} with a live test message, {{ui.reports}} | {{cb}} Yes |
 | Left: label on the box; card with `info@greecon.earth` and your phone | {{cb}} Yes |
 | Photographs and survey form filed in the customer's folder | {{cb}} Yes |
 :::
@@ -264,7 +264,7 @@ Signed off by: {{line}} Date: {{line:short}}
 <div>Owner: name and signature</div>
 :::
 
-## The three most likely problems
+## The three most likely problems {.newpage}
 
 | What you see | Likely cause | What to do |
 |----------------|--------------------|------------------------------|

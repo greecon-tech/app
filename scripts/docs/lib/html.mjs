@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { escapeHtml, stripTags } from "./util.mjs";
 import { expand, restoreHtml } from "./macros.mjs";
-import { normalizeHeadings } from "./sources.mjs";
+import { capitaliseReferences, normalizeHeadings } from "./sources.mjs";
 
 const PANDOC_FROM = [
   "markdown",
@@ -36,7 +36,7 @@ export function runPandoc(markdown) {
  * (figures) back. `usedIds` is shared by everything in one document so that no two headings have the same id.
  */
 export function renderMarkdown(markdown, ctx, { file, usedIds, notes }) {
-  const expanded = expand(markdown, ctx, file);
+  const expanded = capitaliseReferences(expand(markdown, ctx, file));
   const normalized = normalizeHeadings(expanded, { shift: 0, usedIds, notes, file });
   return { expanded: normalized, html: postprocess(restoreHtml(runPandoc(normalized), ctx)) };
 }

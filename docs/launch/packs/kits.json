@@ -180,7 +180,8 @@
           "optional": true,
           "note": "only without usable internet"
         }
-      ]
+      ],
+      "running": "Hotel or guesthouse"
     },
     "S": {
       "letter": "S",
@@ -225,7 +226,8 @@
           "optional": true,
           "note": "only without usable internet; not in the hardware guide's list for this kit, see the network rules"
         }
-      ]
+      ],
+      "running": "Solar plant"
     },
     "F": {
       "letter": "F",
@@ -292,7 +294,8 @@
           "optional": true,
           "note": "if there is a pump to watch"
         }
-      ]
+      ],
+      "running": "Farm or greenhouse"
     },
     "W": {
       "letter": "W",
@@ -360,7 +363,8 @@
           "optional": true,
           "note": "to measure the pump's electricity"
         }
-      ]
+      ],
+      "running": "Water tank and pump station"
     }
   },
   "spares": [

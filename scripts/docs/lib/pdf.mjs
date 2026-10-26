@@ -11,14 +11,14 @@ export async function launchBrowser() {
   return playwright.chromium.launch();
 }
 
-/** Prints an HTML file to a PDF: A4, backgrounds on, the outline (bookmarks) and tags (reading order) written. */
-export async function printToPdf(browser, htmlPath, pdfPath) {
+/** Prints an HTML file to a PDF: A4, backgrounds on, the outline (bookmarks) and, unless told not to, the tags (reading order) written. */
+export async function printToPdf(browser, htmlPath, pdfPath, { tagged = true } = {}) {
   const page = await browser.newPage();
   try {
     await page.goto(`file://${htmlPath}`, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
     await page.emulateMedia({ media: "print" });
-    await page.pdf({ path: pdfPath, preferCSSPageSize: true, printBackground: true, outline: true, tagged: true });
+    await page.pdf({ path: pdfPath, preferCSSPageSize: true, printBackground: true, outline: true, tagged });
   } finally {
     await page.close();
   }
@@ -39,36 +39,18 @@ export function pageTexts(pdfPath) {
   return pages;
 }
 
-function normal(text) {
-  return text.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
 /**
- * Finds the page (1-based) of each heading. Headings are looked for in order, each from the page where the one before was found:
- * a part opener by its label in capitals (PART 3), a chapter by its number and the first words of its title at the start of a line.
- * Pages before `fromPage` (the cover and the contents) are not searched.
+ * The page (1-based) each heading landed on, from the PDF itself: Chromium writes a named destination for every element that has an
+ * id and is linked to, and poppler lists them. This is what the contents' links jump to, so the numbers printed in the contents are
+ * the pages the links go to.
  */
-export function findPages(texts, entries, fromPage) {
+export function destinationPages(pdfPath) {
+  const result = spawnSync("pdfinfo", ["-dests", pdfPath], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) throw new Error(`pdfinfo -dests failed: ${result.stderr}`);
   const pages = new Map();
-  let at = fromPage;
-  for (const entry of entries) {
-    const needle = normal(entry.label ? entry.label : `${entry.number} ${entry.title}`.trim());
-    // a part opener is set in letter-spaced capitals, which the text extraction splits ("PA R T 2"): compare it without spaces
-    const words = entry.label ? needle.replace(/\s/g, "") : needle.split(" ").slice(0, 6).join(" ");
-    let found = -1;
-    for (let index = at; index < texts.length; index += 1) {
-      const lines = texts[index].split("\n").map((line) => normal(line));
-      if (lines.some((line) => (entry.label ? line.replace(/\s/g, "") === words : line.startsWith(words)))) {
-        found = index;
-        break;
-      }
-    }
-    if (found < 0) {
-      pages.set(entry.id, "");
-      continue;
-    }
-    pages.set(entry.id, found + 1);
-    at = found;
+  for (const line of result.stdout.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+\[.*\]\s+"(.*)"\s*$/);
+    if (match) pages.set(match[2], Number(match[1]));
   }
   return pages;
 }

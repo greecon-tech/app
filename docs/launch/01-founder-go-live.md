@@ -32,7 +32,7 @@ These are decided so that you do not have to think about them. The second one ma
 
 | What | Address | Why |
 |---|---|---|
-| The web app (customers, staff, the project manager) | `https://app.greecon.earth` | What people type and bookmark |
+| The web app (customers, staff, the project manager) | `https://app.greecon.earth` | What people type and bookmark. The public website, greecon.earth, already has a button to exactly this address |
 | The platform's own address, which every box at every site reports to | `https://api.greecon.earth` | **A box remembers this address for as long as it lives.** If it ever changes, someone has to visit every box. Choose it once, here, and never change it. |
 | Where alert emails come from | `alerts@greecon.earth` | Replies go to `info@greecon.earth` |
 
@@ -304,7 +304,7 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 - **Change how long Greecon waits after a restart before it calls a box silent** (ten minutes unless you say otherwise,
   so that a deploy does not alarm anyone while the boxes reconnect): set `RESTART_GRACE_MINUTES` to a whole number of
   minutes from 0 to 60; 0 switches the wait off. Leave it unset unless there is a reason. What the wait does:
-  [05 Runbooks, R15](05-runbooks.md#r15-deploy-day-and-the-ten-minutes-after-any-restart).
+  [05 Runbooks, R7](05-runbooks.md#r7-the-platform-is-down) (point 6).
 - **Move to Google Cloud:** when this outgrows Railway, see [10 Deployment on Google Cloud](../10-deployment-gcp.md).
   The services are ordinary containers; nothing here ties them to Railway.
 

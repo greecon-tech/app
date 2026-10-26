@@ -10,7 +10,7 @@ A water tank and pump station: a tank, a pump and the pipe it feeds, with the pu
 ::: fact
 **What it measures**
 
-Tank level, line pressure, pump flow (with a flow meter), whether the pump runs, and, optionally, the pump's electricity use.
+The level in the tank, the line pressure, the pump's flow (with a flow meter), whether it runs and, optionally, the pump's electricity use.
 :::
 
 ::: fact
@@ -48,9 +48,9 @@ The template **{{kit.template}}** makes two devices. What each gives:
 
 | Reading in Greecon | Comes from | Unit | Standard alert limits |
 |------------|-------------------------|--------|-------------------------|
-| **{{ui.reading_tank}}** | {{ui.device_water_module}}, unit 3: the level transmitter's 4 to 20 mA | % | Critical below 15 % (Act now); Low below 35 % (Check today) |
+| **{{ui.reading_tank}}** | {{ui.device_water_module}}, unit 3: the level transmitter's 4 to 20 mA | % | Critical below 15 % ({{ui.act_now}}); Low below 35 % ({{ui.check_today}}) |
 | **{{ui.reading_pressure}}** | {{ui.device_water_module}}, unit 3: the pressure transmitter's 4 to 20 mA | bar | None |
-| **{{ui.reading_flow}}** | {{ui.device_water_module}}, unit 3: the flow meter's 4 to 20 mA (optional) | litres a minute | No flow at or below 0.2 litres a minute (Act now, once it has held for 30 seconds, and only when the box reads both a flow and the pump's running state) |
+| **{{ui.reading_flow}}** | {{ui.device_water_module}}, unit 3: the flow meter's 4 to 20 mA (optional) | litres a minute | No flow at or below 0.2 litres a minute ({{ui.act_now}}, once it has held for 30 seconds, and only when the box reads both a flow and the pump's running state) |
 | **{{ui.reading_pump}}** | {{ui.device_water_module}}, unit 3: the pump starter's spare contact | on or off | None |
 | **{{ui.reading_consumption}}** (optional) | {{ui.device_pump_meter}}: an Eastron SDM230 on the pump's feed, unit 4 | kW | None |
 
@@ -185,18 +185,18 @@ greecon-edge modbus-test --host 192.168.1.50 --unit 4 --type input --address 12 
 
 ### The water module
 
-One form for each of its four readings (step 4 of the setup list). The register kind is **Input** for a manual's 3xxxx and **Holding** for 4xxxx; the address is counted from zero. The module's own manual gives what the register holds at 4 and at 20 mA: check those two with a loop calibrator (send 4, 12 and 20 mA, read the register with `greecon-edge modbus-test`) and write what you read.
+One form for each of its four readings (step 4 of the setup list). The register kind is **{{ui.register_input}}** for a manual's 3xxxx and **{{ui.register_holding}}** for 4xxxx; the address is counted from zero. The module's own manual gives what the register holds at 4 and at 20 mA: check those two with a loop calibrator (send 4, 12 and 20 mA, read the register with `greecon-edge modbus-test`) and write what you read.
 
 ::: {.form .short}
 | Reading | Register kind | Address | Conversion | Register at 4 mA | Register at 20 mA | Reading from bottom to top |
-|-----------|--------|-----|-----------|--------|--------|--------------|
+|-----------|--------|-------|-----------|--------|--------|--------------|
 | {{ui.reading_tank}} | | | A straight line | | | 0 to 100 (rule below) |
 | {{ui.reading_pressure}} | | | A straight line | | | 0 to the range, in bar |
 | {{ui.reading_flow}} | | | A straight line | | | 0 to the range, in litres a minute |
 | {{ui.reading_pump}} | | | Multiply and add | | | on or off |
 :::
 
-**Tank level when the transmitter's range is longer than the tank is high:** reading at the top = range ÷ tank height × 100. A 0 to 5 m transmitter in a tank 3 m high: 5 ÷ 3 × 100 = 166.7. At the tank's full height the reading is then 100. Delete what the site does not have (no flow meter, no pump meter): open **{{ui.equipment_and_readings}}**, find it under **Readings** (or its device under **Equipment**) and press **{{ui.remove}}**. A reading with no register holds the setup list at step 4.
+**When the transmitter's range is longer than the tank is high:** reading at the top = range ÷ tank height × 100. A 0 to 5 m transmitter in a tank 3 m high: 5 ÷ 3 × 100 = 166.7. At the tank's full height the reading is then 100. Delete what the site does not have (no flow meter, no pump meter): open **{{ui.equipment_and_readings}}**, find it under **Readings** (or its device under **Equipment**) and press **{{ui.remove}}**. A reading with no register holds the setup list at step 4.
 
 ## The platform's setup list
 
@@ -206,23 +206,23 @@ One form for each of its four readings (step 4 of the setup list). The register 
 
 {{include:_shared/commissioning-intro.md}}
 
+{{include:_shared/internet-cut.md}}
+
 ::: tests
 | Check and how | Pass when | Greecon shows | Real | Result |
 |----------------------|-----------------|--------|--------|--------|
-| **Tank level.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
+| **{{ui.reading_tank}}.** A dipstick or the sight gauge, at two levels. | Within 5 percentage points | | | {{pf}} |
 | **Pressure.** Against the pressure gauge on the same line. | Within 0.2 bar | | | {{pf}} |
 | **Flow** (if there is a flow meter). A bucket test (fill a measured volume, time it), or the flow meter's own display. | Within 10 percent | | | {{pf}} |
-| **Pump running.** The owner starts the pump. | Greecon shows running within 30 seconds, and changes both ways | | | {{pf}} |
+| **{{ui.reading_pump}}.** The owner starts the pump. | Greecon shows running within 30 seconds, and changes both ways | | | {{pf}} |
 | **4 to 20 mA channels.** With a loop calibrator, send 4, 12 and 20 mA. | The reading at the bottom, the middle and the top | | | {{pf}} |
 | **Pump meter's display against Greecon** (if fitted). Read the display and Greecon at the same time. | Within 5 percent, or 1 kW on a small load | | | {{pf}} |
 {{include:_shared/rows-common.md}}
 :::
 
-{{include:_shared/internet-cut.md}}
-
 Signed off by: {{line}} Date: {{line:short}}
 
-## Handover
+## Handover {.newpage}
 
 {{include:_shared/handover-1.md}}
 - {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the tank level, the pressure and whether the pump runs; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each person on the list has a login of their own, so that they can acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
@@ -235,12 +235,12 @@ Signed off by: {{line}} Date: {{line:short}}
 |---------------------|---------------------|
 | Customer and site | |
 | Date, and who was there | |
-| Who is told, in order (name, mobile with country code, email) | |
+| {{ui.who_is_told}}, in order (name, mobile with country code, email) | |
 | Alert limits agreed (tank Critical below, Low below; no-flow level) | |
 | Without a flow meter or the pump's run contact the no-flow alert cannot be raised: said to the owner | {{cb}} Said  {{cb}} Not applicable |
-| Setup list: every step Done and the site Commissioned | {{cb}} Yes |
-| Handover sheet printed and signed | {{cb}} Yes |
-| Shown: Overview, the site's page, Who is told with a live test message, Reports | {{cb}} Yes |
+| {{ui.setup_list}}: every step Done and the site Commissioned | {{cb}} Yes |
+| {{ui.handover_sheet_link}} printed and signed | {{cb}} Yes |
+| Shown: {{ui.overview}}, the site's page, {{ui.who_is_told}} with a live test message, {{ui.reports}} | {{cb}} Yes |
 | Left: label on the box; card with `info@greecon.earth` and your phone | {{cb}} Yes |
 | Photographs and survey form filed in the customer's folder | {{cb}} Yes |
 :::
@@ -250,11 +250,11 @@ Signed off by: {{line}} Date: {{line:short}}
 <div>Owner: name and signature</div>
 :::
 
-## The three most likely problems
+## The three most likely problems {.newpage}
 
 | What you see | Likely cause | What to do |
 |----------------|--------------------|------------------------------|
-| **The pump shows running when it is stopped** (and the no-flow alert, an Act now, opens while the pump is stopped) | The pump's running contact is inverted | The electrician swaps the contact's normally-open and normally-closed wires, or uses the opposite contact. Until it is right the no-flow alert cannot be trusted |
+| **The pump shows running when it is stopped** (and the no-flow alert, an {{ui.act_now}}, opens while the pump is stopped) | The pump's running contact is inverted | The electrician swaps the contact's normally-open and normally-closed wires, or uses the opposite contact. Until it is right the no-flow alert cannot be trusted |
 | **The tank level is wrong** (above 100 percent, or does not move) | A wrong reading at the top for the tank's height, a blocked vented cable, or the transmitter not at the bottom of the tank | Re-enter the reading at the top (range ÷ tank height × 100). Check that the transmitter hangs at the bottom with its vented cable free and fixed. Send 4, 12 and 20 mA with the loop calibrator and compare |
 | **The pump meter or the water module does not answer** | A wrong unit number, or a speed that does not match the converter. An SDM230 can be delivered at 2400 baud (the V1.6 manual), not the converter's 9600; meters are delivered as unit 1 | Read the unit number and speed from the meter's own display and set 4 and 9600 (parity none). Then check A and B, the converter's gateway mode and its IP address |
 

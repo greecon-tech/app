@@ -107,7 +107,7 @@ reading stays as it was, with a note. The platform keeps what was measured.
 
 **Fix:** correct the list and send a test message to the person, and confirm it arrived.
 
-**An Act now alert that nobody acknowledged** (the messages went on down the list until it ended): Act now is passed down the list, the first person at once, the second 30 minutes after the alert began, the third 60 minutes after, and so on, until the list ends or someone presses **Acknowledge** on the **Alerts** page. Replying to the email or the text, or phoning someone, does not stop it: the platform cannot hear that. Only a person who can sign in as an **Owner**, an **Administrator** or an **Operator** can press **Acknowledge**; a **Viewer** or an **Auditor** cannot, and neither can a person who is on the list with only an email address or a phone number. So **everyone on the Who is told list should also have their own login with the Operator role**: the customer's owner adds it under **Admin**, **Create user** (a Greecon support session cannot add people), and shows the person the **Acknowledge** button. Check **Admin** for who has a login and with which role.
+**An Act now alert that nobody acknowledged** (the messages went on down the list until it ended): Act now is passed down the list, the first person at once, the second 30 minutes after the alert began, the third 60 minutes after, and so on, until the list ends or someone says they have seen it. Two ways: the *I have seen this* link in the message, then its button (no sign-in; it works for 72 hours; see point 9), or **Acknowledge** on the **Alerts** page, which only a person who can sign in as an **Owner**, an **Administrator** or an **Operator** can press (a **Viewer** or an **Auditor** cannot). Replying to the email or the text, or phoning someone, does not stop it: the platform cannot hear that. So **tell everyone on the Who is told list about the link**, and give the people who should also look at the screens a login of their own with the Operator role: the customer's owner adds it under **Settings → People**, **Add a person** (a Greecon support session cannot add people). **Settings → People** shows who has a login and with which role.
 
 ## R5. Too many alerts
 
@@ -145,7 +145,7 @@ day**, every one with an action.
 
 - **Railway Usage** shows which service costs what. The database grows with readings: raw readings are kept by the platform; if it nears its volume size, increase the volume in Railway (Postgres service, **Settings → Volume**), then plan how long raw readings are kept (a decision for the founder: a retention rule is not built).
 - **A box sending too much:** a box that cannot reach the platform keeps one reading a minute; a site with many devices sends more. `greecon-edge status` shows each device. A runaway is unusual: look at the audit log for the site.
-- **Slow pages:** a chart is averaged into a few hundred points however long the window, and the longest window is 90 days (**Quarter** on **Analytics**; the platform cuts a longer request to 90 days).
+- **Slow pages:** a chart is averaged into a few hundred points however long the window, and the longest window is 90 days (**Quarter**, under **Time range** on **Reports → Trends**; the platform cuts a longer request to 90 days).
 
 ## R9. A bad software release
 

@@ -23,7 +23,7 @@ import { DOCS_SCRIPTS, PACKS, PDF_DIR, REPO, Notes, escapeHtml, readJson, readTe
 import { Context } from "./lib/macros.mjs";
 import { collectHeadings, coverHtml, documentHtml, pageCss, partHtml, renderMarkdown, tocHtml } from "./lib/html.mjs";
 import { prepareFonts } from "./lib/fonts.mjs";
-import { fixDates, findPages, launchBrowser, pageCount, pageTexts, printToPdf } from "./lib/pdf.mjs";
+import { destinationPages, fixDates, launchBrowser, pageCount, pageTexts, printToPdf } from "./lib/pdf.mjs";
 import { buildDiagrams } from "./diagrams.mjs";
 import { VERSION, documents } from "./documents.mjs";
 
@@ -208,6 +208,14 @@ async function buildDocument(spec, shared) {
   const config = { ui };
 
   const made = spec.parts.map((make) => make({ config, ctx, notes: docNotes }));
+  // "Part 3" only means something inside the complete guide, where Parts 1 and 2 come before it: the stand-alone guides name their
+  // parts by what they are about, in the contents, on the part's first page and in the running head
+  if (!spec.partNumbers) {
+    for (const part of made) {
+      if (/^Part \d+$/.test(part.label ?? "")) part.label = "";
+      part.runningHead = part.runningHead.replace(/^Part \d+ · /, "");
+    }
+  }
   const usedIds = new Set(["contents"]);
   for (const part of made) {
     usedIds.add(part.id);
@@ -232,18 +240,24 @@ async function buildDocument(spec, shared) {
   const partsHtml = bodyHtml.split(/(?=<section class="part )/).filter((chunk) => chunk.trim().startsWith("<section"));
 
   let pages = new Map();
-  let texts = [];
   for (let pass = 1; pass <= 3; pass += 1) {
     writeFileSync(htmlPath, documentHtml({ doc, fontsCss, baseCss, furnitureCss, cover, toc: tocHtml(entries, pages, { note: tocNote }), parts: partsHtml }));
     await printToPdf(browser, htmlPath, pdfPath);
-    texts = pageTexts(pdfPath);
-    const firstLabel = made[0].label ? made[0].label.toLowerCase() : "";
-    let fromPage = texts.findIndex((text, index) => index >= 1 && text.split("\n").some((line) => line.trim().toLowerCase() === firstLabel));
-    if (fromPage < 0) fromPage = 2;
-    const found = findPages(texts, entries, fromPage);
+    const dests = destinationPages(pdfPath);
+    const found = new Map(entries.map((entry) => [entry.id, dests.get(entry.id) ?? ""]));
     const same = entries.every((entry) => String(found.get(entry.id) ?? "") === String(pages.get(entry.id) ?? ""));
     pages = found;
     if (same) break;
+  }
+
+  // The tags (the structure of the page, for screen readers) are about a third of a long PDF. If they would take it over the size
+  // limit, the PDF is printed again without them: the pages, the bookmarks and the links are the same.
+  let tagged = true;
+  const taggedSize = statSync(pdfPath).size;
+  if (taggedSize > MAX_BYTES) {
+    await printToPdf(browser, htmlPath, pdfPath, { tagged: false });
+    tagged = false;
+    docNotes.warn(`printed without tags: with them it was ${(taggedSize / 1048576).toFixed(1)} MB, over the 4 MB limit`);
   }
 
   const lost = entries.filter((entry) => !pages.get(entry.id));
@@ -266,7 +280,7 @@ async function buildDocument(spec, shared) {
   for (const message of docNotes.infos) notes.info(`${label}: ${message}`);
   for (const problem of problems) notes.warn(problem);
 
-  return { spec, target, count, size, links, entries: entries.length, dangling: joined.dangling, problems, usedDiagrams: ctx.usedDiagrams.size };
+  return { spec, target, count, size, links, tagged, entries: entries.length, dangling: joined.dangling, problems, usedDiagrams: ctx.usedDiagrams.size };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -295,7 +309,9 @@ function writeReadme(specs, out, date) {
     "|---|---|---|---|---|",
     ...rows,
     "",
-    "**Rebuild:** `npm run docs:pdf` (or `npm run docs:pdf -- --only 01,04` for some of them). It needs pandoc, Chromium through Playwright and poppler, all on the build machine, and no network. Screen names are typed once, in `scripts/docs/ui-labels.json`; the setup-list step titles are checked against `apps/api/src/setup/setup-checklist.ts` at every build.",
+    "**Rebuild:** `npm run docs:pdf` (or `npm run docs:pdf -- --only 01,04` for some of them). It needs pandoc, Chromium through Playwright and poppler, all on the build machine, and no network. Screen names are typed once, in `scripts/docs/ui-labels.json`; the setup-list step titles are checked against `apps/api/src/setup/setup-checklist.ts` at every build. The date on the covers is the build date (`GUIDES_DATE=2026-11-02 npm run docs:pdf` fixes it); the same sources and the same date give byte-identical files.",
+    "",
+    "**Fonts and size.** The body is set in Bitstream Charter and the headings and tables in Inter, both from the build machine. Charter is installed only as Type 1, so the build converts it in memory (`scripts/docs/lib/type1-to-otf.mjs`); both fonts are given TrueType outlines (`scripts/docs/lib/otf-to-ttf.mjs`) so that Chromium embeds them as real fonts, which keeps the complete guide under 4 MB. Nothing is downloaded and no converted font is kept. A PDF that would still be over 4 MB with its accessibility tags is printed without them (the complete guide is the one that is).",
     ""
   ].join("\n");
   writeFileSync(join(out, "README.md"), text);
@@ -342,12 +358,19 @@ async function main() {
       const started = Date.now();
       const result = await buildDocument(spec, { browser, ui, kits, steps, diagrams, fontsCss: fonts.css, baseCss, date, notes, work, out: args.out });
       results.push(result);
-      console.log(`Wrote ${relative(REPO, result.target)}  ${result.count} pages, ${(result.size / 1024).toFixed(0)} KB, ${result.links} links  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+      console.log(`Wrote ${relative(REPO, result.target)}  ${result.count} pages, ${(result.size / 1024).toFixed(0)} KB, ${result.links} links${result.tagged ? ", tagged" : ", not tagged (size)"}  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
     }
   } finally {
     await browser.close();
     if (args.keepHtml) console.log(`HTML kept in ${work}`);
     else rmSync(work, { recursive: true, force: true });
+  }
+
+  // a spelling in ui-labels.json "legacy" that no launch document uses any more should be removed from it
+  if (!args.only || args.only.includes("00")) {
+    const used = ui.legacy.used ?? new Set();
+    const stale = [...Object.keys(ui.legacy.map), ...(ui.legacy.composite ?? []).map((item) => `composite:${item.old}`)].filter((literal) => !used.has(literal));
+    if (stale.length > 0) notes.warn(`ui-labels.json "legacy" lists spellings that no launch document uses any more (remove them): ${stale.map((item) => `"${item}"`).join(", ")}`);
   }
 
   writeReadme(specs, args.out, date);
