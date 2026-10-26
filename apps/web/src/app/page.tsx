@@ -12,7 +12,8 @@ import { ValueSummary } from "../components/ValueView";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../lib/api";
 import { getSession } from "../lib/session";
 
-export const metadata = { title: "Overview" };
+// The title template in the layout does not reach the page of its own segment, so the brand is written out here.
+export const metadata = { title: { absolute: "Overview · Greecon" } };
 
 interface Overview {
   asOfUtc: string;
