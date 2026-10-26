@@ -76,7 +76,7 @@ About one hour, with the electrician if the plan needs one. Bring this pack, a p
 
 The answers decide what is measured and what it costs. Write them on the survey form that follows.
 
-1. Who decides, and who gets called at night? Names, mobile numbers, emails: these become **{{ui.who_is_told}}**. Each of them also needs a login of their own, so that they can acknowledge an alert, and a login needs an email address.
+1. Who decides, and who gets called at night? Names, mobile numbers, emails: these become **{{ui.who_is_told}}**. Each alert message carries an *I have seen this* link, so nobody needs a login to acknowledge; the people who should also look at the screens get a login of their own, and a login needs an email address.
 2. What went wrong in the last twelve months that cost money or water? Write it in their words. It is the reason they buy.
 3. Where are the water tank, the pump and its starter? How tall is the tank?
 4. **What is the pipe's pressure range?** It decides the pressure transmitter's range.
@@ -225,7 +225,7 @@ Signed off by: {{line}} Date: {{line:short}}
 ## Handover {.newpage}
 
 {{include:_shared/handover-1.md}}
-- {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the tank level, the pressure and whether the pump runs; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each person on the list has a login of their own, so that they can acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
+- {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the tank level, the pressure and whether the pump runs; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each message carries an *I have seen this* link, so that nobody needs a login to acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
 {{include:_shared/handover-2.md}}
 
 ## Handover record {.newpage .formtitle #handover-record-w data-kit="Kit W · Water tank and pump station"}

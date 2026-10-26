@@ -66,7 +66,7 @@ reason they buy.** Quote it back to them at the order form.
    the people you choose can sign in to, and to the phone of whoever you choose."*
 3. *"Most days it says nothing, apart from one message at half past seven: all fine, or something needs a look."*
 4. *"If the tank gets critically low or, where there is a flow meter, the pump is running and no water is flowing, the
-   first person is emailed at once. If nobody has acknowledged it in the app within ten minutes, they are texted, and
+   first person is emailed at once. If nobody has said they have seen it within ten minutes (one tap on a link in the message, no sign-in), they are texted, and
    thirty minutes after the alert began the next person is told too. A tank that is only getting low is one email,
    held until morning if it is night."*
 5. *"It only reads. It does not switch your pump or your inverter, and it is not a safety system. Your float switches and
@@ -90,7 +90,7 @@ Minutes 7 and 9 are shown on another screen: see the note under the table.
 | 3 | **Energy now** on the **Overview** (moving dots from the sun to the site and the grid) | "This is measured at the meters, not guessed. On the live demo it follows the sun; on your site it follows your roof." |
 | 4 | **Value**: what your solar kept on site, with the price it uses | "From your own readings at your own price. If you have not given us a price, it shows kWh and says what it needs. We never show money we cannot back." |
 | 6 | **Alerts**: open one; **Acknowledge** (this works on the live demo only) | "Act now and Check today are the only two that reach a person. One alert per problem, however long it lasts." |
-| 7 | **Who is told**, under **Settings** (on the Rehearsal client, see the note): the order, the test message, **What was sent** | "You choose the people and the order. You can see what was sent and when. Each person you list should also have a login of their own: pressing Acknowledge in the app is what stops the next message, and a phone number alone cannot do that." |
+| 7 | **Who is told**, under **Settings** (on the Rehearsal client, see the note): the order, the test message, **What was sent** | "You choose the people and the order. You can see what was sent and when. Each message carries a link, 'I have seen this': one tap on the phone, no sign-in, and it stops the message going on to the next person. Anyone who should also look at the screens gets a login of their own." |
 | 9 | **Reports**, then **Downloads** (on the Rehearsal client, see the note): the downloads | "Everything here is yours to take." |
 
 **Minutes 7 and 9 are shown on the Rehearsal client, not on either demo.** The live demo's login is an **operator**,

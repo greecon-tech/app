@@ -115,7 +115,7 @@ Once before the first real site, and again when anything in the manual changes (
 | {{cb}} | 3 | {{who:pm}} | Add the box, paste the line on the box, and watch **{{step:2}}** turn Done. |
 | {{cb}} | 4 | {{who:pm}} | Give each device the laptop's address, port 5020 and units 1, 2 and 3. Map the water module's four readings: Input registers 0 to 3, each Multiply and add: tank level by 0.1, pressure by 0.01, flow by 0.1, pump running by 1. |
 | {{cb}} | 5 | {{who:pm}} | Watch every step turn Done. Add yourself under **{{ui.who_is_told}}**, send a test message, confirm the steps that need a person, and commission the rehearsal site. |
-| {{cb}} | 6 | {{who:pm}} | Stop the pretend meter. After about five minutes **{{ui.today}}** says, under **{{ui.needs_a_look}}**, that the readings are out of date. Start it again with `--tank 12`: The tank is critical, an **{{ui.act_now}}**. It arrives by email at once and by text ten minutes later unless you press **{{ui.acknowledge}}**. |
+| {{cb}} | 6 | {{who:pm}} | Stop the pretend meter. After about five minutes **{{ui.today}}** says, under **{{ui.needs_a_look}}**, that the readings are out of date. Start it again with `--tank 12`: The tank is critical, an **{{ui.act_now}}**. It arrives by email at once and by text ten minutes later unless you press **{{ui.acknowledge}}** or open the *I have seen this* link in the message. |
 | {{cb}} | 7 | {{who:pm}} | Print the handover sheet. Download the readings from **{{ui.reports}}** (**{{ui.downloads}}**) and open the file in a spreadsheet. |
 | {{cb}} | 8 | {{who:pm}} | Clean up: remove the rehearsal site's equipment and then the site, or suspend the client, so that it does not appear in the morning check. Keep it if you will use it for a sales demonstration. |
 :::
@@ -151,7 +151,7 @@ Once before the first real site, and again when anything in the manual changes (
 | **{{ui.setup_list}}** | The platform's own list of up to ten steps for a site. A step that does not apply is left out |
 | **{{ui.handover_sheet_link}}** | One printable page per site: where everything is, who is told, who commissioned it and when |
 | **Install line, code** | The line shown once on the setup page that installs the box. Its code works once, for seven days |
-| **Owner, Administrator, Operator, Viewer, Auditor** | A person's role in the customer's account. An Owner, an Administrator or an Operator can acknowledge an alert; a Viewer or an Auditor cannot |
+| **Owner, Administrator, Operator, Viewer, Auditor** | A person's role in the customer's account. An Owner, an Administrator or an Operator can press Acknowledge in the app; a Viewer or an Auditor cannot (anyone a message was sent to can use the link in it) |
 | **Morning message** | The one email at 07:30 that says whether everything is all right |
 | **Quiet hours** | 22:00 to 07:00: everything is held except {{ui.act_now}} |
 | **Zero-export** | A plant that is not allowed to send energy to the grid. Tick the box in the prices |

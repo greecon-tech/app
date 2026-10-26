@@ -7,7 +7,7 @@
 :::
 
 ::: say
-*How alerts reach people:* **{{ui.act_now}}** goes by email at once and by text ten minutes later if nobody has acknowledged it; thirty minutes after the alert began, the next person is told by email and text, and so on down the list. Acknowledging means pressing **{{ui.acknowledge}}** on the **{{ui.alerts}}** page, so each person on the list needs a login of their own (the Operator role is enough). **{{ui.check_today}}** is one email, held until morning if it is night. Beyond those, three short notes only: one to the people who were told when somebody acknowledges the alert (who took it), one when the problem has stayed clear for 15 minutes (**Resolved**), and one morning message at 07:30 saying whether everything is all right. Quiet hours (22:00 to 07:00) hold everything except {{ui.act_now}}.
+*How alerts reach people:* **{{ui.act_now}}** goes by email at once and by text ten minutes later if nobody has acknowledged it; thirty minutes after the alert began, the next person is told by email and text, and so on down the list. Saying you have seen it means pressing the *I have seen this* link in the message (no sign-in, good for 72 hours) or **{{ui.acknowledge}}** on the **{{ui.alerts}}** page (for a person with a login). **{{ui.check_today}}** is one email, held until morning if it is night. Beyond those, three short notes only: one to the people who were told when somebody acknowledges the alert (who took it), one when the problem has stayed clear for 15 minutes (**Resolved**), and one morning message at 07:30 saying whether everything is all right. Quiet hours (22:00 to 07:00) hold everything except {{ui.act_now}}.
 :::
 
 ::: stop

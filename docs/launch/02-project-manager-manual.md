@@ -68,7 +68,7 @@ are needed to survey; do not open anything.
 
 **Ask, in this order** (the answers decide what is measured and what it costs):
 
-1. Who decides, and who gets called at night? (Names, mobile numbers, emails: these become **Who is told**. Each of them also needs a login of their own, so that they can acknowledge an alert, and a login needs an email address: see [7.7](#7-the-setup-list-step-by-step).)
+1. Who decides, and who gets called at night? (Names, mobile numbers, emails: these become **Who is told**. Each alert message carries an *I have seen this* link, so nobody needs a login to acknowledge; the people who should also look at the screens get a login of their own, and a login needs an email address: see [7.7](#7-the-setup-list-step-by-step).)
 2. What went wrong in the last twelve months that cost money or a guest? (Write it in their words. It is the reason they buy.)
 3. The last twelve electricity bills (price per kWh, kWh bought each month) and the water bills. (The platform
    shows what solar kept on site at *their* price; without a price it shows kWh only.)
@@ -299,13 +299,14 @@ register or a wiring fault.
   whole account: six an hour (a person with both an email and a number uses two of the twelve test messages
   allowed). If you reach the limit the page says "Test messages are limited to 6 an hour. Try again later."
 - **Ask each person** whether it arrived: in the inbox, not in spam; on the phone.
-- **Check that each person on the list can also acknowledge.** Only a person who can sign in can press
-  **Acknowledge** on the **Alerts** page, and pressing it is what stops the chain of messages. Replying to an email
-  or a text does not, and a person who has only a phone number has no login. So **everyone on the list should also
-  have their own login with the Operator role**: open **Settings**, then **People**, and look at who has a sign-in.
-  If someone has none, the customer's owner adds them under **Add a person** with **Add person** (a Greecon support
-  session can see the people but cannot add them), and the new person is given a temporary password, shown once. An Owner or an Administrator can acknowledge too; a Viewer or
-  an Auditor cannot.
+- **Tell each person on the list how to say they have seen an alert.** Every alert message has an *I have seen this*
+  link: one tap on the phone, then one button, no sign-in, good for 72 hours; it stops the chain of messages. Pressing
+  **Acknowledge** on the **Alerts** page does the same, for a person who can sign in. Replying to an email or a text does
+  not. So nobody needs a login for this; give a login of their own (the Operator role is enough) to the people who
+  should also look at the screens: open **Settings**, then **People**, and look at who has a sign-in. If someone who
+  should have one has none, the customer's owner adds them under **Add a person** with **Add person** (a Greecon support
+  session can see the people but cannot add them), and the new person is given a temporary password, shown once. An Owner
+  or an Administrator can press **Acknowledge** too; a Viewer or an Auditor cannot (the link in a message works for anyone it was sent to).
 - **Give everyone an email address as well as a number.** The note that a colleague has acknowledged an alert, and the
   note that it has cleared, go by email only. A person who has only a phone number is texted the urgent alert and then
   hears nothing more: they may still set off for something that is already being dealt with.
@@ -314,8 +315,8 @@ register or a wiring fault.
 
 How alerts reach people, for the owner (say this at handover, in these words): **Act now** goes by email at once
 and by text ten minutes later if nobody has acknowledged it; thirty minutes after the alert began, the next person
-is told by email and text, and so on down the list. Acknowledging means pressing **Acknowledge** on the **Alerts**
-page, so each person on the list needs a login of their own (the Operator role is enough). **Check today** is one
+is told by email and text, and so on down the list. Saying you have seen it means pressing the *I have seen this* link in the message (no
+sign-in, good for 72 hours) or **Acknowledge** on the **Alerts** page (for a person with a login). **Check today** is one
 email, held until morning if it is night. Beyond those, three short notes only: one to the people who were told
 when somebody **acknowledges** the alert (who took it), one when the problem has stayed clear for 15 minutes
 (**Resolved**), and one **morning message** at 07:30 saying whether everything is all right. Quiet hours (22:00 to
@@ -462,8 +463,8 @@ Do not **start, stop or open** any equipment yourself. The owner's own person do
 2. Show the owner, in ten minutes, in this order: the **Overview** (is everything all right, in one sentence);
    **Energy now**, the flow moving from the solar to the site and the grid; **Value**, what the solar kept on site
    this month (and the prices it uses); **Who is told** (under **Settings**) and a live **test message** arriving
-   on their phone (and that each person on the list has a login of their own, so that they can acknowledge an
-   alert); **Reports**, under **Downloads**,
+   on their phone (and that each message carries an *I have seen this* link, so that nobody needs a login to
+   acknowledge an alert); **Reports**, under **Downloads**,
    where **their data is theirs**: every reading for the last 31 days, hourly averages for up to a year, the
    alerts, the audit log and how the account is set up can be downloaded whenever they want (and if they stop, they
    can ask Greecon for every reading it holds, as a file).

@@ -81,7 +81,7 @@ About one hour, with the grower and, if the plan needs one, the electrician. Bri
 
 The answers decide what is measured and what it costs. Write them on the survey form that follows.
 
-1. Who decides, and who gets called at night? Names, mobile numbers, emails: these become **{{ui.who_is_told}}**. Each of them also needs a login of their own, so that they can acknowledge an alert, and a login needs an email address.
+1. Who decides, and who gets called at night? Names, mobile numbers, emails: these become **{{ui.who_is_told}}**. Each alert message carries an *I have seen this* link, so nobody needs a login to acknowledge; the people who should also look at the screens get a login of their own, and a login needs an email address.
 2. What went wrong in the last twelve months that cost money or a crop? Write it in their words. It is the reason they buy.
 3. **Which crop, which soil, how deep are the roots, and where in the field is typical** (not the wettest or the driest spot)? The irrigation limit depends on them.
 4. Where are the water tank, the pump and its starter? How tall is the tank? What is the pipe's pressure? Is there a pump to watch?
@@ -236,7 +236,7 @@ Signed off by: {{line}} Date: {{line:short}}
 ## Handover {.newpage}
 
 {{include:_shared/handover-1.md}}
-- {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the soil moisture, the air temperature and humidity, the tank level and the pressure; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each person on the list has a login of their own, so that they can acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
+- {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the soil moisture, the air temperature and humidity, the tank level and the pressure; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each message carries an *I have seen this* link, so that nobody needs a login to acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
 - {{cb}} **Write the probe's depth and place** on the handover record, and say that soil readings are only as good as the contact between the probe and the soil.
 - {{cb}} **Say that Greecon gives no irrigation advice yet,** and agree when you will ask what reading means "time to water" (after the first week).
 {{include:_shared/handover-2.md}}
