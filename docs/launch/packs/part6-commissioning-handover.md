@@ -17,7 +17,7 @@ Leave the customer with these, and nothing more:
 - {{cb}} **The printed handover sheet, signed.** It says where each device is, who is told, what was commissioned and by whom, and how to reach Greecon.
 - {{cb}} **The box's label** on the box: the site name and the date. Never a code or a password written on the box.
 - {{cb}} **A card** with `info@greecon.earth` and your phone number.
-- {{cb}} **Their own logins.** The owner chose a password of their own at their first sign-in; each person on the **{{ui.who_is_told}}** list has a login of their own with the Operator role, so that they can press **{{ui.acknowledge}}**. The temporary passwords were told by phone, never by email.
+- {{cb}} **Their own logins.** The owner chose a password of their own at their first sign-in; the people who should also look at the screens have a login of their own (the Operator role is enough), and everyone on the **{{ui.who_is_told}}** list knows about the *I have seen this* link in each alert message, which needs no login. The temporary passwords were told by phone, never by email.
 - {{cb}} **The words** in section 6.2: what Greecon is and is not, how an alert reaches people, and that their data is theirs.
 
 Do not leave: the install line or its code (it is the box's key, and it has been used), any password written down, or a promise of a saving.

@@ -4,7 +4,7 @@ A4, portrait, one file for each kind of reader. Every PDF has a cover, contents 
 
 | File | Who it is for | When to print it | Pages | Built |
 |---|---|---|---|---|
-| [00-Greecon-Complete-Deployment-Guide.pdf](00-Greecon-Complete-Deployment-Guide.pdf) | Everyone: the founder, the project manager and the electrician | Once, to keep in the office. For a job, print the pack or guide that fits it (04 to 07, 01 to 03) | 180 | 2026-10-26 |
+| [00-Greecon-Complete-Deployment-Guide.pdf](00-Greecon-Complete-Deployment-Guide.pdf) | Everyone: the founder, the project manager and the electrician | Once, to keep in the office. For a job, print the pack or guide that fits it (04 to 07, 01 to 03) | 182 | 2026-10-26 |
 | [01-Founder-Go-Live-Guide.pdf](01-Founder-Go-Live-Guide.pdf) | The founder (nothing technical is assumed) | Once, before the first customer. The last page tears off as the go-live checklist | 13 | 2026-10-26 |
 | [02-Project-Manager-Field-Manual.pdf](02-Project-Manager-Field-Manual.pdf) | The project manager, for every site | Once for the office and the car; print the forms (Appendix A) for each site | 48 | 2026-10-26 |
 | [03-Hardware-Reference.pdf](03-Hardware-Reference.pdf) | The project manager who buys and fits hardware, and the electrician | Once, to keep with the spares kit | 22 | 2026-10-26 |
