@@ -1,5 +1,7 @@
 // Static-export twin of page.tsx (see apps/web/scripts/build-static.sh). The static demo has no server
 // to send a request to, so it says how to reach Greecon instead of showing a form that cannot work.
+export const metadata = { title: "Request access" };
+
 export default function RequestAccessPage() {
   return (
     <main className="login-page">

@@ -2,6 +2,8 @@
 // export has no server, so there is nothing to log in against — each of the five role builds is
 // simply "logged in" as that build's role already (GREECON_DEMO_ROLE). This page exists there
 // purely as a preview of what the real login screen looks like, not a functioning form.
+export const metadata = { title: "Sign in" };
+
 export default function LoginPage() {
   return (
     <main className="login-page">
