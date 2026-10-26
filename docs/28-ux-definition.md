@@ -217,3 +217,19 @@ Sites screen; the table-to-list behaviour on a phone.
 Left for later, with what would justify it: an Albanian interface (`docs/27`, L12); an Outdoor mode and a night mode
 (document 20, section 10); a notification centre; push notifications; a per-user "my sites" filter for clients with many
 sites; the savings comparison against last year's bills as a chart.
+
+## 9. Built, and how it was checked
+
+Built on 2026-10-26 as defined above, with these differences from the plan, none of them a reduction:
+
+- The Overview's main action is **Open alerts** (a link), not Acknowledge: acknowledging is on **Alerts**, and, for a person on a
+  phone, on the page behind the link in an alert message (`/ack/[token]`), which needs no sign-in.
+- The site page gained **Looking after this site** (the maintenance list for an operator, who may keep it but not change equipment;
+  the setup list, the handover sheet and the equipment page for those who may).
+- The demo carries a one-line banner (simulated numbers, **Request access**), and the app can be put on a phone's home screen.
+
+Checked, in a real browser against the real stack: the project manager's whole journey (83 steps, including the alert link), the
+Greecon team's (25 steps), and `scripts/e2e/ux-tour.cjs` over every screen for the team, a client and the demo, on a desk and on a phone
+(no page scrolls sideways at 390 px, no control without a name, no button under 40 px, no text under 12 px, no error in the console).
+The five role builds of the demo export. Not checked, and still open: a screen-reader pass, every page at 200% text, sessions with real
+users (document 20, sections 9 and 10).

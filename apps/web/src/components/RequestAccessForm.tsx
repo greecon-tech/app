@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState, useTransition } from "react";
-import { requestedSiteTypeLabels, requestedSiteTypes } from "@greecon/shared";
+import { ACCESS_REQUEST_LIMITS, requestedSiteTypeLabels, requestedSiteTypes } from "@greecon/shared";
 import { requestAccessAction } from "../app/request-access/actions";
 
 /** Asking Greecon to set you up. There is no self-service account: Greecon installs the hardware
@@ -41,19 +41,19 @@ export function RequestAccessForm() {
     <form onSubmit={submit}>
       <label>
         Your name
-        <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required maxLength={120} />
+        <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required maxLength={ACCESS_REQUEST_LIMITS.name} />
       </label>
       <label>
         Company or property
-        <input value={company} onChange={(event) => setCompany(event.target.value)} autoComplete="organization" required maxLength={160} />
+        <input value={company} onChange={(event) => setCompany(event.target.value)} autoComplete="organization" required maxLength={ACCESS_REQUEST_LIMITS.company} />
       </label>
       <label>
         Email
-        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required maxLength={254} />
+        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required maxLength={ACCESS_REQUEST_LIMITS.email} />
       </label>
       <label>
         Phone (optional)
-        <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" maxLength={40} />
+        <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" maxLength={ACCESS_REQUEST_LIMITS.phone} />
       </label>
       <label>
         What do you run?
@@ -67,7 +67,7 @@ export function RequestAccessForm() {
       </label>
       <label>
         Anything we should know (optional)
-        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={4} maxLength={1500} placeholder="For example: a hotel with a wastewater plant and a solar roof" />
+        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={4} maxLength={ACCESS_REQUEST_LIMITS.message} placeholder="For example: a hotel with a wastewater plant and a solar roof" />
       </label>
       {/* A field a person never sees. A script that fills in every field fills this one too. */}
       <div className="hp-field" aria-hidden="true">
