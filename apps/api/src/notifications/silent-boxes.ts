@@ -67,7 +67,7 @@ export type SilenceToTell = { together: false; boxes: [QuietBox] } | { together:
 /** Of the boxes that have newly gone silent and that nobody has been told about, what to tell now: those whose silence began
  * within STORM_WINDOW_MS of each other are one group, told as one message when there are STORM_BOXES or more, and each on its
  * own otherwise. A group that may be about to grow (another box stopped at the same moment and is only late yet) waits, for
- * STORM_SETTLE_MS at most. `quiet` is every box that has stopped reporting, late or silent. */
+ * STORM_SETTLE_MS at most, whatever its size. `quiet` is every box that has stopped reporting, late or silent. */
 export function silencesToTell(untold: readonly QuietBox[], quiet: readonly QuietBox[], nowMs: number): SilenceToTell[] {
   const groups: QuietBox[][] = [];
   for (const box of [...untold].sort((a, b) => a.silentSinceMs - b.silentSinceMs)) {
@@ -76,8 +76,9 @@ export function silencesToTell(untold: readonly QuietBox[], quiet: readonly Quie
     else groups.push([box]);
   }
   return groups.flatMap((group): SilenceToTell[] => {
-    if (group.length >= STORM_BOXES) return [{ together: true, boxes: group }];
+    // Even a group already big enough waits for the others still catching up, or they would be told as a message of their own.
     if (mayStillGrow(group, quiet, nowMs)) return [];
+    if (group.length >= STORM_BOXES) return [{ together: true, boxes: group }];
     return group.map((box) => ({ together: false, boxes: [box] }));
   });
 }

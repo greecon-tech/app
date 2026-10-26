@@ -5,7 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
-import { apiDocsEnabled, checkRuntimeConfig, trustedProxyHops } from "./common/runtime-config";
+import { apiDocsEnabled, checkRuntimeConfig, restartGraceMs, trustedProxyHops } from "./common/runtime-config";
 import { prepareDatabase } from "./database/startup";
 import { PlatformService } from "./platform/platform.service";
 
@@ -43,6 +43,15 @@ async function bootstrap(): Promise<void> {
     app.set("trust proxy", proxyHops);
     logger.log(`Trusting ${proxyHops} reverse proxy hop(s) for the caller's address (TRUST_PROXY).`);
   }
+
+  // Said once at every start, so that a platform that keeps restarting shows it in the log: for this long after a start nothing that
+  // comes from missing readings is raised or messaged (platform/restart-grace.ts).
+  const graceMs = restartGraceMs(process.env);
+  logger.log(
+    graceMs > 0
+      ? `After this start nothing about missing readings (a silent box, a reading out of date) is raised or messaged for ${graceMs / 60_000} minute(s), while the boxes reconnect (RESTART_GRACE_MINUTES). A measured danger is never held back.`
+      : "No wait after a start (RESTART_GRACE_MINUTES is 0): boxes that are still reconnecting after a deploy may be called silent."
+  );
 
   app.use(helmet());
   app.enableCors({

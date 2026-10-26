@@ -73,7 +73,7 @@ column is the name, exactly as written.
 | `PUBLIC_WEB_URL` | `https://app.greecon.earth` | The links in each alert message: to the alert, and to say it has been seen |
 | `BOOTSTRAP_ADMIN_EMAIL` | `eridon.manuka@greecon.earth` | Your own login, created on the first start. **Removed in step 6.** |
 | `BOOTSTRAP_ADMIN_PASSWORD` | a password of at least 12 characters, not used anywhere else | Your first password. **Removed in step 6.** |
-| `SALES_NOTIFY_EMAIL` | `info@greecon.earth` | Who is emailed when someone asks for access |
+| `SALES_NOTIFY_EMAIL` | `info@greecon.earth` | Who is emailed when someone asks for access (the first ten requests of a day; every request is kept under **Requests**, and a day with more says so in one email) |
 
 Messages are added in steps 7 and 8. Do not set `ENABLE_API_DOCS`, `AUTO_MIGRATE` or the old `EDGE_INGEST_*`
 variables.

@@ -4,7 +4,7 @@ import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import { describe, expect, it, vi } from "vitest";
 import { DatabaseService } from "../../database/database.service";
-import { AccessRequestsService, KEPT_PER_HOUR_AT_MOST, NewAccessRequest, SALES_EMAILS_PER_HOUR } from "./access-requests.service";
+import { AccessRequestsService, KEPT_PER_HOUR_AT_MOST, NewAccessRequest, SALES_EMAILS_PER_DAY } from "./access-requests.service";
 import { CreateAccessRequestDto } from "./create-access-request.dto";
 
 const request = (overrides: Partial<NewAccessRequest> = {}): NewAccessRequest => ({
@@ -45,21 +45,44 @@ describe("access requests", () => {
     expect(await service.list()).toHaveLength(2);
   });
 
-  it("keeps every request in a flood, stops emailing each one after thirty in an hour, and says so once", async () => {
+  it("keeps every request in a flood, stops emailing each one after ten in a day, and says so once", async () => {
     const notify = Object.assign(vi.fn().mockResolvedValue(undefined), { flood: vi.fn().mockResolvedValue(undefined) });
     const service = new AccessRequestsService(new DatabaseService(), notify);
     for (let index = 0; index < 45; index += 1) await service.receive(request({ email: `person${index}@example.com` }), NOW + index * 1_000);
 
     expect(await service.list()).toHaveLength(45);
-    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_HOUR);
+    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_DAY);
     expect(notify.flood).toHaveBeenCalledTimes(1);
-    expect(notify.flood).toHaveBeenCalledWith(SALES_EMAILS_PER_HOUR + 1);
+    expect(notify.flood).toHaveBeenCalledWith(SALES_EMAILS_PER_DAY + 1);
 
-    // For the rest of the hour after it was said, nothing more is emailed, whatever arrives; after it, a request is emailed again.
-    await service.receive(request({ email: "later@example.com" }), NOW + 3_000_000);
-    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_HOUR);
-    await service.receive(request({ email: "next-hour@example.com" }), NOW + 2 * 3_600_000);
-    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_HOUR + 1);
+    // For the rest of the day after it was said, nothing more is emailed, whatever arrives, and it is not said again; after the
+    // day, a request is emailed again.
+    await service.receive(request({ email: "later@example.com" }), NOW + 3 * 3_600_000);
+    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_DAY);
+    expect(notify.flood).toHaveBeenCalledTimes(1);
+    await service.receive(request({ email: "next-day@example.com" }), NOW + 25 * 3_600_000);
+    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_DAY + 1);
+    expect(notify.flood).toHaveBeenCalledTimes(1);
+  });
+
+  it("emails about no more than ten requests in a day even when they all arrive at the same moment", async () => {
+    // Each takes its count before any is written: only the places taken in the process can hold the line.
+    const notify = Object.assign(vi.fn().mockResolvedValue(undefined), { flood: vi.fn().mockResolvedValue(undefined) });
+    const service = new AccessRequestsService(new DatabaseService(), notify);
+    await Promise.all(Array.from({ length: 60 }, (_, index) => service.receive(request({ email: `together${index}@example.com` }), NOW)));
+
+    expect(await service.list()).toHaveLength(60);
+    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_DAY);
+    expect(notify.flood).toHaveBeenCalledTimes(1);
+  });
+
+  it("spreads ten a day over the day: a slow trickle is emailed, a tenth-and-after is not", async () => {
+    const notify = Object.assign(vi.fn().mockResolvedValue(undefined), { flood: vi.fn().mockResolvedValue(undefined) });
+    const service = new AccessRequestsService(new DatabaseService(), notify);
+    for (let index = 0; index < 12; index += 1) await service.receive(request({ email: `slow${index}@example.com` }), NOW + index * 3_600_000);
+    // Ten in the first ten hours, then the eleventh and twelfth the same day: kept, and said once.
+    expect(await service.list()).toHaveLength(12);
+    expect(notify).toHaveBeenCalledTimes(SALES_EMAILS_PER_DAY);
     expect(notify.flood).toHaveBeenCalledTimes(1);
   });
 
@@ -127,6 +150,22 @@ describe("access requests", () => {
     // A company may be named after its website, and a prospect may give theirs, and the address of a colleague.
     await service.receive(request({ company: "Adriatik.al Sh.p.k", message: "Our site is https://hotel-adriatik.example and the farm is at farm.al. Write to ardit@farm.al too." }), NOW);
     expect(await service.list()).toHaveLength(1);
+  });
+
+  it("refuses an email address that carries words of its own, and keeps a telephone number to its digits", async () => {
+    const service = new AccessRequestsService(new DatabaseService());
+    for (const email of [`"your greecon account is suspended, pay at bit.ly/xy12"@example.com`, "two words@example.com", "a@b", "besa@hotel adriatik.al", "besa@"]) {
+      await expect(service.receive(request({ email }), NOW), email).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(await service.list()).toEqual([]);
+
+    await service.receive(request({ email: "o'brien+hotel@hotel-adriatik.example", phone: "http://evil.example/p" }), NOW);
+    await service.receive(request({ email: "second@example.com", phone: "+355 (69) 123-4567 ext. 5" }), NOW);
+    const stored = await service.list();
+    expect(stored.find((one) => one.email.startsWith("o'brien"))).toBeDefined();
+    // A number with no digits in it is not kept; one with words in it keeps its digits and its marks.
+    expect(stored.find((one) => one.email.startsWith("o'brien"))?.phone).toBeUndefined();
+    expect(stored.find((one) => one.email === "second@example.com")?.phone).toBe("+355 (69) 123-4567 . 5");
   });
 
   it("moves a request along and keeps the note, newest first", async () => {

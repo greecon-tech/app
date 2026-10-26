@@ -3422,11 +3422,13 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const alert = this.alerts.find((candidate) => candidate.id === alertId && candidate.tenantId === tenantId);
     if (!alert || !this.isTenantActive(tenantId)) return undefined;
     if (alert.status === "open") {
-      const named = recipient ? `${oneLine(recipient.name, 80)}${recipient.email ? `, ${recipient.email}` : ""}` : undefined;
+      // A contact's address was typed by someone: written on one line, like the name, before it goes into the account's trail.
+      const email = recipient?.email ? oneLine(recipient.email, 160) : "";
+      const named = recipient ? `${oneLine(recipient.name, 80)}${email ? `, ${email}` : ""}` : undefined;
       await this.acknowledge(alert, {
         userId: ACKNOWLEDGED_BY_LINK,
         by: recipient ? oneLine(recipient.name, 80) : "a person on the list",
-        ...(recipient?.email ? { byEmail: recipient.email.toLowerCase() } : {}),
+        ...(email ? { byEmail: email.toLowerCase() } : {}),
         reason: `Alert acknowledged with the link in an alert message${named ? ` sent to ${named}` : ""}.`,
         metadata: { via: ACKNOWLEDGED_BY_LINK, ...(named ? { recipient: named } : {}) }
       });

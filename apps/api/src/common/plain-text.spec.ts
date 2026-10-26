@@ -51,6 +51,11 @@ describe("web addresses in text from a person", () => {
     expect(withoutLinks("see greecon-help.com/login")).toBe("see greecon-help[.]com/login");
   });
 
+  it("include the shorteners and throwaway endings that spam uses", () => {
+    expect(withoutLinks("pay at bit.ly/xy12 or t.co/abc, goo.gl/q, shorturl.at/x, youtu.be/z")).toBe("pay at bit[.]ly/xy12 or t[.]co/abc, goo[.]gl/q, shorturl[.]at/x, youtu[.]be/z");
+    expect(webAddressesIn("bit.ly/a bit.ly/b bit.ly/c bit.ly/d")).toBe(4);
+  });
+
   it("leave an email address and ordinary names alone", () => {
     const ordinary = "Write to besa@hotel.al, Dr. Ahmeti or J.R. Smith, Durrës.";
     expect(withoutLinks(ordinary)).toBe(ordinary);

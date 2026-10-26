@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { AccessRequest, requestedSiteTypeLabels } from "@greecon/shared";
 import { configuredPublicWebUrl } from "../common/public-url";
-import { AccessRequestNotifier, SALES_EMAILS_PER_HOUR } from "../modules/access-requests/access-requests.service";
+import { AccessRequestNotifier, SALES_EMAILS_PER_DAY } from "../modules/access-requests/access-requests.service";
 import { Channels } from "./channels";
 import { Message, accessRequestEmail, accessRequestFloodEmail } from "./messages";
 
@@ -33,7 +33,7 @@ export function createAccessRequestNotifier(channels: Channels, env: NodeJS.Proc
     );
     await tellEveryone(message, `access-request:${request.id}`, `request ${request.id}`);
   };
-  const flood = (requestsInTheLastHour: number): Promise<void> =>
-    tellEveryone(accessRequestFloodEmail(requestsInTheLastHour, SALES_EMAILS_PER_HOUR, link), `access-request-flood:${Date.now()}`, "a flood of requests");
+  const flood = (requestsInTheLastDay: number): Promise<void> =>
+    tellEveryone(accessRequestFloodEmail(requestsInTheLastDay, SALES_EMAILS_PER_DAY, link), `access-request-flood:${Date.now()}`, "a flood of requests");
   return Object.assign(aboutOne, { flood });
 }

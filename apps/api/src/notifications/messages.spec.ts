@@ -255,6 +255,9 @@ describe("making text safe for a phone", () => {
 
   it("replaces what it cannot write, and flattens line breaks", () => {
     expect(smsSafe("tank \u{1F4A7}\nlow")).toBe("tank ? low");
+    // Characters that are not in the cheap alphabet, or are worth two in it, are written with plain ones: a site named "Farm [North] {1}
+    // `A` ^b ~c | d\\e" must not make the message cost twice as much.
+    expect(smsSafe("Farm [North] {1} `A` ^b ~c | d\\e")).toBe("Farm (North) (1) 'A' b -c / d/e");
   });
 });
 

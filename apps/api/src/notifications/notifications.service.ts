@@ -115,6 +115,16 @@ const ALERT_RETRY_SLOW_MS = 30 * 60_000;
 /** A way of sending that is not set up on the platform at all will not mend itself from one try to the next, so it is tried once an
  * hour: setting it up while the alert is still open still reaches the people, and the log does not fill with a line every five minutes. */
 const ALERT_RETRY_NOT_SET_UP_MS = HOUR_MS;
+/** The team's own message about a silent box that could not be delivered is tried again every five minutes for six hours: a
+ * provider that is down, or out of its allowance for the day, must not mean that nobody ever hears of this silence (a silence is
+ * told once, and a line in the log, even a failed one, stands for it). A try that falls in the team's quiet hours is held to their
+ * end, like the first. After that the morning message and the screens say it. */
+const BOX_SILENT_RETRY_MS = 5 * 60_000;
+const BOX_SILENT_TRIES = 72;
+/** A box on a poor connection can go silent and come back again and again, and each is a new silence. The team is told of the same
+ * box this many times in a day; after that it is left to the screens and the morning message, so that one box cannot fill the
+ * team's inboxes or use up the email allowance that alert messages share. */
+const SILENCES_TOLD_PER_BOX_PER_DAY = 3;
 /** How far back the screens look for alert messages that did not arrive. */
 const UNDELIVERED_WINDOW_MS = 24 * HOUR_MS;
 /** How many people are sent to at once. One person's steps still go in order. */
@@ -150,6 +160,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private readonly warnedAboutLimit = new Set<string>();
   /** What is being sent right now, per account, way and kind of limit, so that people sent to at once cannot together pass a limit. */
   private readonly sending = new Map<string, number>();
+  /** When the team was last told of a silence of each box, for the last day (SILENCES_TOLD_PER_BOX_PER_DAY). */
+  private readonly toldAboutBox = new Map<string, number[]>();
   private roundsSkipped = 0;
   private readonly webUrl: string | undefined;
 
@@ -439,10 +451,21 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const told = await this.outbox.existingKeys(team, newly.map(silenceKey));
     const settings = this.config.settings(team);
     const planned: PlannedMessage[] = [];
-    for (const telling of silencesToTell(newly.filter((box) => !told.has(silenceKey(box))), quiet, nowMs)) {
+    const untold = newly.filter((box) => !told.has(silenceKey(box)) && this.mayTellAboutBox(box.gatewayId, nowMs));
+    for (const telling of silencesToTell(untold, quiet, nowMs)) {
       planned.push(...(await this.silenceMessages(telling, recipients, settings.timezone, quietHoursEnd(nowMs, settings), nowMs)));
+      for (const box of telling.boxes) this.toldAboutBox.set(box.gatewayId, [...(this.toldAboutBox.get(box.gatewayId) ?? []), nowMs]);
     }
     if (planned.length > 0) await this.outbox.plan(team, planned, nowMs);
+  }
+
+  /** Whether the team may still be told today of another silence of this box (SILENCES_TOLD_PER_BOX_PER_DAY). Kept in memory:
+   * after a restart a box that flaps is told of a few more times, and no silence is ever told twice (the log keeps those). */
+  private mayTellAboutBox(gatewayId: string, nowMs: number): boolean {
+    const recent = (this.toldAboutBox.get(gatewayId) ?? []).filter((at) => nowMs - at < 24 * HOUR_MS);
+    if (recent.length === 0) this.toldAboutBox.delete(gatewayId);
+    else this.toldAboutBox.set(gatewayId, recent);
+    return recent.length < SILENCES_TOLD_PER_BOX_PER_DAY;
   }
 
   /** The messages for one telling. The first person's message about a single box is keyed by the silence itself, so that it
@@ -699,6 +722,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       await this.outbox.markFailed(row.id, nowMs, error, destination);
       this.logger.warn(`A ${row.kind} message to ${row.contactName} failed: ${error}`);
       return "failed";
+    }
+    if (row.kind === "box_silent" && row.attempts + 1 < BOX_SILENT_TRIES && (transient || error === NOT_SET_UP[row.channel])) {
+      await this.outbox.retryAt(row.id, nowMs + BOX_SILENT_RETRY_MS, row.attempts + 1, error);
+      return "retried";
     }
     if (transient && row.attempts + 1 < MAX_ATTEMPTS) {
       const wait = RETRY_DELAY_MS[Math.min(row.attempts, RETRY_DELAY_MS.length - 1)] as number;

@@ -49,6 +49,13 @@ export function smsSafe(text: string): string {
     .replace(/[–—]/g, "-")
     .replace(/…/g, "...")
     .replace(/[\r\n\t]+/g, " ")
+    // Outside the cheap alphabet (a backtick), or each worth two characters in it (brackets, braces, backslash, caret, tilde, bar).
+    .replace(/`/g, "'")
+    .replace(/[[{]/g, "(")
+    .replace(/[\]}]/g, ")")
+    .replace(/[\\|]/g, "/")
+    .replace(/\^/g, "")
+    .replace(/~/g, "-")
     .replace(/[^\x20-\x7e]/gu, "?")
     .replace(/\s+/g, " ")
     .trim();
@@ -371,12 +378,12 @@ export function accessRequestEmail(request: { name: string; company: string; ema
   };
 }
 
-/** Once an hour at most, while requests for access arrive faster than real interest does: one message instead of one each. */
-export function accessRequestFloodEmail(requestsInTheLastHour: number, emailedEachHour: number, link?: string): Message {
+/** Once a day at most, while requests for access arrive faster than real interest does: one message instead of one each. */
+export function accessRequestFloodEmail(requestsInTheLastDay: number, emailedEachDay: number, link?: string): Message {
   return {
-    subject: "Many requests for access at once: all kept, not emailed one by one",
+    subject: "Many requests for access: all kept, not emailed one by one",
     body: [
-      `${requestsInTheLastHour} requests for access have arrived in the last hour. Greecon emails the first ${emailedEachHour} of an hour one by one; it keeps every one in the inbox, and emails no more of them until the hour is over.`,
+      `${requestsInTheLastDay} requests for access have arrived in the last 24 hours. Greecon emails the first ${emailedEachDay} of a day one by one, so that a form filled in by machine cannot use up the day's emails, which alert messages need too; it keeps every one in the inbox, and emails no more of them until the day is over.`,
       "This may be someone filling in the form by machine. Look through the inbox for the real ones.",
       ...(link ? ["", `Open the inbox: ${link}`] : [])
     ].join("\n")

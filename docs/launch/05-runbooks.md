@@ -44,7 +44,10 @@ message says readings are out of date. **Or you are told at once:** Greecon's ow
 customer's box goes silent (*A customer's box went silent*, also under **Who is told → What was sent**): the client, the
 site, since when, its last reading, and whether any message has gone to the customer (it has not, by this one). If three
 or more boxes go silent within ten minutes it is **one** message that says so: that is Greecon's platform or a provider
-they share, not that many customers losing power at once: go to R7.
+they share, not that many customers losing power at once: go to R7. If the email service cannot take the message (it is
+down, or the day's allowance is used up) it is tried again every five minutes for six hours; after that, the morning
+message and **Today** are what say it. A box that keeps coming back and going again is told of three times a day at most,
+so a poor connection at one farm cannot fill the inboxes (it stays on **Today** while it is silent).
 
 **Check, in this order:**
 

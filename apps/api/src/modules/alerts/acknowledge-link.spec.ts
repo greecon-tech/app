@@ -136,6 +136,16 @@ describe("the link in an alert message", () => {
     });
   });
 
+  it("writes a contact's address in the audit trail on one line, without the invisible characters it may have been typed with", async () => {
+    await config.setContacts(client.tenantId, [{ name: "Besa Krasniqi", email: "besa\u202e\u200b@client-farm.example", phone: "+355691111111" }]);
+    await criticalTank();
+    await links.acknowledge(linkIn(emails[0]?.body));
+    expect(acknowledgements()[0]).toMatchObject({
+      actor: "Link in an alert message (Besa Krasniqi, besa@client-farm.example)",
+      reason: "Alert acknowledged with the link in an alert message sent to Besa Krasniqi, besa@client-farm.example."
+    });
+  });
+
   it("gives the next person a link of their own, and tells the others who took it", async () => {
     const start = await criticalTank();
     await service.tick(start + minutes(30) + 1_000);

@@ -8,9 +8,12 @@ const CONTROL = /[\p{Cc}\u2028\u2029]/gu;
 const INVISIBLE = /\p{Cf}/gu;
 
 /** A web address: one with a scheme, one that starts with www., or a bare domain ending in a common top-level domain (not
- * the part of an email address after the @). */
+ * the part of an email address after the @), including the endings link shorteners and throwaway domains use. The list is of
+ * endings no ordinary word is (a missing space after a full stop must not turn a sentence into a link), so it does not hold
+ * every one: the rest are stopped by who may write where (an email address is checked as one, a telephone number keeps its
+ * digits only). */
 const WEB_ADDRESS =
-  /\b[a-z][a-z0-9+.-]*:\/\/\S+|\bwww\.\S+|(?<![\w@.-])(?:[a-z0-9-]+\.)+(?:com|net|org|info|biz|io|co|me|app|dev|xyz|top|site|online|shop|link|click|ru|cn|al|eu|de|it|uk)\b(?:\/\S*)?/gi;
+  /\b[a-z][a-z0-9+.-]*:\/\/\S+|\bwww\.\S+|(?<![\w@.-])(?:[a-z0-9-]+\.)+(?:com|net|org|info|biz|io|co|me|app|dev|xyz|top|site|online|shop|link|click|ru|cn|al|eu|de|it|uk|ly|gl|gd|gy|cc|tk|ml|ga|cf|gq|pw|ws|vip|icu|buzz|su|ua)\b(?:\/\S*)?|(?<![\w@.-])(?:shorturl\.at|lnkd\.in|youtu\.be)\b(?:\/\S*)?/gi;
 
 /** One line of plain text: control characters and line breaks become spaces, invisible characters go, runs of spaces become
  * one, and it is cut to `max` characters (whole characters, with an ellipsis) so nobody's name can push the rest out. */

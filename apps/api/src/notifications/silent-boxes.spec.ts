@@ -75,6 +75,18 @@ describe("what to tell, of boxes that have gone silent", () => {
     expect(silencesToTell(silent, [...silent, late], NOON + OFFLINE_AFTER + STORM_SETTLE_MS).map((telling) => telling.together)).toEqual([false, false]);
   });
 
+  it("waits as well when the group is already a storm, so that the box still catching up is not told on its own", () => {
+    const now = NOON + OFFLINE_AFTER + 20_000;
+    const silent = [quietBox(1, NOON, now), quietBox(2, NOON + 5_000, now), quietBox(3, NOON + 10_000, now)];
+    const late = quietBox(4, NOON + 30_000, now);
+    expect(silent.map((box) => box.status)).toEqual(["offline", "offline", "offline"]);
+    expect(late.status).toBe("late");
+    expect(silencesToTell(silent, [...silent, late], now)).toEqual([]);
+    // Once the settling time is over, or when nothing is still catching up, the storm is told as one.
+    expect(silencesToTell(silent, [...silent, late], NOON + OFFLINE_AFTER + STORM_SETTLE_MS).map((telling) => telling.together)).toEqual([true]);
+    expect(silencesToTell(silent, silent, now).map((telling) => telling.together)).toEqual([true]);
+  });
+
   it("does not wait for a box that went quiet long after", () => {
     const box = quietBox(1, NOON, at);
     const later = quietBox(2, NOON + minutes(6), at);
@@ -229,6 +241,75 @@ describe("telling Greecon's own team", () => {
     const lines = outbox.rows.filter((row) => row.tenantId === TEAM && row.status === "skipped");
     expect(lines.map((row) => row.dedupeKey).sort()).toEqual([1, 2, 3, 4].map((n) => silenceKey({ gatewayId: gatewayId(n), lastSeenUtc: new Date(NOON + n * 5_000).toISOString() })).sort());
     expect(lines.every((row) => row.error === "Told in one message about the 4 boxes that went silent at the same time.")).toBe(true);
+  });
+
+  /** The email service as it is during an outage or with its allowance for the day used up: it answers 429 to everything. */
+  const providerDown = () =>
+    new NotificationsService(
+      source,
+      config,
+      outbox,
+      { email: { send: async () => ({ ok: false as const, transient: true, error: "The email service answered 429: daily allowance used up" }) }, problems: [] },
+      { webUrl: "https://app.greecon.example", autoSend: false }
+    );
+
+  it("keeps trying for hours when the email service cannot take the message, and tells the team once it can", async () => {
+    let up = false;
+    const flaky = new NotificationsService(
+      source,
+      config,
+      outbox,
+      { email: { send: async (message) => (up ? (sent.push(message), { ok: true as const }) : { ok: false as const, transient: true, error: "The email service answered 429: daily allowance used up" }) }, problems: [] },
+      { webUrl: "https://app.greecon.example", autoSend: false }
+    );
+    source.silent(1, NOON);
+    await flaky.tick(NOON + OFFLINE_AFTER + 1_000);
+    for (let at = 21; at <= 200; at += 5) await flaky.tick(NOON + minutes(at) + 1_000);
+    expect(sent).toEqual([]);
+    up = true;
+    await flaky.tick(NOON + minutes(206));
+    expect(teamMail().map((message) => message.to).sort()).toEqual(["eridon@greecon.example", "pm@greecon.example"]);
+    expect(teamMail()[0]?.subject).toBe("Box silent: Hotel Adriatik Ltd, Site 1");
+    // And not again afterwards: the silence is told once.
+    await flaky.tick(NOON + minutes(260));
+    expect(teamMail()).toHaveLength(2);
+  });
+
+  it("does not tell the team about a box that came back while the email service was down", async () => {
+    const down = providerDown();
+    source.silent(1, NOON);
+    await down.tick(NOON + OFFLINE_AFTER + 1_000);
+    source.reported(1);
+    await service.tick(NOON + minutes(40));
+    expect(sent).toEqual([]);
+  });
+
+  it("gives up after six hours of trying, and leaves the morning message to say it", async () => {
+    const down = providerDown();
+    source.silent(1, NOON);
+    for (let at = 15; at <= 15 + 6 * 60 + 30; at += 5) await down.tick(NOON + minutes(at) + 1_000);
+    const rows = outbox.rows.filter((row) => row.tenantId === TEAM);
+    expect(rows.map((row) => row.status)).toEqual(["failed", "failed"]);
+    // It is not picked up again: the silence is in the log, failed, and a later round plans nothing new for it.
+    await service.tick(NOON + minutes(500));
+    expect(sent).toEqual([]);
+    expect(outbox.rows.filter((row) => row.tenantId === TEAM)).toHaveLength(2);
+  });
+
+  it("tells the team of the same box three times a day, and no more, so that a box on a poor connection cannot fill their inboxes", async () => {
+    for (let n = 0; n < 5; n += 1) {
+      const wentSilent = NOON + n * minutes(40);
+      source.silent(1, wentSilent);
+      await service.tick(wentSilent + minutes(16));
+      source.reported(1);
+      await service.tick(wentSilent + minutes(20));
+    }
+    expect(teamMail()).toHaveLength(6);
+    // The day after, it is told again.
+    const nextDay = NOON + 25 * 3_600_000;
+    source.silent(1, nextDay);
+    await service.tick(nextDay + minutes(16));
+    expect(teamMail()).toHaveLength(8);
   });
 
   it("holds a message through the team's quiet hours, and sends it in the morning if the box is still silent", async () => {
