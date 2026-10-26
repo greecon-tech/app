@@ -90,7 +90,7 @@ tank nearly empty) is never held back by it. `0` switches the wait off.
 Railway shows a record to add to your DNS (step 5).
 
 **You should see:** after a minute or two, in the service's **Deployments → View logs**, a line such as
-`Database updated: 18 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
+`Database updated: 19 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
 date.`), then `Nest application successfully started`. Also, the first time:
 
 ```

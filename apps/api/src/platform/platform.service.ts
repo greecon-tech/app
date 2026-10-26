@@ -340,6 +340,14 @@ export interface AlertRecord {
   resolvedAtUtc?: string;
 }
 
+/** How long ago, in hours, each of the published demo's seeded alerts was raised, as the demo shows it (refreshDemoAlertAges). */
+const DEMO_ALERT_AGES_HOURS: Record<string, number> = {
+  "99999999-9999-4999-8999-999999999903": 3, // Act now: the battery is low overnight
+  "99999999-9999-4999-8999-999999999901": 26, // Check today: the water tank is approaching low
+  "99999999-9999-4999-8999-999999999902": 5, // For your information: soil moisture
+  "99999999-9999-4999-8999-999999999904": 30 // cleared: a grid-import spike on a cloudy afternoon
+};
+
 export interface IncidentRecord {
   id: string;
   tenantId: string;
@@ -990,6 +998,22 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     audit("rule.approved", "rule", "88888888-8888-4888-8888-888888888802", "Initial MVP safety baseline.", "22222222-2222-4222-8222-222222222202", "33333333-3333-4333-8333-333333333304"),
     audit("alert.acknowledged", "alert", "99999999-9999-4999-8999-999999999901", "Operator acknowledged demo low tank alert.", "22222222-2222-4222-8222-222222222202", "33333333-3333-4333-8333-333333333303")
   ];
+
+  /** The published demo's own alerts are given the age they would have on a live day, whatever the age of the database that
+   * holds them. Made when the database was, they would say "since 44 days ago" and go on growing, in the one place a prospect
+   * looks first. Only the demo's four seeded alerts, only the working copy in memory (the next start does this again at its first
+   * pass), and only their times; an alert a visitor acknowledged keeps being acknowledged. */
+  refreshDemoAlertAges(nowMs: number): void {
+    for (const alert of this.alerts) {
+      if (alert.tenantId !== DEMO_TENANT_ID) continue;
+      const hoursAgo = DEMO_ALERT_AGES_HOURS[alert.id];
+      if (hoursAgo === undefined) continue;
+      const raised = nowMs - hoursAgo * 3_600_000;
+      alert.createdAtUtc = new Date(raised).toISOString();
+      if (alert.acknowledgedAtUtc) alert.acknowledgedAtUtc = new Date(raised + 20 * 60_000).toISOString();
+      if (alert.resolvedAtUtc) alert.resolvedAtUtc = new Date(raised + 70 * 60_000).toISOString();
+    }
+  }
 
   session(principal: Principal) {
     return {

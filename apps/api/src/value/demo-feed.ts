@@ -39,6 +39,8 @@ export class DemoFeedService implements OnApplicationBootstrap, OnApplicationShu
    * injectable clock so a test can move time. */
   async tick(nowMs: number = Date.now()): Promise<void> {
     try {
+      // The demo's alerts read as raised a few hours ago, however old the database is (and the first pass is waited for).
+      this.platform.refreshDemoAlertAges(nowMs);
       const offsetMs = offsetFor(nowMs, DEFAULT_TIME_ZONE);
       const persistRaw = this.ticks % PERSIST_EVERY_TICKS === 0;
       this.ticks += 1;

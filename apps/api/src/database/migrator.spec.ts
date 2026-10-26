@@ -1,4 +1,5 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { randomUUID } from "crypto";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
@@ -114,6 +115,40 @@ describe.skipIf(!testDatabaseUrl)("migration ledger (real PostgreSQL)", () => {
       const ledger = await pool.query<{ name: string }>("SELECT name FROM schema_migrations");
       expect(ledger.rows.map((row) => row.name)).toEqual(["001_ok.sql"]);
       expect((await pool.query("SELECT to_regclass('public.half_done') AS t")).rows[0]?.t).toBeNull();
+    });
+  }, 60_000);
+
+  it("removes an empty, hand-made site from the published demo, and nothing else", async () => {
+    await withEmptyDatabase(async (pool) => {
+      // The database as it was before this migration, with what an early version let someone add by hand.
+      const dir = copyOfMigrations();
+      rmSync(join(dir, "019_clean_published_demo.sql"));
+      await runMigrations(pool, dir);
+
+      const DEMO = "11111111-1111-4111-8111-111111111111";
+      const stray = randomUUID();
+      const withBox = randomUUID();
+      const other = randomUUID();
+      const otherSite = randomUUID();
+      const addSite = (id: string, tenant: string, name: string) =>
+        pool.query("INSERT INTO sites (id, tenant_id, name, type, location_name) VALUES ($1, $2, $3, 'farm', 'Tirana Albania')", [id, tenant, name]);
+      await addSite(stray, DEMO, "X Farm");
+      await pool.query("INSERT INTO devices (tenant_id, site_id, name, device_type, protocol, driver_type) VALUES ($1, $2, 'A device', 'meter', 'modbus', 'modbus')", [DEMO, stray]);
+      await addSite(withBox, DEMO, "A demo site with a box");
+      await pool.query("INSERT INTO edge_gateways (tenant_id, site_id, name) VALUES ($1, $2, 'A box')", [DEMO, withBox]);
+      await pool.query("INSERT INTO tenants (id, name, domain) VALUES ($1, 'Another client', 'another.example')", [other]);
+      await addSite(otherSite, other, "Another client's empty site");
+
+      copyFileSync(join(MIGRATIONS, "019_clean_published_demo.sql"), join(dir, "019_clean_published_demo.sql"));
+      const result = await runMigrations(pool, dir);
+      expect(result.applied).toEqual(["019_clean_published_demo.sql"]);
+
+      const sites = (await pool.query<{ id: string; name: string }>("SELECT id, name FROM sites ORDER BY name")).rows.map((row) => row.name);
+      expect(sites).toEqual(["A demo site with a box", "Another client's empty site", "Integrated Farm Site", "Solar + Battery Site", "Water Management Site"]);
+      // What belonged to the removed site went with it.
+      expect((await pool.query("SELECT 1 FROM devices WHERE site_id = $1", [stray])).rowCount).toBe(0);
+      // And the three the demo is made of still have their history.
+      expect(Number((await pool.query("SELECT count(*) AS n FROM telemetry_readings WHERE site_id = '22222222-2222-4222-8222-222222222201'")).rows[0]?.n)).toBeGreaterThan(0);
     });
   }, 60_000);
 
