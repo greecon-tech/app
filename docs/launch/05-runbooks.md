@@ -12,7 +12,7 @@ hears about its own problems before its customers do.**
 
 | When | What | How long |
 |---|---|---|
-| **Every morning** (the project manager; the founder when away) | Read the morning email from Greecon ("Greecon, Mon 19 Oct: ..."). Open **Clients → Sites across clients**, worst first. For anything not **Stable**, follow the runbook below. If everything is **Stable**, do nothing. | 5 min |
+| **Every morning** (the project manager; the founder when away) | Read the morning email from Greecon ("Greecon, Mon 19 Oct: ..."). Open **Today**: the sites under **Needs a look**, worst first. For anything not **Stable**, follow the runbook below. If everything is **Stable**, do nothing. | 5 min |
 | **Same day** | A customer who is **Attention needed** or **Unknown**: phone them *before* they phone you ("we saw your box was offline since 03:10; we are looking into it"). | |
 | **Every Friday** (founder) | The pipeline sheet ([04](04-sales-kit.md)); the hardware register; take the weekly backup (R13); look at Railway **Usage** | 30 min |
 | **Every month** (founder) | Restore drill (R13); read the last month's alerts at each live site with the owner: *useful? too many?* (R5); look at the audit log for anything unexpected; check Resend and Twilio balances; update packages ([R14](#r14-when-the-founder-is-not-there) lists who can do what) | 2 hours |
@@ -39,8 +39,12 @@ Monday to Saturday). The platform does the night shift: Act now reaches the *cus
 
 ## R1. A customer's box is offline
 
-**You see:** **Sites across clients** says *The box has not reported for N: it is offline*; or the customer's morning
-message says readings are out of date.
+**You see:** **Today**, under *Needs a look*, says *The box has not reported for N: it is offline*; or the customer's morning
+message says readings are out of date. **Or you are told at once:** Greecon's own team gets a message the moment a
+customer's box goes silent (*A customer's box went silent*, also under **Who is told → What was sent**): the client, the
+site, since when, its last reading, and whether any message has gone to the customer (it has not, by this one). If three
+or more boxes go silent within ten minutes it is **one** message that says so: that is Greecon's platform or a provider
+they share, not that many customers losing power at once: go to R7.
 
 **Check, in this order:**
 
@@ -99,6 +103,8 @@ reading stays as it was, with a note. The platform keeps what was measured.
 7. **A message that could not be delivered** (a key refused, an empty text balance, the provider down): an alert message is tried again every five minutes for the first hour and every half hour after that, for as long as the alert is open and nobody has acknowledged it, and **Who is told** says "N alert messages could not be delivered, the last because ...". Each failed try stays in the log as a line of its own. A Check today email that falls due in the quiet hours, for any reason, waits for the morning; Act now never waits. A way of sending that is not set up on the platform at all (no text provider yet, say) is shown in the log as **Not sent**, is tried once an hour rather than every five minutes, and is **not** counted as "could not be delivered": **Who is told** says once that text messages are off, and Greecon's morning message does not name the customer for it. Mend the cause (the key, the balance, the address); the next try sends it. Greecon's own morning message names the customers whose alert messages are refused or not arriving.
 8. **A customer who is Suspended** is sent nothing at all, and what had been planned for it is dropped with the reason in the log. An alert that opened while the customer was suspended is messaged normally, from the next round after it is made active again. **An alert that was already part way through its messages when the customer was suspended is not told again from where it stood**: look at **Alerts** for that customer when you turn it back on, and tell the people yourself if something is still open.
 
+9. **The link in an alert message** (*I have seen this*): each alert message holds a link that works for 72 hours and acknowledges that one alert, for the person it was sent to, without signing in. Opening it changes nothing; pressing its button does. It shows in the customer's **Audit log** as *Alert acknowledged with the link in an alert message sent to [name]*. A page that says *This link no longer works* means the 72 hours are over, or the alert has gone, or the account is suspended, or `JWT_SECRET` was changed (changing it ends every link, as it ends every session). Nothing is lost: the person acknowledges in Greecon instead.
+
 **Fix:** correct the list and send a test message to the person, and confirm it arrived.
 
 **An Act now alert that nobody acknowledged** (the messages went on down the list until it ended): Act now is passed down the list, the first person at once, the second 30 minutes after the alert began, the third 60 minutes after, and so on, until the list ends or someone presses **Acknowledge** on the **Alerts** page. Replying to the email or the text, or phoning someone, does not stop it: the platform cannot hear that. Only a person who can sign in as an **Owner**, an **Administrator** or an **Operator** can press **Acknowledge**; a **Viewer** or an **Auditor** cannot, and neither can a person who is on the list with only an email address or a phone number. So **everyone on the Who is told list should also have their own login with the Operator role**: the customer's owner adds it under **Admin**, **Create user** (a Greecon support session cannot add people), and shows the person the **Acknowledge** button. Check **Admin** for who has a login and with which role.
@@ -115,11 +121,11 @@ day**, every one with an action.
 
 ## R6. A person cannot sign in, or someone has left
 
-- **Forgot the password:** the account's **owner** opens **Admin** and **Reset password** for that person (a temporary password is shown once; they choose their own at first sign-in).
-- **A customer's owner is locked out and has no other administrator:** they phone Greecon. **Confirm by phone that it is them** (ask something only the owner would know: the site's name and address, the last alert, who else is on the list). The founder opens **Clients**, finds the client, opens **People** under **Users**, and presses **Reset password** for that person. A temporary password is shown once; give it to them by phone, not by email. It ends every session the person had open, and the reset is written in the customer's own audit trail under the staff member's name. Only the owner of Greecon's account can do it; a project manager can see the people and is told who to ask.
+- **Forgot the password:** the account's **owner** opens **Settings → People** and chooses **Reset password** for that person (a temporary password is shown once; they choose their own at first sign-in).
+- **A customer's owner is locked out and has no other administrator:** they phone Greecon. **Confirm by phone that it is them** (ask something only the owner would know: the site's name and address, the last alert, who else is on the list). The founder opens **Clients**, finds the client, opens **People** in the client's row, and presses **Reset password** for that person. A temporary password is shown once; give it to them by phone, not by email. It ends every session the person had open, and the reset is written in the customer's own audit trail under the staff member's name. Only the owner of Greecon's account can do it; a project manager can see the people and is told who to ask.
 - **Wrong password too often:** sign-in is rate limited per account. Wait a few minutes.
-- **A team member leaves:** the founder opens **Clients → Greecon team → Turn off**. Their session ends on their next click, and so does any customer account they had open. Then **change `JWT_SECRET`** if they knew anything secret ([01](01-founder-go-live.md)).
-- **A customer's person leaves:** the customer's owner opens **Admin** and sets the person **Disabled**; it ends their session on their next click.
+- **A team member leaves:** the founder opens **Team → Turn off**. Their session ends on their next click, and so does any customer account they had open. Then **change `JWT_SECRET`** if they knew anything secret ([01](01-founder-go-live.md)).
+- **A customer's person leaves:** the customer's owner opens **Settings → People** and chooses **Turn off** for the person; it ends their session on their next click.
 - **The founder is locked out:** [R14](#r14-when-the-founder-is-not-there).
 
 ## R7. The platform is down
@@ -131,8 +137,9 @@ day**, every one with an action.
 3. **If a deploy just went out:** go back to the previous one (Deployments, the earlier one, **Redeploy**). The database is not rolled back, and does not need to be: new versions only add to it.
 4. **If the database is down:** look at Railway's Postgres service; it restarts by itself; if it is full, R8.
 5. **While it is down:** boxes keep their readings (about three days, for a site of up to about thirteen devices) and send them when the platform returns. **Customers' own equipment is not affected: Greecon only reads.** Say both, in these words.
-6. **Tell customers** within 30 minutes of finding out (the template in [21](../21-communication-system.md): "[time, zone] Investigating. Since [time], Greecon's screens and messages are unavailable. Effect on your site: your equipment is not affected; the box keeps its readings and sends them when we are back. Next update by [time]."). Update at the promised time **even if nothing changed.**
-7. **Afterwards:** a short written summary within five working days: what happened, how long, what was lost (nothing, if the boxes had it), what changes.
+6. **When it is back:** for ten minutes after the platform starts listening (`RESTART_GRACE_MINUTES`), Greecon raises nothing about *missing* readings and sends no *box silent* message, and the screens say *Greecon was just restarted; boxes are reconnecting*: the boxes' last words are old because the platform was away, not because they stopped. They send what they kept. After the ten minutes anything still silent is real: R1. A reading that is measured and dangerous (a tank nearly empty) is never held back by this wait.
+7. **Tell customers** within 30 minutes of finding out (the template in [21](../21-communication-system.md): "[time, zone] Investigating. Since [time], Greecon's screens and messages are unavailable. Effect on your site: your equipment is not affected; the box keeps its readings and sends them when we are back. Next update by [time]."). Update at the promised time **even if nothing changed.**
+8. **Afterwards:** a short written summary within five working days: what happened, how long, what was lost (nothing, if the boxes had it), what changes.
 
 ## R8. The database is full, or slow, or the bill jumped
 
@@ -148,7 +155,7 @@ fails to start a new version three times **goes back to the one before it** and 
 1. **Stop the spread:** on the **api** service set `EDGE_AUTO_UPDATE` to `false`. Boxes keep the version they have.
 2. **Roll the platform back:** Railway, **Deployments**, the earlier one, **Redeploy**.
 3. **Find the cause** in the log, fix it, release again, and turn `EDGE_AUTO_UPDATE` back on (remove the variable).
-4. Look at **Sites across clients** for a box whose version differs from the others.
+4. Look at **Today**: each site says its box's version. Look for one that differs from the others.
 
 ## R10. A box is replaced
 
@@ -183,7 +190,7 @@ A failed box, a stolen one, or a customer who moved the equipment.
   ```
 
 - **Sending a file you made by hand:** it holds readings of a named site, and the message file holds the names, email addresses and phone numbers of the people who were told, so **not by plain email**. Put it in a shared-drive folder that only the customer's owner can open (by their email address, not "anyone with the link"), tell them by phone that it is there, and delete it when they confirm in writing that they have it. A download from **Reports** is written in the customer's audit trail; **a file made by hand is written in no audit trail**, so write it in the same sheet as the data-deletion log below: who asked, when, which files, how they were sent, when it was confirmed.
-- **They stop at day 60 or day 90:** take the equipment away within 14 days; give them the files (the downloads from **Reports**, and every reading Greecon holds, made by hand as above); set the client **Suspended** in **Clients** (it can be turned back on; if you do, read R4, point 8, about alerts that are still open); keep the account until they confirm in writing that they have their data.
+- **They stop at day 60 or day 90:** take the equipment away within 14 days; give them the files (the downloads from **Reports**, and every reading Greecon holds, made by hand as above); set the client **Suspended** (**Clients → More → Suspend this client**) (it can be turned back on; if you do, read R4, point 8, about alerts that are still open); keep the account until they confirm in writing that they have their data.
 - **Deletion (they ask in writing, after they have their data):** this is the only time anything is deleted. The founder does it, in a transaction, after the files are with the customer and the request is in writing:
 
   ```

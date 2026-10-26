@@ -17,7 +17,8 @@
     "dev:edge": "npm run start:dev -w @greecon/edge-simulator",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "test": "npm run build:packages && npm run test --workspaces --if-present",
-    "build:edge-bundle": "node scripts/build-edge-bundle.mjs"
+    "build:edge-bundle": "node scripts/build-edge-bundle.mjs",
+    "docs:pdf": "node scripts/docs/build-guides.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.27.7",

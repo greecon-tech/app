@@ -94,7 +94,7 @@ function oneShoppingTable(ctx, letter) {
     return `| {{cb}} | ${cell(name)} | ${cell(line.qty)} | ${cell(part.estimate)} | | | |`;
   });
   return [
-    `### [${letter}]{.num} ${kit.name} {.lv3 #shopping-${letter.toLowerCase()}}`,
+    `### [${letter}]{.num} ${kit.name} {.lv3 .newpage #shopping-${letter.toLowerCase()}}`,
     "",
     "| | Item and specification | Qty | Planning estimate (EUR) | Quote 1 | Quote 2 | Quote 3 |",
     "|--|------------------|---|-------|-----|-----|-----|",

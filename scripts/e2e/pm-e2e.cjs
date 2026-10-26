@@ -303,12 +303,9 @@ async function boxCall(secret, method, path, body) {
   await phone.getByRole("button", { name: "Yes, I have seen it" }).click();
   await phone.getByText("Thank you. Greecon has your answer.").waitFor();
   ok("pressing the button answers, in words, that nobody else will be reminded", (await phone.locator("main").innerText()).includes("Nobody else will be reminded"));
-  let acknowledged;
-  for (let attempt = 0; attempt < 40 && !acknowledged; attempt += 1) {
-    acknowledged = (await recorded()).find((item) => item.channel === "email" && item.subject?.startsWith("Acknowledged"));
-    if (!acknowledged) await page.waitForTimeout(500);
-  }
-  ok("acknowledging with the link tells the person who was told, as acknowledging in Greecon does", acknowledged?.to === "besa@hotel-adriatik.example" && acknowledged?.text.startsWith("Acknowledged by"), acknowledged?.text?.split("\n")[0]);
+  // Besa is the only person who was told, and she is the one who pressed it: nobody is told "Acknowledged by" about their own acknowledgement.
+  await page.waitForTimeout(3000);
+  ok("nobody is sent an 'Acknowledged by' note: the only person told is the one who pressed the button", !(await recorded()).some((item) => item.subject?.startsWith("Acknowledged")));
   await page.goto(`${base}/alerts`, { waitUntil: "networkidle" });
   const alertsText = await page.locator("main").innerText();
   ok("Greecon now shows the alert as acknowledged and not yet cleared, and offers no second Acknowledge", alertsText.includes("Acknowledged, not yet cleared") && (await page.getByRole("button", { name: /Acknowledge/ }).count()) === 0, alertsText.replace(/\n+/g, " | ").slice(0, 200));
@@ -366,6 +363,7 @@ async function boxCall(secret, method, path, body) {
   // 10. The audit trail shows who did this.
   await page.goto(base + "/audit", { waitUntil: "networkidle" });
   const audit = await page.locator("main").innerText();
+  ok("the audit trail says the alert was acknowledged with the link in an alert message, and for whom", audit.includes("Alert acknowledged with the link in an alert message sent to Besa Krasniqi"), audit.slice(0, 120).replace(/\n/g, " | "));
   ok("the customer's audit trail shows Greecon staff by name", audit.includes("Greecon staff (eridon.manuka@greecon.earth)") || audit.includes("eridon.manuka@greecon.earth"), audit.slice(0, 200).replace(/\n/g, " | "));
 
   // 11. Back to Greecon's own console, still signed in as staff.

@@ -44,7 +44,7 @@ export default async function PeoplePage() {
         <SettingsForm initial={settings} />
       </Section>
       <Section title="How alerts reach people">
-        <HowAlertsReach />
+        <HowAlertsReach forTeam={Boolean(session?.user.isPlatformAdmin && !session.user.support)} />
       </Section>
       <Section title="What was sent">
         <MessageLog entries={log} />

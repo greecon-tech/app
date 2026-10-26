@@ -70,7 +70,7 @@ column is the name, exactly as written.
 | `PORT` | `4000` | The door the platform listens on |
 | `TRUST_PROXY` | `1` | Lets the platform see each caller's real address behind Railway |
 | `PUBLIC_API_URL` | `https://api.greecon.earth` | The address written into every box's install command |
-| `PUBLIC_WEB_URL` | `https://app.greecon.earth` | The link in each alert message |
+| `PUBLIC_WEB_URL` | `https://app.greecon.earth` | The links in each alert message: to the alert, and to say it has been seen |
 | `BOOTSTRAP_ADMIN_EMAIL` | `eridon.manuka@greecon.earth` | Your own login, created on the first start. **Removed in step 6.** |
 | `BOOTSTRAP_ADMIN_PASSWORD` | a password of at least 12 characters, not used anywhere else | Your first password. **Removed in step 6.** |
 | `SALES_NOTIFY_EMAIL` | `info@greecon.earth` | Who is emailed when someone asks for access |
@@ -78,12 +78,19 @@ column is the name, exactly as written.
 Messages are added in steps 7 and 8. Do not set `ENABLE_API_DOCS`, `AUTO_MIGRATE` or the old `EDGE_INGEST_*`
 variables.
 
+One setting is optional and best left alone: `RESTART_GRACE_MINUTES` (default `10`, from 0 to 60). After the
+platform itself restarts (a deploy, a crash), the boxes' last words are older than usual for a few minutes
+because the platform was not listening, not because they are silent. For this many minutes after it starts,
+nothing that comes from *missing* readings (a box silent, a reading out of date) is raised or messaged, and the
+screens say "Greecon was just restarted; boxes are reconnecting". A reading that is measured and dangerous (a
+tank nearly empty) is never held back by it. `0` switches the wait off.
+
 **Settings → Networking → Generate Domain** gives the API a temporary Railway address (ending
 `.up.railway.app`). Use it only to check that the API is alive, below. Then **Custom Domain → `api.greecon.earth`**:
 Railway shows a record to add to your DNS (step 5).
 
 **You should see:** after a minute or two, in the service's **Deployments → View logs**, a line such as
-`Database updated: 17 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
+`Database updated: 18 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
 date.`), then `Nest application successfully started`. Also, the first time:
 
 ```
@@ -294,6 +301,10 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 - **Hold every box on the software it has** (while a problem is investigated): set `EDGE_AUTO_UPDATE` to `false`
   on the API. Boxes then stop taking new versions until it is removed.
 - **Turn the live demo's simulated feed off:** set `DEMO_FEED` to `false`. Only the demo account changes.
+- **Change how long Greecon waits after a restart before it calls a box silent** (ten minutes unless you say otherwise,
+  so that a deploy does not alarm anyone while the boxes reconnect): set `RESTART_GRACE_MINUTES` to a whole number of
+  minutes from 0 to 60; 0 switches the wait off. Leave it unset unless there is a reason. What the wait does:
+  [05 Runbooks, R15](05-runbooks.md#r15-deploy-day-and-the-ten-minutes-after-any-restart).
 - **Move to Google Cloud:** when this outgrows Railway, see [10 Deployment on Google Cloud](../10-deployment-gcp.md).
   The services are ordinary containers; nothing here ties them to Railway.
 

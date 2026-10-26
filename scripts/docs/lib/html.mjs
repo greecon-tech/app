@@ -190,9 +190,12 @@ export function pageCss(doc, parts) {
     "@page cover { margin: 0; @top-left { content: none; border: 0; } @top-center { content: none; border: 0; } @top-right { content: none; border: 0; } @bottom-left { content: none; border: 0; } @bottom-center { content: none; border: 0; } @bottom-right { content: none; border: 0; } }",
     `@page toc { @top-right { content: "Contents"; } }`
   ];
-  for (const part of parts) {
-    css.push(`@page ${part.cssClass} { @top-right { content: ${cssString(part.runningHead)}; } }`);
-    css.push(`.${part.cssClass} { page: ${part.cssClass}; }`);
+  // a document of one part has nothing to add to the title at the top left; a book names the part it is in at the top right
+  if (parts.length > 1) {
+    for (const part of parts) {
+      css.push(`@page ${part.cssClass} { @top-right { content: ${cssString(part.runningHead)}; } }`);
+      css.push(`.${part.cssClass} { page: ${part.cssClass}; }`);
+    }
   }
   return css.join("\n");
 }

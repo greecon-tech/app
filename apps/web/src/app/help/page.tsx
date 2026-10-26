@@ -89,8 +89,9 @@ function HelpContent({ email, forTeam }: { email: string; forTeam: boolean }) {
             that equipment.
           </li>
           <li>
-            <strong>Press Acknowledge</strong> on the alert in <Link href="/alerts">Alerts</Link>. That tells Greecon someone has seen it, so it stops reminding the next person. Acknowledging does not
-            fix anything and does not hide it: the alert stays until its cause is gone.
+            <strong>Say you have seen it.</strong> On a phone, press the link in the message (&ldquo;I have seen this&rdquo;) and then the button on the page it opens: no sign-in is needed, and it works
+            for 72 hours. Or press <strong>Acknowledge</strong> on the alert in <Link href="/alerts">Alerts</Link>. Either way Greecon stops reminding the next person. Acknowledging does not fix anything
+            and does not hide it: the alert stays until its cause is gone.
           </li>
           <li>
             <strong>If you cannot tell what to do</strong>, write to <a href={`mailto:${email}`}>{email}</a> and say the site&apos;s name. A person at Greecon reads it.

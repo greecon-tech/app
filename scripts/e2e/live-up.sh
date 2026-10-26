@@ -5,6 +5,8 @@
 #   npm run build            first (the API's dist and the web app's .next)
 #   bash scripts/e2e/live-up.sh
 #
+# RESTART_GRACE_MINUTES=1: the platform's wait after its own start (default 10) is one minute here, so the journeys use the setting
+# without waiting ten minutes for the morning message.
 # Needs PostgreSQL 14 or newer and a role that may create databases:
 #   E2E_DATABASE_ADMIN_URL   default postgres://greecon:greecon@127.0.0.1:5432/postgres
 # Writes its logs and process ids to E2E_DIR (default $TMPDIR/greecon-e2e).
@@ -23,7 +25,7 @@ for i in $(seq 1 20); do curl -sf http://127.0.0.1:4100/recorded >/dev/null && b
 
 setsid env PORT=4000 NODE_ENV=production RESEND_API_KEY=re_e2e RESEND_API_URL=http://127.0.0.1:4100 ALERT_FROM_EMAIL=alerts@e2e.example \
   TWILIO_ACCOUNT_SID=ACe2e TWILIO_AUTH_TOKEN=tok TWILIO_FROM=+15005550006 TWILIO_API_URL=http://127.0.0.1:4100 \
-  PUBLIC_WEB_URL=http://localhost:3000 DATABASE_URL="$DB_URL" JWT_SECRET=e2e-secret-e2e-secret-e2e-secret-1234 TRUST_PROXY=1 \
+  PUBLIC_WEB_URL=http://localhost:3000 RESTART_GRACE_MINUTES=1 DATABASE_URL="$DB_URL" JWT_SECRET=e2e-secret-e2e-secret-e2e-secret-1234 TRUST_PROXY=1 \
   BOOTSTRAP_ADMIN_EMAIL=eridon.manuka@greecon.earth BOOTSTRAP_ADMIN_PASSWORD='E2E-Admin-Passw0rd!' \
   node apps/api/dist/main.js > "$E2E_DIR/api.log" 2>&1 < /dev/null &
 echo $! > "$E2E_DIR/api.pid"

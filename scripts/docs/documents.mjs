@@ -84,11 +84,12 @@ const PARTS = {
 
   part6: ({ config, ctx, notes }) => {
     const manual = loadManual(config, ctx, notes);
-    const { lead, body } = splitLead(read("part6-commissioning-handover.md"));
-    const filled = body
+    // the markers are replaced before the lead is split off, because the first chapter of the manual is what ends the lead
+    const filled = read("part6-commissioning-handover.md")
       .replace("@@MANUAL 9@@", () => manual.chapter("9", { number: "6.1" }))
       .replace("@@MANUAL 10@@", () => manual.chapter("10", { number: "6.2" }));
-    return part({ id: "part-6", label: "Part 6", title: "Commissioning, handover and what to leave", runningHead: "Part 6 · Commissioning and handover" }, { lead, body: filled });
+    const { lead, body } = splitLead(filled);
+    return part({ id: "part-6", label: "Part 6", title: "Commissioning, handover and what to leave", runningHead: "Part 6 · Commissioning and handover" }, { lead, body });
   },
 
   /** The runbooks. `only` limits them to the ones a project manager can do (05, R14 says which). */
@@ -143,6 +144,7 @@ const BOOK_REFS = {
   hardware: { text: "Part 4", href: "#part-4" },
   runbooks: { text: "Part 7", href: "#part-7" },
   appendices: { text: "the Appendices", href: "#appendices" },
+  packs: { text: "Part 5", href: "#part-5" },
   sales: { text: "the Sales kit (document 04, not part of these guides)" },
   book: { text: "this book" }
 };
@@ -153,6 +155,7 @@ const elsewhere = (self) => ({
   hardware: self === "hardware" ? { text: "this reference" } : { text: "the Hardware Reference (PDF 03)" },
   runbooks: self === "manual" ? { text: "Part 7", href: "#part-7" } : { text: "the Complete Deployment Guide, Part 7 (PDF 00)" },
   appendices: self === "manual" ? { text: "the Appendices", href: "#appendices" } : { text: "the Appendices of the Complete Deployment Guide (PDF 00)" },
+  packs: { text: "the site packs, PDFs 04 to 07" },
   sales: { text: "the Sales kit (document 04, not part of these guides)" },
   book: { text: "the Complete Deployment Guide (PDF 00)" }
 });
