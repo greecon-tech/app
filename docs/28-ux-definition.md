@@ -228,8 +228,8 @@ Built on 2026-10-26 as defined above, with these differences from the plan, none
   the setup list, the handover sheet and the equipment page for those who may).
 - The demo carries a one-line banner (simulated numbers, **Request access**), and the app can be put on a phone's home screen.
 
-Checked, in a real browser against the real stack: the project manager's whole journey (83 steps, including the alert link), the
-Greecon team's (25 steps), and `scripts/e2e/ux-tour.cjs` over every screen for the team, a client and the demo, on a desk and on a phone
+Checked, in a real browser against the real stack: the project manager's whole journey (82 checks, including the alert link), the
+Greecon team's (24 checks), and `scripts/e2e/ux-tour.cjs` over every screen for the team, a client and the demo, on a desk and on a phone
 (no page scrolls sideways at 390 px, no control without a name, no button under 40 px, no text under 12 px, no error in the console).
 The five role builds of the demo export. Not checked, and still open: a screen-reader pass, every page at 200% text, sessions with real
 users (document 20, sections 9 and 10).

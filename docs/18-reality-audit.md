@@ -29,8 +29,8 @@ the platform does updates this page in the same commit.
   stand-in provider receives, the downloads, the Greecon team, the fleet table, a support session
   and a locked-out customer's reset. CI runs it after the build.
 - Two journeys in a real browser against the real stack (`scripts/e2e`): the project manager's whole
-  job from onboarding to handover (83 steps, including the "I have seen this" link opened by a person
-  who never signed in), and the Greecon team's (25 steps: the owner adds a person, sessions end when
+  job from onboarding to handover (82 checks, including the "I have seen this" link opened by a person
+  who never signed in), and the Greecon team's (24 checks: the owner adds a person, sessions end when
   access does, a locked-out customer's person is reset).
 - A tour of every screen (`scripts/e2e/ux-tour.cjs`) as the Greecon team, as a client and as the demo, on a
   desk and on a phone, which takes a picture of each and reports pages that scroll sideways, controls with
