@@ -1,111 +1,72 @@
-import { DEMO_TENANT_ID, GREECON_COMPANY, GREECON_DOMAIN, GREECON_PUBLIC_EMAILS } from "@greecon/shared";
+import Link from "next/link";
+import { DEMO_TENANT_ID, GREECON_COMPANY, GREECON_PUBLIC_EMAILS } from "@greecon/shared";
 import { ChangePasswordForm } from "../../components/ChangePasswordForm";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
 import { apiGet } from "../../lib/api";
+import { ROLE_WORDS } from "../../lib/roles";
 import { getSession } from "../../lib/session";
-import { cycleWidgetSizeAction, loadWidgetPreferences, moveWidgetAction, toggleWidgetVisibilityAction } from "./actions";
+import { logoutAction } from "../login/actions";
 
-// This page is only ever used for the SSR build (Railway/GCP) — see page.static.tsx for the
-// static GitHub Pages twin, and build-static.sh for why the swap exists (the dashboard
-// customization controls below bind real Server Actions).
+export const metadata = { title: "Account" };
+
+// Account: a person's own sign-in, for every role (docs/28-ux-definition.md, section 4.3). It used to be for owners and
+// administrators only, and held a dashboard table and two placeholders; nothing of that is left. Only ever used for the SSR
+// build: see page.static.tsx for the GitHub Pages twin (this binds the change-password and sign-out Server Actions).
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
-  const [widgets, session, tenants] = await Promise.all([loadWidgetPreferences(), getSession(), apiGet<Array<{ name: string; domain: string }>>("/tenants")]);
-  // The organisation this account belongs to: the customer's own, not Greecon's.
+export default async function AccountPage() {
+  const [session, tenants] = await Promise.all([getSession(), apiGet<Array<{ name: string; domain: string }>>("/tenants")]);
   const tenant = tenants[0];
-  // The demo tenant's logins are shared by everyone viewing the live demo — letting one visitor
-  // change the password would lock out every other visitor using those same published
-  // credentials. The API refuses this too (apps/api/src/modules/auth/auth.service.ts); this just
-  // keeps the control from being offered in the first place.
-  const isDemoTenant = session?.user.tenantId === DEMO_TENANT_ID;
+  const user = session?.user;
+  // The demo account's logins are shared by everyone looking at the live demo: one visitor changing the password would lock
+  // the rest out. The API refuses it too (apps/api/src/modules/auth/auth.service.ts); this keeps the control from being offered.
+  const isDemoTenant = user?.tenantId === DEMO_TENANT_ID;
+  // Inside a customer's account as Greecon staff, the sign-in on this page is not the customer's to change, and not the staff
+  // member's either: their own is on the Greecon console.
+  const support = user?.support === true;
+  const role = user ? ROLE_WORDS[user.role] : undefined;
+  const email = GREECON_PUBLIC_EMAILS[0];
 
   return (
-    <Shell title="Settings" subtitle="Organization profile, dashboard customization, and future billing.">
-      <Section title="Organization Profile">
-        <div className="panel stack">
-          <label>
-            Organization
-            <input value={tenant?.name ?? GREECON_COMPANY} readOnly />
-          </label>
-          <label>
-            Identifier
-            <input value={tenant?.domain ?? GREECON_DOMAIN} readOnly />
-          </label>
-          <p className="muted">
-            To change the organization&apos;s name, or for anything about the account, write to <strong>{GREECON_PUBLIC_EMAILS[0]}</strong>. Who is told when
-            something needs attention is under <a href="/settings/people">Who is told</a>.
-          </p>
-        </div>
+    <Shell title="Account" subtitle="Your own sign-in.">
+      <Section title="You">
+        <dl className="account-list">
+          <dt>Name</dt>
+          <dd>{user?.name ?? "—"}</dd>
+          <dt>Email</dt>
+          <dd>{user?.email ?? "—"}</dd>
+          <dt>Role</dt>
+          <dd>
+            <strong>{role?.label ?? "—"}</strong>
+            {role ? <span className="muted"> {role.may}</span> : null}
+          </dd>
+          <dt>Account</dt>
+          <dd>
+            {tenant?.name ?? GREECON_COMPANY}
+            <span className="muted"> To change the account&apos;s name, or for anything about it, write to <a href={`mailto:${email}`}>{email}</a>.</span>
+          </dd>
+        </dl>
+        {support ? (
+          <p className="muted">You are in this account as Greecon staff, so there is no password to change here. Your own is on the Greecon console.</p>
+        ) : (
+          <form action={logoutAction}>
+            <button type="submit" className="button-ghost">
+              Log out
+            </button>
+          </form>
+        )}
       </Section>
-      <div id="dashboard" />
-      <Section title="Dashboard" aside={<span className="muted">Which cards show on your Overview page, their order, and size — this is your own view, not shared with teammates</span>}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Widget</th>
-                <th>Visible</th>
-                <th>Size</th>
-                <th>Priority</th>
-              </tr>
-            </thead>
-            <tbody>
-              {widgets.map((widget) => (
-                <tr key={widget.key}>
-                  <td>{widget.key}</td>
-                  <td>
-                    <form action={toggleWidgetVisibilityAction.bind(null, widget.key)}>
-                      <button type="submit" className="button-ghost">
-                        {widget.visible ? "Visible" : "Hidden"}
-                      </button>
-                    </form>
-                  </td>
-                  <td>
-                    <form action={cycleWidgetSizeAction.bind(null, widget.key)}>
-                      <button type="submit" className="button-ghost">
-                        {widget.size.charAt(0).toUpperCase() + widget.size.slice(1)}
-                      </button>
-                    </form>
-                  </td>
-                  <td>
-                    <div className="dashboard-order-controls">
-                      <form action={moveWidgetAction.bind(null, widget.key, "up")}>
-                        <button type="submit" className="button-ghost" aria-label={`Move ${widget.key} up`}>
-                          ↑
-                        </button>
-                      </form>
-                      <form action={moveWidgetAction.bind(null, widget.key, "down")}>
-                        <button type="submit" className="button-ghost" aria-label={`Move ${widget.key} down`}>
-                          ↓
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-      {isDemoTenant ? null : (
-        <Section title="Account Security" aside={<span className="muted">Changes only your own login</span>}>
+      {isDemoTenant || support ? null : (
+        <Section title="Change your password" aside={<span className="muted">Changes only your own sign-in</span>}>
           <ChangePasswordForm />
         </Section>
       )}
-      <Section title="Operational Settings">
-        <div className="metric-grid">
-          <div className="panel">
-            <h3>Notifications</h3>
-            <p className="muted">Alert routing placeholder.</p>
-          </div>
-          <div className="panel">
-            <h3>Billing</h3>
-            <p className="muted">Stripe planned as a later module.</p>
-          </div>
-        </div>
-      </Section>
+      {user && (user.role === "owner" || user.role === "admin") && !support ? (
+        <p className="muted">
+          People who work with you are added on <Link href="/admin">People</Link>; who hears about an alert is on <Link href="/settings/people">Who is told</Link>.
+        </p>
+      ) : null}
     </Shell>
   );
 }

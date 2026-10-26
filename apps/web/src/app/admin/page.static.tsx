@@ -1,80 +1,57 @@
-import { GREECON_COMPANY, GREECON_DOMAIN } from "@greecon/shared";
+import { UserRole, userRoles } from "@greecon/shared";
 import { DataTable } from "../../components/DataTable";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
 import { requirePermission } from "../../lib/access";
 import { apiGet, DEMO_ROLE } from "../../lib/api";
+import { ROLE_WORDS, roleLabel } from "../../lib/roles";
 
-interface Site {
-  id: string;
-  name: string;
-  type: string;
-  locationName: string;
-  status: string;
-}
+export const metadata = { title: "People" };
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: string;
+  role: UserRole;
   status: string;
 }
 
-const roleScopes = [
-  { role: "Owner", scope: "Tenant, billing, users, sites, rules, audit" },
-  { role: "Admin", scope: "Sites, assets, devices, users, approved rules" },
-  { role: "Operator", scope: "Monitoring and operation within the site's operating limits" },
-  { role: "Viewer", scope: "Read-only operational access" },
-  { role: "Auditor", scope: "Reports, audit logs, automation history, compliance evidence" }
-] as const;
-
-// Static-export twin of page.tsx (see apps/web/scripts/build-static.sh). Creating users, changing
-// roles, and creating sites all go through real Server Actions that call the live API — none of
-// that exists here, since the static build has no server to send those mutations to.
+// Static-export twin of page.tsx (see apps/web/scripts/build-static.sh). Adding people and changing roles go through real Server
+// Actions that call the live API — none of that exists here, since the static build has no server to send those mutations to.
 //
-// Gated the same way page.tsx is: the API 403s GET /users for any role without user:manage
-// (operator, viewer, auditor), and a static build bakes in one snapshot per role, so without this
-// gate the whole export fails for those roles. Nav hides the Admin link for them anyway.
-export default async function AdminPage() {
+// Gated the same way page.tsx is: the API 403s GET /users for any role without user:manage (operator, viewer, auditor), and a
+// static build bakes in one snapshot per role, so without this gate the whole export fails for those roles. Nav hides the link
+// for them anyway.
+export default async function PeoplePage() {
   requirePermission(DEMO_ROLE, "user:manage");
 
-  const [sites, users] = await Promise.all([apiGet<Site[]>("/sites"), apiGet<User[]>("/users")]);
+  const users = await apiGet<User[]>("/users");
 
   return (
-    <Shell title="Admin" subtitle="Tenant, users, roles, devices, retention, and security settings.">
-      <Section title="Tenant">
-        <div className="panel">
-          <strong>{GREECON_COMPANY}</strong>
-          <p className="muted">{GREECON_DOMAIN}</p>
-        </div>
-      </Section>
-      <Section title="Users">
+    <Shell title="People" subtitle="Who can sign in to this account, and what each person may do.">
+      <Section title="Everyone with a sign-in">
         <DataTable
           rows={users}
           columns={[
             { key: "name", label: "Name" },
             { key: "email", label: "Email" },
-            { key: "role", label: "Role" },
-            { key: "status", label: "Status" }
+            { key: "role", label: "Role", render: (user) => roleLabel(user.role) },
+            { key: "status", label: "Can sign in", render: (user) => (user.status === "active" ? "Yes" : "No, turned off") }
           ]}
         />
-        <p className="muted">Creating users and changing roles requires a live deployment (Railway or Google Cloud). See docs/12-deployment-github-pages.md.</p>
+        <p className="muted">Adding people and changing roles needs the live platform; this demo only shows the list.</p>
       </Section>
-      <Section title="Sites">
-        <DataTable
-          rows={sites}
-          columns={[
-            { key: "name", label: "Site" },
-            { key: "type", label: "Type" },
-            { key: "locationName", label: "Location" },
-            { key: "status", label: "Status" }
-          ]}
-        />
-      </Section>
-      <Section title="Roles">
-        <DataTable rows={roleScopes} columns={[{ key: "role", label: "Role" }, { key: "scope", label: "Scope" }]} />
-      </Section>
+      <details className="panel roles-panel">
+        <summary>What each role may do</summary>
+        <dl className="help-list help-list--words">
+          {userRoles.map((candidate) => (
+            <div key={candidate} className="help-list__row">
+              <dt>{ROLE_WORDS[candidate].label}</dt>
+              <dd>{ROLE_WORDS[candidate].may}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
     </Shell>
   );
 }

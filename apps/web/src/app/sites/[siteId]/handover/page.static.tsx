@@ -23,7 +23,7 @@ export default async function HandoverPage({ params }: { params: Promise<{ siteI
   return (
     <Shell title={`Handover: ${view.site.name}`} subtitle={view.commissioned ? "Commissioned" : "Not commissioned yet"}>
       <p className="no-print">
-        <Link href={`/sites/${siteId}/setup`}>← Back to setting up</Link> <PrintButton />
+        <Link className="standalone-link" href={`/sites/${siteId}/setup`}>← Back to setting up</Link> <PrintButton />
       </p>
       <HandoverSheet view={view} />
     </Shell>

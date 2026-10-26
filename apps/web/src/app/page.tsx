@@ -1,26 +1,18 @@
 import Link from "next/link";
-import { canonicalPointLabels, CanonicalPointName, DashboardWidgetPreference, EnergyFlowView, hasPermission, SiteValue, TenantHealth } from "@greecon/shared";
+import { redirect } from "next/navigation";
+import { EnergyFlowView, GREECON_PUBLIC_EMAILS, hasPermission, SiteValue, TenantHealth } from "@greecon/shared";
 import { AlertItem, AlertList } from "../components/AlertList";
-import { Ago } from "../components/Ago";
-import { EnergyFlows } from "../components/EnergyFlow";
+import { EnergyFlowSwitch } from "../components/EnergyFlowSwitch";
 import { HealthHeadline } from "../components/HealthHeadline";
 import { LiveRefresh } from "../components/LiveRefresh";
-import { MetricGrid } from "../components/MetricGrid";
 import { Section } from "../components/Section";
 import { Shell } from "../components/Shell";
 import { SiteRowData, SiteRows } from "../components/SiteRows";
 import { ValueSummary } from "../components/ValueView";
 import { apiGet, DEMO_ROLE, isStaticExport } from "../lib/api";
-import { applyDashboardPreferences } from "../lib/dashboard-preferences";
-import { ReadingView, readingMetric, takenAt } from "../lib/readings";
 import { getSession } from "../lib/session";
-import { Metric } from "../lib/types";
 
-interface OverviewReading extends ReadingView {
-  siteId: string;
-  siteName: string;
-  asOfUtc: string;
-}
+export const metadata = { title: "Overview" };
 
 interface Overview {
   asOfUtc: string;
@@ -28,22 +20,21 @@ interface Overview {
   sites: SiteRowData[];
   energy?: Array<{ siteId: string; siteName: string; flow: EnergyFlowView }>;
   summaries: { edge: { connectedSites: number; simulatedSites: number } };
-  readings: Partial<Record<CanonicalPointName, OverviewReading>>;
   activeAlerts: AlertItem[];
 }
 
+// The client's home (docs/28-ux-definition.md, section 4.3): is everything all right, and what needs me? The answer first, then what
+// needs a person, the sites, the energy picture of one site and what the solar is worth. The wall of "latest readings" that used to
+// follow is gone: it mixed readings of different sites under one heading, and each site's own page says it better.
+//
+// Greecon's own team has a different home (Today); a member of the team inside a customer's account is a client here.
 export default async function OverviewPage() {
-  const [overview, preferences, valueEntries] = await Promise.all([
-    apiGet<Overview>("/overview"),
-    apiGet<DashboardWidgetPreference[]>("/dashboard-preferences"),
-    apiGet<Array<{ siteId: string; siteName: string; value: SiteValue }>>("/value/summary")
-  ]);
-  const metrics = applyDashboardPreferences(buildMetrics(overview), preferences);
+  const session = await getSession();
+  if (session?.user.isPlatformAdmin && !session.user.support) redirect("/today");
+
+  const [overview, valueEntries] = await Promise.all([apiGet<Overview>("/overview"), apiGet<Array<{ siteId: string; siteName: string; value: SiteValue }>>("/value/summary")]);
   const siteNames = new Map(overview.sites.map((site) => [site.id, site.name]));
   const hasSites = overview.sites.length > 0;
-  // A brand new tenant (every real client on day one) starts with zero sites. Metrics and alerts
-  // would otherwise render as a wall of empty cards, so show onboarding guidance instead.
-  const session = await getSession();
   const role = session?.user.role ?? DEMO_ROLE;
   const canManageSites = hasPermission(role, "site:manage");
 
@@ -54,16 +45,16 @@ export default async function OverviewPage() {
         <>
           <HealthHeadline health={overview.health} asOfUtc={overview.asOfUtc} simulatedSites={overview.summaries.edge.simulatedSites} />
           {overview.activeAlerts.length > 0 ? (
-            <Section title="Needs you">
+            <Section title="Needs you" aside={<Link href="/alerts">Open alerts</Link>}>
               <AlertList alerts={overview.activeAlerts} siteNames={siteNames} />
             </Section>
           ) : null}
-          <Section title="Sites">
+          <Section title="Sites" aside={<Link href="/sites">All sites</Link>}>
             <SiteRows sites={overview.sites} />
           </Section>
           {overview.energy && overview.energy.length > 0 ? (
-            <Section title="Energy">
-              <EnergyFlows entries={overview.energy} />
+            <Section title="Energy now">
+              <EnergyFlowSwitch entries={overview.energy} />
             </Section>
           ) : null}
           {valueEntries.length > 0 ? (
@@ -71,96 +62,26 @@ export default async function OverviewPage() {
               <ValueSummary entries={valueEntries} />
             </Section>
           ) : null}
-          <Section
-            title="Latest readings"
-            aside={
-              <Link href="/settings#dashboard" className="button-ghost">
-                Customize
-              </Link>
-            }
-          >
-            <MetricGrid metrics={metrics} />
-          </Section>
         </>
       ) : (
-        <Section title="Getting started">
-          <ol className="getting-started">
-            <li>
-              <strong>Create your first site.</strong>
-              <p className="muted">A site is one physical location — a farm, a pump station, a building — that holds its own devices and readings.</p>
-              {canManageSites ? (
-                <Link href="/admin" className="button-ghost">
-                  Go to Admin → Create site
+        <Section title="No site yet">
+          <div className="empty-state">
+            <p>
+              <strong>Nothing to show yet.</strong> A site is one place Greecon watches: a hotel, a solar plant, a farm, a tank. Once the first one is set up, this page answers one
+              question: is everything all right?
+            </p>
+            {canManageSites ? (
+              <p>
+                <Link href="/sites/new" className="button-primary">
+                  Add your first site
                 </Link>
-              ) : (
-                <p className="muted">Ask a Greecon admin to create your first site.</p>
-              )}
-            </li>
-            <li>
-              <strong>Add its devices and reading points.</strong>
-              <p className="muted">Once a site exists, open it to add each sensor or controller and the specific measurements it reports — right from that site's own page.</p>
-            </li>
-            <li>
-              <strong>Connect the real hardware.</strong>
-              <p className="muted">
-                See <code>docs/14-edge-hardware-deployment.md</code> for wiring an actual industrial PC to start sending real readings.
               </p>
-            </li>
-          </ol>
+            ) : (
+              <p className="muted">Greecon adds your first site when your equipment is installed. Questions: {GREECON_PUBLIC_EMAILS[0]}.</p>
+            )}
+          </div>
         </Section>
       )}
     </Shell>
   );
-}
-
-// The cards a tenant sees, in this order. A card appears only when a site actually sends that
-// reading: a fleet with no battery simply has no battery card. Each says where its value came from
-// and how old it is, and carries a word only when there is something to say. Nothing here decides
-// whether a value is good or bad: the rules do, and send their verdict with the reading.
-const CARDS: ReadonlyArray<CanonicalPointName> = [
-  "energy.solar.power.kw",
-  "energy.battery.soc.percent",
-  "energy.consumption.kw",
-  "energy.grid.import.kw",
-  "energy.grid.export.kw",
-  "water.tank.level.percent",
-  "water.pressure.bar",
-  "agri.soil.moisture.percent"
-];
-
-function buildMetrics(overview: Overview): Metric[] {
-  const metrics: Metric[] = [];
-
-  for (const name of CARDS) {
-    const reading = overview.readings[name];
-    if (!reading) continue;
-    metrics.push(
-      readingMetric(
-        { ...reading, canonicalName: name },
-        <>
-          {reading.siteName ? `${reading.siteName} · ` : ""}
-          <Ago iso={takenAt(reading) ?? overview.asOfUtc} />
-        </>,
-        canonicalPointLabels[name]
-      )
-    );
-  }
-
-  const { connectedSites, simulatedSites } = overview.summaries.edge;
-  const total = overview.sites.length;
-  const offline = total - connectedSites - simulatedSites;
-  const notes = [
-    simulatedSites > 0 ? `${simulatedSites} simulated` : null,
-    offline > 0 ? `${offline} offline` : null,
-    offline === 0 && simulatedSites === 0 ? "All sites reporting" : null
-  ].filter(Boolean);
-  metrics.push({
-    label: "Edge connectivity",
-    value: `${connectedSites} / ${total}`,
-    unit: "sites live",
-    status: offline > 0 ? "Offline" : simulatedSites > 0 ? "Simulated" : undefined,
-    note: notes.join(" · ")
-  });
-
-  return metrics;
 }

@@ -1,0 +1,1 @@
+A complete pack for one kind of site, in the order of the work: what to buy, the survey, the drawings, the office, install day step by step, the platform's setup list, the commissioning tests and the handover. Print all of it and tick the boxes as you go. The electrician does everything on the mains side; you do the low voltage and the software; Greecon only reads.

@@ -8,7 +8,6 @@
 # (Turbopack still bundles it for code-splitting purposes), so the only reliable fix is physically
 # removing the file from the source tree before the build:
 #
-#   automation/page.tsx     — imports RuleForm/RuleActions (rule create/approve/disable/delete).
 #   sites/[siteId]/page.tsx — imports ManualControlPanel (manual command dispatch). Also needs the
 #     opposite generateStaticParams situation from the SSR version — see that file's own comment.
 #   login/page.tsx          — imports LoginForm, which calls the real login Server Action. The
@@ -37,10 +36,17 @@
 #     step), which call Server Actions. The twin shows the same checklist read only.
 #   sites/[siteId]/handover/page.tsx — no Server Action, but a dynamic route needs generateStaticParams
 #     in a static export and must not have it in the live build (same reason as sites/[siteId]/page.tsx).
+#   sites/[siteId]/equipment/page.tsx — imports the forms that add and remove equipment and readings and set their limits, which call
+#     Server Actions, and needs generateStaticParams in the static build only. The twin lists the same things, read only.
+#   sites/new/page.tsx      — imports the form that makes a site from a template (a Server Action). The twin says the demo makes none.
+#   ack/[token]/page.tsx    — the page a message's "I have seen this" link opens: it answers through a Server Action, and as a
+#     dynamic route needs generateStaticParams in the static build only. The twin says the demo sends no messages.
 #   settings/people/page.tsx — imports the forms that save who is told and send test messages (Server
 #     Actions). The twin explains the rules and says the demo sends nobody a message.
 #   export/[kind]/route.ts  — the download route: it reads the person's session on each request, which a
 #     static export cannot. The twin has no routes at all (the demo makes no files).
+#   today/page.tsx, platform/requests/page.tsx, platform/team/page.tsx — Greecon's team pages. They read the
+#     team's own session and call Server Actions; the demo has no Greecon team, so the twins just say so.
 set -e
 # Disables pathname expansion for the rest of the script: one of the paths below literally
 # contains "[siteId]", which the shell would otherwise try to glob-match as a one-character
@@ -51,13 +57,15 @@ set -f
 cd "$(dirname "$0")/.."
 
 SWAPPED="
-src/app/automation/page.tsx
 src/app/sites/[siteId]/page.tsx
 src/app/login/page.tsx
 src/app/request-access/page.tsx
 src/app/change-password/page.tsx
 src/app/admin/page.tsx
 src/app/platform/page.tsx
+src/app/platform/requests/page.tsx
+src/app/platform/team/page.tsx
+src/app/today/page.tsx
 src/app/analytics/page.tsx
 src/app/settings/page.tsx
 src/app/alerts/page.tsx
@@ -65,6 +73,9 @@ src/app/reports/page.tsx
 src/app/maintenance/page.tsx
 src/app/sites/[siteId]/setup/page.tsx
 src/app/sites/[siteId]/handover/page.tsx
+src/app/sites/[siteId]/equipment/page.tsx
+src/app/sites/new/page.tsx
+src/app/ack/[token]/page.tsx
 src/app/settings/people/page.tsx
 src/app/export/[kind]/route.ts
 src/components/Shell.tsx

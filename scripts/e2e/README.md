@@ -21,6 +21,11 @@ node scripts/e2e/team-e2e.cjs                   # the owner adds a project manag
                                                 # a locked-out customer person is reset
 bash scripts/e2e/live-down.sh
 
+node scripts/e2e/ux-tour.cjs [folder]           # every screen as the team, as a client and as the demo, on a desk and on a phone:
+                                                # a gallery of pictures, and the findings (sideways scrolling, controls with no
+                                                # name, buttons too small for a thumb, text under 12 px, errors in the console)
+                                                # (run it after pm-e2e, which leaves a client with a site to look at)
+
 bash scripts/e2e/static-export.sh               # the five role builds of the demo; do not edit apps/web meanwhile
 bash scripts/e2e/upgrade-from-legacy.sh         # an old database to start the current API on
 ```

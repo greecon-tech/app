@@ -11,6 +11,8 @@ import { requirePermission } from "../../../lib/access";
 import { apiGet, DEMO_ROLE } from "../../../lib/api";
 import { getSession } from "../../../lib/session";
 
+export const metadata = { title: "Who is told" };
+
 // The forms are Server Actions, so this page is rendered on request (page.static.tsx is the GitHub Pages copy).
 export const dynamic = "force-dynamic";
 
@@ -35,7 +37,7 @@ export default async function PeoplePage() {
           ))}
         </div>
       </Section>
-      <Section title="People">
+      <Section title="The people to tell">
         <ContactsForm initial={contacts} />
       </Section>
       <Section title="Quiet hours and the morning message">

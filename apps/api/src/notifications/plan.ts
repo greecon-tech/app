@@ -59,6 +59,8 @@ export interface PlannedMessage {
   /** When the alert change behind it happened. */
   eventAtMs?: number;
   dedupeKey: string;
+  /** Set for an entry kept in the log only, as not needed, with this reason: what it stands for was told in another message. */
+  skipped?: string;
 }
 
 /** The identity of one step of a chain: this alert, this round of it, this person, this way of reaching them. */

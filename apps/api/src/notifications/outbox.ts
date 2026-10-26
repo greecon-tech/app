@@ -110,10 +110,11 @@ function toStored(tenantId: string, message: PlannedMessage, nowMs: number): Sto
     priority: message.priority,
     subject: message.subject,
     body: message.body,
-    status: "planned",
+    status: message.skipped === undefined ? "planned" : "skipped",
     dueAtMs: message.dueAtMs,
     eventAtMs: message.eventAtMs,
     attempts: 0,
+    ...(message.skipped === undefined ? {} : { error: message.skipped }),
     dedupeKey: message.dedupeKey,
     createdAtMs: nowMs
   };
@@ -359,12 +360,14 @@ export class PostgresOutboxStore implements OutboxStore {
         message.body,
         new Date(message.dueAtMs),
         message.eventAtMs === undefined ? null : new Date(message.eventAtMs),
-        message.dedupeKey
+        message.dedupeKey,
+        message.skipped === undefined ? "planned" : "skipped",
+        message.skipped ?? null
       );
-      return `($1,$${at + 1},$${at + 2},$${at + 3},$${at + 4},$${at + 5},$${at + 6},$${at + 7},$${at + 8},'planned',$${at + 9},$${at + 10},$${at + 11},$2,$2)`;
+      return `($1,$${at + 1},$${at + 2},$${at + 3},$${at + 4},$${at + 5},$${at + 6},$${at + 7},$${at + 8},$${at + 12},$${at + 9},$${at + 10},$${at + 11},$${at + 13},$2,$2)`;
     });
     const result = await this.db.query<NotificationRow>(
-      `INSERT INTO notifications (tenant_id, alert_id, contact_id, contact_name, channel, kind, priority, subject, body, status, due_at, event_at, dedupe_key, created_at, updated_at)
+      `INSERT INTO notifications (tenant_id, alert_id, contact_id, contact_name, channel, kind, priority, subject, body, status, due_at, event_at, dedupe_key, error, created_at, updated_at)
        VALUES ${tuples.join(",")}
        ON CONFLICT (tenant_id, dedupe_key) DO NOTHING
        RETURNING ${COLUMNS}`,

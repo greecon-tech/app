@@ -5,18 +5,56 @@ import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
 import { hasPermission, Permission, UserRole } from "@greecon/shared";
 
-// Five places to go, not thirteen. Everything else is a tab inside one of them (SECTIONS below) or
-// lives under Account. Icon paths are the brand icon set (Greecon Icon Library), reproduced inline
-// with stroke="currentColor" so hover and active states still recolor them correctly.
+// Two audiences, two sets of five places (docs/28-ux-definition.md, section 3). Greecon's team has its own: what a project
+// manager does in a day is nothing like what a hotel owner does, and they used to be given the same bar. Settings is the
+// fifth place for both, and holds the tabs that used to hang under "Account". On a phone the same five links are the bar at
+// the foot of the screen (see "The shell" in globals.css), so nothing important sits behind a menu icon.
+export type Audience = "team" | "client";
+
 interface Entry {
+  label: string;
+  /** Where the link goes. */
+  href: string;
+  /** Every path this place owns: the place is "current" while the page is in any of them. The longest match wins. */
+  owns: readonly string[];
+  icon: ReactNode;
+  /** A number to show beside the name (requests waiting). */
+  badge?: number;
+}
+
+interface Tab {
   href: string;
   label: string;
-  icon: ReactNode;
   requires?: Permission;
-  platformOnly?: boolean;
 }
 
 const icons = {
+  today: (
+    <>
+      <circle cx="12" cy="12" r="3.6" />
+      <path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18" />
+    </>
+  ),
+  clients: (
+    <>
+      <rect x="4.5" y="3" width="10" height="18" rx="1.5" />
+      <path d="M14.5 9H19a1 1 0 0 1 1 1v11h-5.5M8 7.5h3M8 11.5h3M8 15.5h3" />
+    </>
+  ),
+  requests: (
+    <>
+      <path d="M4 13.5 6.5 5h11l2.5 8.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+      <path d="M4 13.5h4.5l1 2.5h5l1-2.5H20" />
+    </>
+  ),
+  team: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <circle cx="17" cy="9" r="2.4" />
+      <path d="M17.5 14.2c2.3.3 4 2.3 4 4.8" />
+    </>
+  ),
   overview: (
     <>
       <rect x="3" y="3" width="8" height="8" rx="2" />
@@ -37,107 +75,112 @@ const icons = {
       <path d="M10 21h4" />
     </>
   ),
-  automation: (
+  reports: <path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5M9 13h6M9 17h6" />,
+  settings: (
     <>
-      <rect x="3" y="4" width="7" height="6" rx="1.5" />
-      <rect x="14" y="14" width="7" height="6" rx="1.5" />
-      <path d="M10 7h1.5a3.5 3.5 0 0 1 3.5 3.5V14" />
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
     </>
-  ),
-  reports: <path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5M9 13h6M9 17h6" />
+  )
 };
 
-// The tabs that sit together under one destination. A destination highlights while any of its
-// tabs is open, and the tab row shows above the page.
-const SECTIONS: ReadonlyArray<{ tabs: ReadonlyArray<{ href: string; label: string; requires?: Permission }> }> = [
-  {
-    tabs: [
-      { href: "/sites", label: "Sites" },
-      { href: "/monitoring", label: "Monitoring" },
-      { href: "/devices", label: "Devices" },
-      { href: "/maintenance", label: "Maintenance", requires: "maintenance:manage" }
-    ]
-  },
-  {
-    tabs: [
-      { href: "/analytics", label: "Analytics" },
-      { href: "/reports", label: "Reports", requires: "report:export" }
-    ]
-  }
+/** The tabs of the Settings place. Which of them a person sees follows what their role may do. */
+const SETTINGS_TABS: readonly Tab[] = [
+  { href: "/settings/people", label: "Who is told", requires: "settings:manage" },
+  { href: "/admin", label: "People", requires: "user:manage" },
+  { href: "/audit", label: "Audit log", requires: "audit:read" },
+  { href: "/settings", label: "Account" }
 ];
 
-const ACCOUNT: ReadonlyArray<Omit<Entry, "icon">> = [
-  { href: "/settings", label: "Settings", requires: "settings:manage" },
-  { href: "/settings/people", label: "Who is told", requires: "settings:manage" },
-  { href: "/admin", label: "Admin", requires: "user:manage" },
-  { href: "/audit", label: "Audit log", requires: "audit:read" },
-  { href: "/platform", label: "Clients", platformOnly: true }
+const REPORT_TABS: readonly Tab[] = [
+  { href: "/reports", label: "Downloads", requires: "report:export" },
+  { href: "/analytics", label: "Trends" }
 ];
 
 const isWithin = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`));
-const sectionOf = (pathname: string) => SECTIONS.find((section) => section.tabs.some((tab) => isWithin(pathname, tab.href)));
 
-function destinations(role: UserRole): Entry[] {
-  const canExport = hasPermission(role, "report:export");
+/** The tabs that go with the place the person is in, or none. */
+function tabsFor(pathname: string, audience: Audience): readonly Tab[] {
+  if (SETTINGS_TABS.some((tab) => isWithin(pathname, tab.href))) return audience === "team" ? SETTINGS_TABS.filter((tab) => tab.href !== "/admin") : SETTINGS_TABS;
+  if (REPORT_TABS.some((tab) => isWithin(pathname, tab.href))) return REPORT_TABS;
+  return [];
+}
+
+function places(role: UserRole, audience: Audience, requestsWaiting: number): Entry[] {
+  const settingsHref = hasPermission(role, "settings:manage") ? "/settings/people" : "/settings";
+  const settings: Entry = { label: "Settings", href: settingsHref, owns: ["/settings", "/admin", "/audit", "/change-password"], icon: icons.settings };
+  if (audience === "team") {
+    return [
+      { label: "Today", href: "/today", owns: ["/today"], icon: icons.today },
+      { label: "Clients", href: "/platform", owns: ["/platform"], icon: icons.clients },
+      { label: "Requests", href: "/platform/requests", owns: ["/platform/requests"], icon: icons.requests, badge: requestsWaiting },
+      { label: "Team", href: "/platform/team", owns: ["/platform/team"], icon: icons.team },
+      settings
+    ];
+  }
+  // Anyone may see the trends; only roles that may export see the downloads, so they land on the trends.
+  const reportsHref = hasPermission(role, "report:export") ? "/reports" : "/analytics";
   return [
-    { href: "/", label: "Overview", icon: icons.overview },
-    { href: "/sites", label: "Sites", icon: icons.sites },
-    { href: "/alerts", label: "Alerts", icon: icons.alerts },
-    { href: "/automation", label: "Automation", icon: icons.automation },
-    // Anyone may see the trends; only roles that may export see the reports page, so they land on it.
-    { href: canExport ? "/reports" : "/analytics", label: "Reports", icon: icons.reports }
+    { label: "Overview", href: "/", owns: ["/"], icon: icons.overview },
+    // Devices and maintenance are staff tools reached from a site's equipment page; they belong to Sites, not to a place of their own.
+    { label: "Sites", href: "/sites", owns: ["/sites", "/devices", "/maintenance"], icon: icons.sites },
+    { label: "Alerts", href: "/alerts", owns: ["/alerts"], icon: icons.alerts },
+    { label: "Reports", href: reportsHref, owns: ["/reports", "/analytics"], icon: icons.reports },
+    settings
   ];
 }
 
-export function Nav({ role, isPlatformAdmin = false }: { role: UserRole; isPlatformAdmin?: boolean }) {
+/** The place whose path matches the page most closely, so /platform/requests is Requests and not Clients. */
+function currentPlace(entries: readonly Entry[], pathname: string): Entry | undefined {
+  let best: { entry: Entry; length: number } | undefined;
+  for (const entry of entries) {
+    for (const path of entry.owns) {
+      if (!isWithin(pathname, path)) continue;
+      const length = path === "/" ? 1 : path.length;
+      if (!best || length > best.length) best = { entry, length };
+    }
+  }
+  return best?.entry;
+}
+
+export function Nav({ role, audience = "client", requestsWaiting = 0 }: { role: UserRole; audience?: Audience; requestsWaiting?: number }) {
   const pathname = usePathname();
-  const account = ACCOUNT.filter((item) => (!item.requires || hasPermission(role, item.requires)) && (!item.platformOnly || isPlatformAdmin));
-  const accountOpen = account.some((item) => isWithin(pathname, item.href));
-  const current = account.filter((item) => isWithin(pathname, item.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const entries = places(role, audience, requestsWaiting);
+  const current = currentPlace(entries, pathname);
 
   return (
-    <>
-      <nav className="main-nav" aria-label="Sections">
-        {destinations(role).map((item) => {
-          const section = sectionOf(item.href);
-          const active = isWithin(pathname, item.href) || (section ? sectionOf(pathname) === section : false);
-          return (
-            <Link href={item.href} key={item.label} aria-current={active ? "page" : undefined}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                {item.icon}
-              </svg>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-      {account.length > 0 ? (
-        <details className="account-nav" open={accountOpen}>
-          <summary>Account</summary>
-          <nav aria-label="Account">
-            {account.map((item) => (
-              <Link href={item.href} key={item.href} aria-current={item.href === current ? "page" : undefined}>
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </details>
-      ) : null}
-    </>
+    <nav className="main-nav" aria-label="Sections">
+      {entries.map((entry) => (
+        <Link href={entry.href} key={entry.label} aria-current={entry === current ? "page" : undefined}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {entry.icon}
+          </svg>
+          <span className="main-nav__label">{entry.label}</span>
+          {entry.badge ? (
+            <span className="main-nav__badge">
+              {entry.badge}
+              <span className="visually-hidden"> waiting</span>
+            </span>
+          ) : null}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
-/** The tabs of the destination the person is in (Sites, Monitoring, Devices ...), shown above the page. */
-export function SectionTabs({ role }: { role: UserRole }) {
+/** The tabs of the place the person is in (Downloads and Trends; Who is told, People, Audit log and Account), shown above the page. */
+export function SectionTabs({ role, audience = "client" }: { role: UserRole; audience?: Audience }) {
   const pathname = usePathname();
-  const section = sectionOf(pathname);
-  const tabs = section?.tabs.filter((tab) => !tab.requires || hasPermission(role, tab.requires)) ?? [];
+  const tabs = tabsFor(pathname, audience).filter((tab) => !tab.requires || hasPermission(role, tab.requires));
   if (tabs.length < 2) return null;
+  // The tab whose path is the longest match is the current one (/settings is also the start of /settings/people).
+  const current = [...tabs].filter((tab) => isWithin(pathname, tab.href)).sort((a, b) => b.href.length - a.href.length)[0];
 
   return (
     <nav className="section-tabs" aria-label="In this section">
       {tabs.map((tab) => (
-        <Link href={tab.href} key={tab.href} aria-current={isWithin(pathname, tab.href) ? "page" : undefined}>
+        <Link href={tab.href} key={tab.href} aria-current={tab === current ? "page" : undefined}>
           {tab.label}
         </Link>
       ))}

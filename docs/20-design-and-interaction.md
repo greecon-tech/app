@@ -152,19 +152,23 @@ Status: all commands are simulated today; the safety rules and tests exist, the 
 
 ## 6. Navigation
 
-Five places: Overview, Sites, Alerts, Automation, Reports. Inside Sites: Monitoring, Devices and
-Maintenance as tabs. Inside Reports: Analytics. Under Account: Settings, Admin, Audit log and, for
-Greecon staff, Clients. In the Nielsen Norman study hidden navigation was used in 27% of cases on
-a desktop against 48 to 50% for visible navigation, and in 57% against 86% on a phone, so nothing
-important sits behind a menu icon; five visible destinations follows Apple's tab-bar guidance. A role sees only what it may use (a viewer sees no control
-surfaces at all, not greyed ones).
+Two audiences have two sets of five places (the full definition, and what each page is for, is
+[28](28-ux-definition.md)). A client sees **Overview, Sites, Alerts, Reports and Settings**; Greecon's
+team sees **Today, Clients, Requests, Team and Settings**. A site's equipment, its setup list and
+its handover sheet are one step inside Sites, for the people who may change them; the old Automation
+and Monitoring pages are gone, because Greecon only reads (L13). In the Nielsen Norman study hidden
+navigation was used in 27% of cases on a desktop against 48 to 50% for visible navigation, and in 57%
+against 86% on a phone, so nothing important sits behind a menu icon: the five places are a bar at the
+foot of a phone and a bar on the left of a desk, and the person's own menu (Account, Help, Log out)
+is a small mark at the top right. Five visible destinations follows Apple's tab-bar guidance. A role
+sees only what it may use (a viewer sees no control surfaces at all, not greyed ones).
 
 | Level | Purpose | Example |
 |---|---|---|
 | 1 | The answer | Overview, a site's headline |
-| 2 | Act | A pump's controls |
-| 3 | Detail | Trends, parameters |
-| 4 | Diagnose | Devices, communications, raw points, audit |
+| 2 | Act | Acknowledge an alert, open a customer's account |
+| 3 | Detail | Trends, readings, equipment |
+| 4 | Diagnose | The equipment and readings page, the setup list, the audit log |
 
 Operators live at 1 and 2 with 3 one tap away; administrators reach 4.
 

@@ -15,7 +15,7 @@ export default function LoginPage() {
         <form>
           <label>
             Email
-            <input type="email" placeholder="name@greecon.earth" disabled />
+            <input type="email" placeholder="name@company.com" disabled />
           </label>
           <label>
             Password

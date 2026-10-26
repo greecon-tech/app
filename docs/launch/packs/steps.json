@@ -1,0 +1,106 @@
+{
+  "about": "The setup list a project manager works down at a site: the platform's own steps, in its own order, with the exact titles the platform shows (apps/api/src/setup/setup-checklist.ts; the build checks every title against that file). The site packs print the ten steps from here, so a title can only be typed once. 'when' says which kits show the step: the platform leaves a step out when it does not apply to the site. The words under 'see' and 'ifnot' are the platform's own sentences where it has them (in italics).",
+  "steps": [
+    {
+      "n": 1,
+      "key": "prices",
+      "title": "Prices from the customer's bills",
+      "optional": true,
+      "who": "pm",
+      "when": "H S F W",
+      "do": "Open **{{ui.enter_prices}}** (once something is entered it is called *Prices and baseline*; the same form is on the site's page). Enter the currency; the electricity price per kWh from the latest bill; what is paid for energy sent to the grid (leave it blank if nothing is paid); the water price per m³; a typical month before (the kWh bought and the m³ of water, from last year's bills); where those numbers came from; whether the site cannot send energy to the grid (tick it if the plant is zero-export); and the time zone, `Europe/Tirane`. Press **Save**.",
+      "see": "The step turns **Done** and lists the prices, for example *Electricity: N ALL per kWh* (and *Water: N ALL per m³* where the site has a water flow reading).",
+      "ifnot": "It stays **To do** and says *Not set: Greecon shows kWh but cannot say what they are worth.* That is allowed: this step is optional and does not hold up commissioning, and without a price Greecon shows kWh only. Without the typical month before, no comparison is shown, which is correct."
+    },
+    {
+      "n": 2,
+      "key": "box",
+      "title": "Install the box",
+      "who": "pm",
+      "when": "H S F W",
+      "do": "Press **{{ui.add_box}}** and copy the line it shows (shown once, works once, lasts seven days). Run it on the box exactly as shown. This is done at the office, before install day.",
+      "see": "**Done**, with the box's name, its version and *Heard from N seconds ago.* You do not press anything to make it so: the platform saw the box.",
+      "ifnot": "- *Waiting for the install command to be run on the box.* The line has not been run yet.\n- *The box has its credential but has not reported yet.* Wait a minute and check the network cable.\n- *Last heard from N ago: it is offline.* Check the box's power, the network cable and the site's internet. On the box: `greecon-edge status` and `journalctl -u greecon-edge -n 50 --no-pager`.\n- *Online, but its clock is N minutes fast* (or slow). Run `sudo timedatectl set-ntp true`."
+    },
+    {
+      "n": 3,
+      "key": "addresses",
+      "title": "Where each device is on the network",
+      "who": "pm",
+      "when": "H S F W",
+      "do": "Under each device, enter its **IP address** (the converter's address), its **Port** (502 unless the converter's page says otherwise) and its **Unit number** (the number you gave the device, 0 to 247). Devices behind one converter share its IP address and differ only by unit number. Press **Save** under each. The box picks up a change within a minute.",
+      "see": "**Done**: *Every device has an address,* and each device reads like *192.168.1.50:502, unit 1*.",
+      "ifnot": "*N devices still need an address.* A wrong address is refused in words, for example *The address must be an IP address such as 192.168.1.50, or a host name.*"
+    },
+    {
+      "n": 4,
+      "key": "mapping",
+      "title": "Which register holds which reading",
+      "who": "pm",
+      "when": "H S F W",
+      "do": "For equipment Greecon knows (the Eastron meters in the template) the registers are already filled in: check them against the meter's manual only if a reading looks wrong. For anything else, press **{{ui.choose_the_register}}** under the reading's name and fill in: the register kind (**Input** for a manual's 3xxxx, **Holding** for 4xxxx), the address (counted from zero, so 30053 is address 52 and 40001 is address 0), the kind of number (and, for two-register numbers, which half comes first), how it becomes the reading (**Multiply and add**, or **A straight line, such as 4-20 mA**) and which part of the value. Press **{{ui.save_the_register}}**.",
+      "see": "**Done**: *Every reading is tied to a register.*",
+      "ifnot": "*N readings not tied to a register yet*, each marked *No register chosen.* A reading the site does not have (a flow meter that was not fitted, a battery that does not exist) holds the list at this step: open the site, find it under Equipment, in Devices or Reading points, and press Delete."
+    },
+    {
+      "n": 5,
+      "key": "answering",
+      "title": "Every device answers the box",
+      "who": "platform",
+      "when": "H S F W",
+      "do": "Nothing to press: the platform does this one by itself once the box is online and each device has its address and registers. Wait a minute.",
+      "see": "Each device shows **Done**: *Answering (N readings).* On the box, `greecon-edge status` lists each device as **ok**.",
+      "ifnot": "The device shows **Needs attention** with the reason in words, for example *no answer from 192.168.1.50:502 (unit 2).* Look in this order: a wrong unit number (the commonest), a wrong speed or parity at the converter, A and B swapped on the data cable, the converter not in gateway mode, a wrong IP address. Nothing answers at all: the IP address or port is wrong, the converter is off, or it is on another network than the box. Some readings work and others do not: a register address is wrong for that device. Test one register from the box with `greecon-edge modbus-test` (see the box commands): if it prints *Could not read*, the problem is the wiring or the settings, not Greecon."
+    },
+    {
+      "n": 6,
+      "key": "readings",
+      "title": "Readings arrive and look right",
+      "who": "platform",
+      "when": "H S F W",
+      "do": "Nothing to press. Look at each reading: is it a number you believe?",
+      "see": "Each reading shows **Done** with its value and age, for example *N %, 4 seconds ago*, and the step says *Every reading is arriving and could be real.*",
+      "ifnot": "*No reading yet*: wait a minute. *Last reading N ago. It has stopped arriving*: a device or the converter lost power, or a cable came loose. A value that cannot be real says so, for example *237 cannot be a tank level (0 to 100). Check the register address, the scale or the sensor.* That is almost always a wrong scale, a wrong register or a wiring fault."
+    },
+    {
+      "n": 7,
+      "key": "told",
+      "title": "Someone is told when the site needs attention",
+      "who": "pm",
+      "when": "H S F W",
+      "do": "Open **{{ui.who_is_told}}**. **{{ui.add_a_person}}** for each name from the survey, in the order they should be told (each needs an email, a mobile number with its country code such as `+355 69 123 4567`, or both; give everyone an email address as well as a number). Press **{{ui.save_the_list}}**. Press **{{ui.send_test_message}}** beside each person and ask them whether it arrived: in the inbox, not in spam; on the phone. Make sure each person on the list also has a login of their own with the Operator role, so that they can press **{{ui.acknowledge}}**. Then, back on the setup list, press **{{ui.i_checked_this}}**.",
+      "see": "After the test: *A test message was sent N ago. Greecon cannot tell whether it was read.* After you press the button: **Done**, *A test message reached the person on the list.* The button stays grey until the list has someone on it and a test has been sent.",
+      "ifnot": "- *This Greecon platform is not set up to send messages:* tell the founder; the email service must be switched on before a site can be commissioned.\n- *Nobody is set to be told:* add the people.\n- *Nobody on the list has an email address* (or a phone number): add one for each person.\n- A message that did not arrive: look at **{{ui.what_was_sent}}** under **{{ui.who_is_told}}**, check the address and the country code, and ask about spam.\n- *Test messages are limited to 6 an hour.* Wait and try again."
+    },
+    {
+      "n": 8,
+      "key": "direction",
+      "title": "Grid meter direction checked",
+      "who": "pm-e",
+      "when": "H S",
+      "do": "Greecon cannot see which way the meter's clamps point. With the sun down or the solar switched off, switch on a known load (a kettle or a heater). **Grid import must go up.** If **Grid export** goes up instead, the clamps are the wrong way round: the electrician turns them (with the lock-out on) and you check again. Then press **{{ui.i_checked_this}}** with a note of what you saw.",
+      "see": "Before: **To do**, *Greecon cannot see which way the meter's clamps point.* After you confirm: **Done**, *Checked on site,* with your name and the time.",
+      "ifnot": "Import and export swapped: the clamps are the wrong way round. The electrician turns them; you repeat the check. A reversed clamp swaps what the site buys with what it sells, and every figure with it."
+    },
+    {
+      "n": 9,
+      "key": "limits",
+      "title": "Alert limits agreed with the customer",
+      "who": "pm",
+      "when": "H F W S-battery",
+      "do": "The step lists each reading that has limits, with what applies. Go through them with the customer and agree numbers they would act on. To change one, open the **Standard** drop-down beside the reading (it says *1 set*, *2 set* once changed), type the numbers and press **{{ui.save_limits}}**. When they are agreed, press **{{ui.i_checked_this}}**.",
+      "see": "Each reading with limits is listed with its numbers, for example *Tank level: Critical below 15 % (standard); Low below 35 % (standard).* After you confirm: **Done**, *Checked on site.*",
+      "ifnot": "The standard limits apply until you change them: tank **Critical below 15 percent** (an Act now alert) and **Low below 35 percent** (a Check today alert); pump **No flow at or below 0.2 litres a minute** (an Act now alert once it has held for 30 seconds, raised only when the box reads both a flow and the pump's running state); battery **Low below 25 percent**. **Start irrigating below** has no standard value: Greecon gives no irrigation advice until the grower's own value is entered."
+    },
+    {
+      "n": 10,
+      "key": "commissioned",
+      "title": "Commissioned",
+      "who": "pm",
+      "when": "H S F W",
+      "do": "Greyed out until every other step is done (optional steps do not hold it). Then it says: *On site, compare what Greecon shows with what you can see: the meter's own display, the tank, the pressure gauge. When they agree, confirm here.* Do the commissioning tests in this pack, write the pairs of numbers on the record, then press **{{ui.commission_this_site}}** with a note.",
+      "see": "The progress line reads **Commissioned.**, your name and the date are on the handover sheet, and **{{ui.handover_sheet}}** appears.",
+      "ifnot": "While it is grey it says *N steps above must be done first.* and *Finish the steps above.* Finish them first."
+    }
+  ]
+}

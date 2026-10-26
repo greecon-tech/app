@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { GREECON_COMPANY, GREECON_PUBLIC_EMAILS } from "@greecon/shared";
 
-export const metadata = { title: "Privacy · Greecon" };
+export const metadata = { title: "Privacy" };
 
 // Public, like the sign-in page: the people whose details Greecon keeps should be able to read what it keeps without an account.
 // A plain statement of what the platform does today, written to be true of it; a lawyer reads it before the first customer signs
@@ -75,7 +75,7 @@ export default function PrivacyPage() {
         This page is a plain summary of what the platform does today. It does not replace the agreement between you and Greecon, and it changes as the platform does. Last changed 19 October 2026.
       </p>
       <p>
-        <Link href="/login">Back to sign in</Link>
+        <Link className="standalone-link" href="/login">Back to sign in</Link>
       </p>
     </main>
   );

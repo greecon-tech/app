@@ -32,9 +32,12 @@ async function signInAsTeam(page, email, password) {
   owner.on("pageerror", (e) => errors.push(String(e)));
   owner.on("dialog", (dialog) => dialog.accept());
   await signInAsTeam(owner, "eridon.manuka@greecon.earth", "E2E-Admin-Passw0rd!");
-  await owner.waitForURL("**/platform");
+  await owner.waitForURL("**/today");
+  await owner.getByRole("heading", { name: "Today", level: 1 }).waitFor();
+  ok("the owner of Greecon's account lands on Today", true);
+  await owner.goto(base + "/platform/team", { waitUntil: "networkidle" });
   const team = owner.locator("section", { hasText: "Greecon team" }).last();
-  ok("the console has a Greecon team section with the owner in it, marked as them", (await team.innerText()).includes("(you)"), (await team.innerText()).replace(/\n+/g, " | ").slice(0, 160));
+  ok("the Team page has a Greecon team section with the owner in it, marked as them", (await team.innerText()).includes("(you)"), (await team.innerText()).replace(/\n+/g, " | ").slice(0, 160));
   await owner.screenshot({ path: SP + "/team-1-owner.png", fullPage: true });
 
   const form = owner.getByRole("form", { name: "Add a team member" });
@@ -73,7 +76,10 @@ async function signInAsTeam(page, email, password) {
   await pm.waitForURL("**/login?changed=1");
   ok("the new password is saved and she is asked to sign in with it", true);
   await signInAsTeam(pm, "arta.pm@greecon.earth", "Arta-chose-this-long-one-7");
-  await pm.waitForURL("**/platform");
+  await pm.waitForURL("**/today");
+  await pm.getByRole("heading", { name: "Today", level: 1 }).waitFor();
+  ok("the project manager lands on Today, and her navigation is the team's", (await pm.locator(".main-nav").innerText()).replace(/\s+/g, " ").trim().startsWith("Today Clients Requests Team Settings"));
+  await pm.goto(base + "/platform/team", { waitUntil: "networkidle" });
   const pmTeam = await pm.locator("main").innerText();
   ok("the project manager sees the team", pmTeam.includes("Arta Project") && pmTeam.includes("eridon.manuka@greecon.earth"));
   ok("but is not offered the form to add anyone, and is told why", (await pm.getByRole("form", { name: "Add a team member" }).count()) === 0 && pmTeam.includes("Only the owner of Greecon's account"));
@@ -81,6 +87,7 @@ async function signInAsTeam(page, email, password) {
   await pm.screenshot({ path: SP + "/team-3-pm.png", fullPage: true });
 
   // A customer's owner is locked out: only the owner of Greecon's account can reset them, and the page says who can't.
+  await owner.goto(base + "/platform?onboard=new", { waitUntil: "networkidle" });
   const onboardForm = owner.locator("#onboard form");
   await onboardForm.getByLabel("Client / company name").fill("Hotel Adriatik");
   await onboardForm.getByLabel("Owner name").fill("Besa Krasniqi");
@@ -110,7 +117,7 @@ async function signInAsTeam(page, email, password) {
   await owner.screenshot({ path: SP + "/team-5-client-people.png", fullPage: true });
 
   // The owner turns her off.
-  await owner.reload({ waitUntil: "networkidle" });
+  await owner.goto(base + "/platform/team", { waitUntil: "networkidle" });
   const row = owner.locator("tr", { hasText: "arta.pm@greecon.earth" });
   await row.getByRole("button", { name: "Turn off" }).click();
   await owner.locator("tr", { hasText: "arta.pm@greecon.earth" }).getByText("Turned off").waitFor();
@@ -129,7 +136,7 @@ async function signInAsTeam(page, email, password) {
   await owner.locator("tr", { hasText: "arta.pm@greecon.earth" }).getByRole("button", { name: "Turn back on" }).click();
   await owner.locator("tr", { hasText: "arta.pm@greecon.earth" }).getByText("Can sign in").waitFor();
   await signInAsTeam(pm, "arta.pm@greecon.earth", "Arta-chose-this-long-one-7");
-  await pm.waitForURL("**/platform");
+  await pm.waitForURL("**/today");
   ok("turned back on, she signs in again with the password she chose", true);
 
   // The owner resets her password: she sees a new temporary one; her open session ends. (A session is dated to the

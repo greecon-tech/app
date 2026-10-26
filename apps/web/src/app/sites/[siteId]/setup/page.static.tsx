@@ -29,7 +29,7 @@ export default async function SetupPage({ params }: { params: Promise<{ siteId: 
       {next ? (
         <div className="setup-next">
           <p>
-            <strong>Do next: {next.title}</strong> <a href={`#step-${next.key}`}>Go to the step</a>
+            <strong>Do next: {next.title}</strong> <a href={`#step-${next.key}`} className="standalone-link">Go to the step</a>
           </p>
         </div>
       ) : null}

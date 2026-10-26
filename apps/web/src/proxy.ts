@@ -46,8 +46,9 @@ export function proxy(request: NextRequest): NextResponse {
   return NextResponse.next();
 }
 
-// Public without a session: the sign-in and request pages, the privacy page, and /.well-known (security.txt
-// has to be readable by someone who has no account, which is the point of it).
+// Public without a session: the sign-in and request pages, the privacy and help pages, the page an alert message's link opens, the app's
+// icons and manifest (a phone asks for them before anyone has signed in), and /.well-known (security.txt has to be readable by someone
+// who has no account, which is the point of it).
 export const config = {
-  matcher: ["/((?!login|request-access|privacy|\\.well-known|_next/static|_next/image|favicon.ico|greecon-logo.svg|greecon_icon.svg).*)"]
+  matcher: ["/((?!login|request-access|privacy|help|ack|\\.well-known|_next/static|_next/image|favicon.ico|greecon-logo.svg|manifest.webmanifest|icon-192.png|icon-512.png|icon-maskable-512.png|apple-touch-icon.png).*)"]
 };

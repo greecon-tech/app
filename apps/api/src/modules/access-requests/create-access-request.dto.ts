@@ -1,24 +1,24 @@
 import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
-import { RequestedSiteType, requestedSiteTypes } from "@greecon/shared";
+import { ACCESS_REQUEST_LIMITS, RequestedSiteType, requestedSiteTypes } from "@greecon/shared";
 
 export class CreateAccessRequestDto {
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120)
+  @MaxLength(ACCESS_REQUEST_LIMITS.name)
   name!: string;
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(160)
+  @MaxLength(ACCESS_REQUEST_LIMITS.company)
   company!: string;
 
   @IsEmail()
-  @MaxLength(254)
+  @MaxLength(ACCESS_REQUEST_LIMITS.email)
   email!: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(40)
+  @MaxLength(ACCESS_REQUEST_LIMITS.phone)
   phone?: string;
 
   @IsIn(requestedSiteTypes)
@@ -26,11 +26,14 @@ export class CreateAccessRequestDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(1500)
+  @MaxLength(ACCESS_REQUEST_LIMITS.message)
   message?: string;
 
-  /** A field no person ever sees or fills in. A form submitted by a script that fills every field
-   * fills this one too, and the request is quietly discarded. */
+  /** The honeypot: a field no person sees or fills in, sent by the web form as `website`, empty (or left out) for a person.
+   * The form keeps it out of a person's way without hiding it from a script: off screen rather than display:none (which
+   * some scripts skip), aria-hidden, tabIndex -1 and autocomplete off. A script that fills in every field fills this one
+   * too, and its request is then answered exactly as a real one is (`{ received: true }`), with nothing kept and nobody
+   * told, so that it learns nothing. */
   @IsOptional()
   @IsString()
   @MaxLength(300)

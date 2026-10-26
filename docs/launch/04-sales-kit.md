@@ -87,14 +87,14 @@ Minutes 7 and 9 are shown on another screen: see the note under the table.
 | Minute | Show | Say |
 |---|---|---|
 | 1 | **Overview**: one sentence and a word: Stable, Attention needed, Action required, Unknown | "This answers one question: is everything all right? Not twenty graphs. A site that stops reporting is *Unknown*, never 'fine'." |
-| 3 | **The energy picture** (moving dots from the sun to the site and the grid) | "This is measured at the meters, not guessed. On the live demo it follows the sun; on your site it follows your roof." |
-| 4 | **What your solar kept on site**, with the price it uses | "From your own readings at your own price. If you have not given us a price, it shows kWh and says what it needs. We never show money we cannot back." |
+| 3 | **Energy now** on the **Overview** (moving dots from the sun to the site and the grid) | "This is measured at the meters, not guessed. On the live demo it follows the sun; on your site it follows your roof." |
+| 4 | **Value**: what your solar kept on site, with the price it uses | "From your own readings at your own price. If you have not given us a price, it shows kWh and says what it needs. We never show money we cannot back." |
 | 6 | **Alerts**: open one; **Acknowledge** (this works on the live demo only) | "Act now and Check today are the only two that reach a person. One alert per problem, however long it lasts." |
-| 7 | **Who is told** (on the Rehearsal client, see the note): the order, the test message, **What was sent** | "You choose the people and the order. You can see what was sent and when. Each person you list should also have a login of their own: pressing Acknowledge in the app is what stops the next message, and a phone number alone cannot do that." |
-| 9 | **Reports** (on the Rehearsal client, see the note): the downloads | "Everything here is yours to take." |
+| 7 | **Who is told**, under **Settings** (on the Rehearsal client, see the note): the order, the test message, **What was sent** | "You choose the people and the order. You can see what was sent and when. Each person you list should also have a login of their own: pressing Acknowledge in the app is what stops the next message, and a phone number alone cannot do that." |
+| 9 | **Reports**, then **Downloads** (on the Rehearsal client, see the note): the downloads | "Everything here is yours to take." |
 
 **Minutes 7 and 9 are shown on the Rehearsal client, not on either demo.** The live demo's login is an **operator**,
-and an operator cannot open **Who is told** or **Reports**. The GitHub Pages demo cannot show them either: its main
+and an operator has no **Who is told** and no **Downloads** (its **Reports** shows **Trends** only). The GitHub Pages demo cannot show them either: its main
 address is also an operator's view, and in its owner and administrator views those two pages hold only a few lines of
 explanation, because a frozen page cannot keep a list, send a message or make a file. So sign in with **Greecon team**
 and press **Open for setup** on your own **Rehearsal** client

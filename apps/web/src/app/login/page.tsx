@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { GREECON_PUBLIC_EMAILS } from "@greecon/shared";
 import { LoginForm } from "../../components/LoginForm";
+
+export const metadata = { title: "Sign in" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ changed?: string; ended?: string }> }) {
   const params = await searchParams;
@@ -26,7 +29,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         ) : null}
         <LoginForm />
         <p className="muted">
-          New to Greecon? <Link href="/request-access">Request access</Link> · <Link href="/privacy">Privacy</Link>
+          Forgot your password? Ask the owner of your account to give you a new temporary one, or write to <a href={`mailto:${GREECON_PUBLIC_EMAILS[0]}`}>{GREECON_PUBLIC_EMAILS[0]}</a>.
+        </p>
+        <p className="muted">
+          New to Greecon? <Link href="/request-access">Request access</Link> · <Link href="/help">Help</Link> · <Link href="/privacy">Privacy</Link>
         </p>
       </section>
     </main>

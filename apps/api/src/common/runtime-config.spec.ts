@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { apiDocsEnabled, checkRuntimeConfig, trustedProxyHops } from "./runtime-config";
+import { apiDocsEnabled, checkRuntimeConfig, restartGraceMs, trustedProxyHops } from "./runtime-config";
+
+describe("restartGraceMs", () => {
+  it("waits ten minutes after a start unless told otherwise", () => {
+    expect(restartGraceMs({})).toBe(10 * 60_000);
+    expect(restartGraceMs({ RESTART_GRACE_MINUTES: "" })).toBe(10 * 60_000);
+  });
+
+  it("takes a whole number of minutes up to an hour, and 0 to switch the wait off", () => {
+    expect(restartGraceMs({ RESTART_GRACE_MINUTES: " 5 " })).toBe(5 * 60_000);
+    expect(restartGraceMs({ RESTART_GRACE_MINUTES: "60" })).toBe(60 * 60_000);
+    expect(restartGraceMs({ RESTART_GRACE_MINUTES: "0" })).toBe(0);
+  });
+
+  it("keeps the standard wait for anything else, and says so at start", () => {
+    for (const value of ["61", "2.5", "-1", "ten", "999"]) {
+      expect(restartGraceMs({ RESTART_GRACE_MINUTES: value })).toBe(10 * 60_000);
+      expect(checkRuntimeConfig({ RESTART_GRACE_MINUTES: value }).warnings.join("\n")).toMatch(/RESTART_GRACE_MINUTES is not a whole number of minutes from 0 to 60/);
+    }
+    expect(checkRuntimeConfig({ RESTART_GRACE_MINUTES: "5" }).warnings).toEqual([]);
+  });
+});
 
 describe("apiDocsEnabled", () => {
   it("is on in development and test, where it helps people building against the API", () => {

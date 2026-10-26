@@ -14,6 +14,22 @@ export function publicApiUrl(env: Env, request: { protocol: string; get(name: st
   return `${request.protocol === "https" ? "https" : "http"}://${plain ? host : "localhost"}`;
 }
 
+/** PUBLIC_WEB_URL, if it is a usable address: http or https, with no trailing slash. It is the start of every link in the
+ * messages Greecon sends; anything that is not an address is no address, and a message then has no link at all rather
+ * than one that does not work. */
+export function configuredPublicWebUrl(env: Env): string | undefined {
+  const raw = env.PUBLIC_WEB_URL?.trim();
+  if (!raw) return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
+}
+
 /** PUBLIC_API_URL, if it is a usable address: http or https, no path, no trailing slash. */
 export function configuredPublicApiUrl(env: Env): string | undefined {
   const raw = env.PUBLIC_API_URL?.trim();

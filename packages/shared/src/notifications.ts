@@ -24,7 +24,9 @@ export function alertPriority(severity: string): AlertPriority {
 export const notificationChannels = ["email", "sms"] as const;
 export type NotificationChannel = (typeof notificationChannels)[number];
 
-export const notificationKinds = ["alert", "escalation", "acknowledged", "resolved", "digest", "test"] as const;
+/** "box_silent" is a message to Greecon's own team, never to a customer: a customer's box has gone silent (or several at
+ * once). It is in Greecon's own account's log only. */
+export const notificationKinds = ["alert", "escalation", "acknowledged", "resolved", "digest", "test", "box_silent"] as const;
 export type NotificationKind = (typeof notificationKinds)[number];
 
 /** planned: waiting for its time. sent: the provider accepted it (which is not the same as read).

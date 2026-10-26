@@ -14,8 +14,10 @@ import {
 } from "@greecon/shared";
 import { Channels, NOTIFICATION_CHANNELS } from "./channels";
 import { NotificationConfig } from "./config";
-import { AlertFacts, DigestFacts, digestEmail, escalationEmail, escalationSms, testEmail, testSms } from "./messages";
+import { ACK_LINK_LIFETIME_MS, ackToken } from "./ack-link";
+import { AlertFacts, DigestFacts, Message, SilentBoxFacts, alertEmail, alertSms, digestEmail, escalationEmail, escalationSms, silentBoxEmail, testEmail, testSms } from "./messages";
 import { ALERT_KINDS, OutboxStore, StoredNotification, UndeliveredAlertMessage } from "./outbox";
+import { NEWLY_SILENT_WITHIN_MS, QuietBox, SilenceToTell, isTogetherKey, silenceKey, silenceOfKey, silencesToTell, togetherKey } from "./silent-boxes";
 import {
   AlertEvent,
   AlertSummary,
@@ -58,11 +60,19 @@ export interface AlertSource {
   isTenantActive?(tenantId: string): boolean;
   /** Greecon's own account, whose morning message also names the customers whose alert messages are failing to arrive. */
   isOperatorTenant?(tenantId: string): boolean;
+  /** When the grace after the platform's own start ends, while it lasts (platform/restart-grace.ts): boxes are still
+   * reconnecting, so nothing about missing data is said until then. A source without it has no grace. */
+  restartGraceUntil?(nowMs: number): number | undefined;
+  /** Boxes at customers' live sites that have stopped reporting, late or silent (silent-boxes.ts). A source without it has none. */
+  quietBoxes?(nowMs: number): QuietBox[];
 }
 
 export interface NotificationOptions {
   /** The address of the web app, for the link in each message (PUBLIC_WEB_URL). */
   webUrl?: string;
+  /** The key that signs the "I have seen this" link in an alert message (ack-link.ts). Without it, or without `webUrl`,
+   * messages carry no such link. */
+  ackLinkKey?: Buffer;
   /** How often to look for messages that are due. */
   tickMs?: number;
   /** Send at once when a message is due the moment it is planned. On unless a test wants to drive the rounds itself. */
@@ -115,6 +125,9 @@ const ROUNDS_SKIPPED_AT_MOST = 2;
 const CLEARED = "The condition cleared before this was sent.";
 const SUSPENDED = "The account is suspended, so nothing is sent for it.";
 const STARTED_AGAIN = "The condition came back after someone had acknowledged it, so the messages started again from the first person.";
+const BOX_BACK = "The box reported again before this was sent.";
+/** How far back in Greecon's own log the lines kept for each box of a message about several are looked for. */
+const TOLD_TOGETHER_LOOKBACK = 1_000;
 
 type Outcome = "sent" | "failed" | "skipped" | "retried";
 /** Whether a message has stopped being wanted (skip it), or should wait and be looked at again (hold it), at a time of its own when it has one. */
@@ -242,6 +255,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return this.webUrl ? `${this.webUrl}${path}` : undefined;
   }
 
+  /** The "I have seen this" link for the person this message goes to, working for ACK_LINK_LIFETIME_MS from the moment it is
+   * sent. None without the web app's address or a key to sign it with: a message never carries a link that cannot work. */
+  private ackLink(row: StoredNotification, nowMs: number): string | undefined {
+    const key = this.options.ackLinkKey;
+    if (!key || !row.alertId) return undefined;
+    const token = ackToken(key, { alertId: row.alertId, tenantId: row.tenantId, contactId: row.contactId }, nowMs + ACK_LINK_LIFETIME_MS);
+    return token ? this.link(`/ack/${token}`) : undefined;
+  }
+
   // ---- A round of work ----------------------------------------------------------------------------------
 
   /** Plans what has been missed, plans the morning messages, and sends what is due. One round at a time. */
@@ -275,6 +297,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       // sending goes on.
       await this.planMissed(nowMs).catch((error) => this.logger.error(`Could not plan the alerts that were missed: ${describe(error)}`));
       await this.planDigests(nowMs).catch((error) => this.logger.error(`Could not plan the morning messages: ${describe(error)}`));
+      await this.planSilentBoxes(nowMs).catch((error) => this.logger.error(`Could not plan the messages about silent boxes: ${describe(error)}`));
 
       for (;;) {
         const batch = await this.outbox.claimDue(nowMs, BATCH);
@@ -355,6 +378,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async planDigests(nowMs: number): Promise<void> {
+    // A morning message due just after the platform started waits for the grace to end (it may be sent up to three hours
+    // late), so that it reports boxes that have had their chance to reconnect, not ones that are still reconnecting.
+    if (this.source.restartGraceUntil?.(nowMs) !== undefined) return;
     for (const tenantId of this.config.tenantsWithContacts()) {
       try {
         await this.planDigestFor(tenantId, nowMs);
@@ -391,6 +417,104 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }));
     await this.outbox.plan(tenantId, planned, nowMs);
     this.digestedOn.set(tenantId, window.localDate);
+  }
+
+  /** Greecon's own account, when it has anyone on its list: the people who are told when a customer's box goes silent. */
+  private teamAccount(): string | undefined {
+    return this.config.tenantsWithContacts().find((tenantId) => this.source.isOperatorTenant?.(tenantId) === true && this.isActive(tenantId));
+  }
+
+  /** Tells Greecon's own team, at once, of each customer's box that has newly gone silent (silent-boxes.ts): the people on
+   * Greecon's own list who have an email address, the same who get its morning message, and never a customer's. Each silence
+   * once, whatever restarts in between: its last word names it, and a line is kept in the log under that name. Several that
+   * went silent together are one message. Held through the team's quiet hours, like everything that is not Act now. */
+  private async planSilentBoxes(nowMs: number): Promise<void> {
+    const team = this.teamAccount();
+    if (!team || !this.source.quietBoxes) return;
+    const recipients = this.config.contacts(team).filter((contact) => contact.email);
+    if (recipients.length === 0) return;
+    const quiet = this.source.quietBoxes(nowMs);
+    const newly = quiet.filter((box) => box.status === "offline" && nowMs - Date.parse(box.lastSeenUtc) <= NEWLY_SILENT_WITHIN_MS);
+    if (newly.length === 0) return;
+    const told = await this.outbox.existingKeys(team, newly.map(silenceKey));
+    const settings = this.config.settings(team);
+    const planned: PlannedMessage[] = [];
+    for (const telling of silencesToTell(newly.filter((box) => !told.has(silenceKey(box))), quiet, nowMs)) {
+      planned.push(...(await this.silenceMessages(telling, recipients, settings.timezone, quietHoursEnd(nowMs, settings), nowMs)));
+    }
+    if (planned.length > 0) await this.outbox.plan(team, planned, nowMs);
+  }
+
+  /** The messages for one telling. The first person's message about a single box is keyed by the silence itself, so that it
+   * stands for it in the log; a message about several keeps, for each box, a line in the log keyed by its silence, saying it
+   * was told together with the others. */
+  private async silenceMessages(telling: SilenceToTell, recipients: readonly NotificationContact[], timezone: string, dueAtMs: number, nowMs: number): Promise<PlannedMessage[]> {
+    const link = this.link("/today");
+    const first = telling.boxes[0] as QuietBox;
+    const words = silentBoxEmail(await this.silentBoxFacts(telling.boxes), nowMs, timezone, link);
+    const message = (contact: NotificationContact, dedupeKey: string, said: Message = words, skipped?: string): PlannedMessage => ({
+      contactId: contact.id,
+      contactName: contact.name,
+      channel: "email",
+      kind: "box_silent",
+      subject: said.subject,
+      body: said.body,
+      dueAtMs,
+      eventAtMs: Date.parse(first.lastSeenUtc),
+      dedupeKey,
+      ...(skipped ? { skipped } : {})
+    });
+    if (!telling.together) return recipients.map((contact, index) => message(contact, index === 0 ? silenceKey(first) : `${silenceKey(first)}:${contact.id}`));
+    const lead = recipients[0] as NotificationContact;
+    const lines: PlannedMessage[] = [];
+    for (const box of telling.boxes) {
+      const alone = silentBoxEmail(await this.silentBoxFacts([box]), nowMs, timezone, link);
+      lines.push(message(lead, silenceKey(box), alone, `Told in one message about the ${telling.boxes.length} boxes that went silent at the same time.`));
+    }
+    return [...recipients.map((contact) => message(contact, togetherKey(first, contact.id))), ...lines];
+  }
+
+  /** What the team is told of these boxes, as things stand: each box's last word and the site's last reading, and whether the
+   * customer's own people have been told, since it went silent, that the site's readings are out of date. */
+  private async silentBoxFacts(boxes: readonly QuietBox[]): Promise<SilentBoxFacts[]> {
+    const facts: SilentBoxFacts[] = [];
+    for (const box of boxes) {
+      const lastSeenAtMs = Date.parse(box.lastSeenUtc);
+      let customerToldAtMs: number | undefined;
+      for (const alertId of box.outOfDateAlertIds) {
+        for (const told of await this.outbox.toldAbout(box.tenantId, alertId)) {
+          if (told.toldAtMs !== undefined && told.toldAtMs >= lastSeenAtMs) customerToldAtMs = Math.min(customerToldAtMs ?? told.toldAtMs, told.toldAtMs);
+        }
+      }
+      facts.push({
+        client: box.client,
+        site: box.site,
+        box: box.box,
+        lastSeenAtMs,
+        ...(box.lastReadingAtUtc ? { lastReadingAtMs: Date.parse(box.lastReadingAtUtc) } : {}),
+        ...(customerToldAtMs !== undefined ? { customerToldAtMs } : {})
+      });
+    }
+    return facts;
+  }
+
+  /** A message to the team about silent boxes, as they stand now: about those of its boxes that are still silent, and undefined
+   * once every one of them has reported again. */
+  private async silenceAsItStands(row: StoredNotification, nowMs: number): Promise<Message | undefined> {
+    const about = isTogetherKey(row.dedupeKey) ? await this.boxesToldTogether(row) : [silenceOfKey(row.dedupeKey)];
+    const still = (this.source.quietBoxes?.(nowMs) ?? []).filter((box) =>
+      about.some((silence) => silence !== undefined && silence.gatewayId === box.gatewayId && silence.lastSeenMs === Date.parse(box.lastSeenUtc))
+    );
+    if (still.length === 0) return undefined;
+    return silentBoxEmail(await this.silentBoxFacts(still), nowMs, this.config.settings(row.tenantId).timezone, this.link("/today"));
+  }
+
+  /** The boxes a message about several is about: the lines kept for each of them, planned in the same moment and named after the same first box. */
+  private async boxesToldTogether(row: StoredNotification): Promise<Array<{ gatewayId: string; lastSeenMs: number } | undefined>> {
+    const log = await this.outbox.recent(row.tenantId, TOLD_TOGETHER_LOOKBACK);
+    return log
+      .filter((entry) => entry.kind === "box_silent" && entry.status === "skipped" && entry.createdAtMs === row.createdAtMs && entry.eventAtMs === row.eventAtMs && !isTogetherKey(entry.dedupeKey))
+      .map((entry) => silenceOfKey(entry.dedupeKey));
   }
 
   /** One sentence per customer whose alert messages did not arrive, for the morning message of Greecon's own account. */
@@ -441,6 +565,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         if (nowMs - row.dueAtMs > DIGEST_LATE_AFTER_MS) return { skip: "It was too late in the day to send the morning message." };
         return undefined;
       }
+      case "box_silent": {
+        // Right after a start the platform cannot tell a box that is reconnecting from a silent one: it waits to see. And a
+        // message to the team is held through its quiet hours, wherever it was delayed, like everything that is not Act now.
+        const graceUntil = this.source.restartGraceUntil?.(nowMs);
+        if (graceUntil !== undefined) return { hold: "Held: Greecon was just restarted, and boxes are reconnecting.", until: graceUntil };
+        const settings = this.config.settings(row.tenantId);
+        if (inQuietHours(nowMs, settings)) return { hold: "Held until the quiet hours end.", until: quietHoursEnd(nowMs, settings) };
+        return undefined;
+      }
       default:
         return undefined;
     }
@@ -455,6 +588,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (verdict && "hold" in verdict) {
       await this.outbox.retryAt(row.id, verdict.until ?? nowMs + HOLD_WHILE_CLEARED_MS, row.attempts, verdict.hold);
       return "retried";
+    }
+    // A message to the team about silent boxes says how they stand now, and is not sent once every one has reported again.
+    const silence = row.kind === "box_silent" ? await this.silenceAsItStands(row, nowMs) : undefined;
+    if (row.kind === "box_silent" && !silence) {
+      await this.outbox.markSkipped(row.id, nowMs, BOX_BACK);
+      return "skipped";
     }
 
     const contact = row.contactId ? this.config.contacts(row.tenantId).find((candidate) => candidate.id === row.contactId) : undefined;
@@ -474,7 +613,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       return this.failed(row, nowMs, NOT_SET_UP[row.channel], destination, false);
     }
 
-    const counted = row.kind !== "test" && row.kind !== "digest";
+    // Tests, the morning message and the team's own messages about silent boxes (one for each silence, many as one) are not
+    // what the hourly limits are for: a flood of a customer's alert messages.
+    const counted = row.kind !== "test" && row.kind !== "digest" && row.kind !== "box_silent";
     const actNow = isActNow(row);
     const reservation = `${row.tenantId}:${row.channel}:${actNow}`;
     if (counted) {
@@ -500,9 +641,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      // The words of an escalation say who was told before this person, and that they have not answered: said as things stand
-      // now, not as they were when the step was planned.
-      const words = row.kind === "escalation" ? await this.escalationAsItStands(row, nowMs) : undefined;
+      // The words of an alert message are said as things stand now, not as they were when it was planned: an escalation says
+      // who was told before this person and has not answered, and each carries an "I have seen this" link made for this
+      // person at this moment, so a message tried again days later does not carry a link that has stopped working.
+      // The first message about an alert never waits on that: if the alert cannot be looked at now, it goes as it was planned.
+      const words =
+        row.kind === "escalation" ? await this.alertAsItStands(row, nowMs) : row.kind === "alert" ? await this.alertAsItStands(row, nowMs).catch(() => undefined) : silence;
       const subject = words?.subject ?? row.subject ?? "Greecon";
       const body = words?.body ?? row.body;
       const result =
@@ -574,32 +718,35 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return row.priority === "check_today" ? quietHoursEnd(at, this.config.settings(row.tenantId)) : at;
   }
 
-  /** The escalation as it stands when it is sent: whoever is before this person on the list is said to have been told, and not
-   * to have answered, only if they were told. A first person whose messages failed, or were dropped, is not an unanswered one. */
-  private async escalationAsItStands(row: StoredNotification, nowMs: number): Promise<{ subject?: string; body: string } | undefined> {
+  /** An alert message, or a step of its escalation, as it stands when it is sent, with the "I have seen this" link for its
+   * person. Whoever is before this person on the list is said to have been told, and not to have answered, only if they were
+   * told: a first person whose messages failed, or were dropped, is not an unanswered one. */
+  private async alertAsItStands(row: StoredNotification, nowMs: number): Promise<{ subject?: string; body: string } | undefined> {
     const alertId = row.alertId;
     const alert = alertId ? this.source.alertById(row.tenantId, alertId) : undefined;
     if (!alert || !alertId) return undefined;
-    const contacts = this.config.contacts(row.tenantId);
-    const index = contacts.findIndex((candidate) => candidate.id === row.contactId);
-    const before = index > 0 ? contacts[index - 1] : undefined;
     const siteName = this.source.openAlertsAcrossTenants().find((candidate) => candidate.alert.id === alertId)?.siteName;
     if (!siteName) return undefined;
-
-    // Told in this round of messages: a person who acknowledged an earlier round and was told again is not "told at" the first time.
-    // Nobody before this person on the list now (the list changed since): nobody is said to have been told.
-    const told = before ? (await this.outbox.toldAbout(row.tenantId, alertId, generationOfKey(row.dedupeKey))).find((candidate) => candidate.contactId === before.id && candidate.priority === "act_now") : undefined;
-    const previous = before && told?.toldAtMs !== undefined ? { name: before.name, toldAtMs: told.toldAtMs } : undefined;
     const facts: AlertFacts = {
       title: alert.title,
       action: alert.suggestedAction,
       siteName,
-      priority: "act_now",
+      priority: row.kind === "escalation" ? "act_now" : (row.priority ?? alertPriority(alert.severity)),
       raisedAtMs: Date.parse(alert.createdAtUtc),
       timezone: this.config.settings(row.tenantId).timezone
     };
     const link = this.link("/alerts");
-    return row.channel === "email" ? escalationEmail(facts, previous, link) : { body: escalationSms(facts, previous, link) };
+    const ack = this.ackLink(row, nowMs);
+    if (row.kind === "alert") return row.channel === "email" ? alertEmail(facts, link, ack) : { body: alertSms(facts, link, ack) };
+
+    const contacts = this.config.contacts(row.tenantId);
+    const index = contacts.findIndex((candidate) => candidate.id === row.contactId);
+    const before = index > 0 ? contacts[index - 1] : undefined;
+    // Told in this round of messages: a person who acknowledged an earlier round and was told again is not "told at" the first time.
+    // Nobody before this person on the list now (the list changed since): nobody is said to have been told.
+    const told = before ? (await this.outbox.toldAbout(row.tenantId, alertId, generationOfKey(row.dedupeKey))).find((candidate) => candidate.contactId === before.id && candidate.priority === "act_now") : undefined;
+    const previous = before && told?.toldAtMs !== undefined ? { name: before.name, toldAtMs: told.toldAtMs } : undefined;
+    return row.channel === "email" ? escalationEmail(facts, previous, link, ack) : { body: escalationSms(facts, previous, link, ack) };
   }
 
   /** What this account has been sent through this channel in the last hour that counts against the same limit as this

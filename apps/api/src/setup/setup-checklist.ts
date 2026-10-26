@@ -120,7 +120,8 @@ export function computeSetup(input: SetupInput): SetupView {
   // 2. The box ------------------------------------------------------------
   {
     const gatewayItems: SetupStepItem[] = input.gateways.map((gateway) => {
-      const contact = gatewayContact(gateway.lastSeenUtc, nowMs);
+      // The platform's own word for the box when it has one: right after a restart a box not heard from yet is late, not offline.
+      const contact = gateway.contact ?? gatewayContact(gateway.lastSeenUtc, nowMs);
       const enrolled = gateway.enrolledAtUtc !== undefined || gateway.secureIdentityStatus === "provisioned";
       const age = gateway.lastSeenUtc ? describeAge(Math.max(0, (nowMs - Date.parse(gateway.lastSeenUtc)) / 1000)) : undefined;
       if (!enrolled) return { label: gateway.name, status: "waiting", detail: "Waiting for the install command to be run on the box." };
@@ -214,7 +215,7 @@ export function computeSetup(input: SetupInput): SetupView {
 
   // 5. Is each device answering the box ------------------------------------
   // Listed from the start, as waiting, so the list a person works down does not grow while they work.
-  const gatewayOnline = input.gateways.some((gateway) => gatewayContact(gateway.lastSeenUtc, nowMs) === "online");
+  const gatewayOnline = input.gateways.some((gateway) => (gateway.contact ?? gatewayContact(gateway.lastSeenUtc, nowMs)) === "online");
   const driverStatus = new Map(input.gateways.flatMap((gateway) => (gateway.drivers ?? []).map((driver) => [driver.deviceId, driver] as const)));
   const readDevices = modbusDevices.filter((device) => device.connection && modbusPoints.some((point) => point.deviceId === device.id && point.source));
   const isRead = (deviceId: string): boolean => readDevices.some((device) => device.id === deviceId);

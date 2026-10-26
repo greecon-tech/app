@@ -6,6 +6,7 @@ Where to start depends on the question.
 |---|---|
 | What Greecon is for and how it decides what to build | [17 Constitution](17-constitution.md) (the ten principles, kept as they were, and nine rules that follow from them) |
 | What is true of the platform today, and what is not | [18 Reality audit](18-reality-audit.md) |
+| What every screen is for, for Greecon's team and for clients | [28 The experience, defined](28-ux-definition.md) |
 | How to use it, by kind of site | [guides](guides/00-overview.md) |
 | What to build next, and what would prove it | [25 Roadmap and proof gates](25-roadmap-and-proof-gates.md) |
 | **How to put Greecon on the market with a project manager** | [launch/](launch/README.md): go-live, the project manager's manual, hardware, the sales kit, runbooks |
@@ -24,6 +25,7 @@ rests on and what a person still has to check. Document 27 records the decisions
 | [18 Reality audit](18-reality-audit.md) | The ledger: what was found, what was fixed with the evidence, what is still open |
 | [19 Domain playbook](19-domain-playbook.md) | Water and wastewater, agriculture, energy: what operators need, what the platform shows, what it will not claim |
 | [20 Design and interaction](20-design-and-interaction.md) | The four states, the three priorities, answer-first screens, safe interaction, accessibility |
+| [28 The experience, defined](28-ux-definition.md) | Who sees what: the two audiences, their five places each, what every page is for, the patterns, the words, what was taken out |
 | [21 Communication system](21-communication-system.md) | Voice, alert wording and channel limits (Albanian SMS is 70 characters), the claims register, the glossary |
 | [22 Legal and compliance map](22-legal-and-compliance-map.md) | Albanian and EU law that touches the product, the claims table, the lawyer's checklist |
 | [23 Safety and security case](23-safety-and-security-case.md) | The safety boundary, the direction rule, the release gate for a first real write, the threat model |

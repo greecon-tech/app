@@ -9,6 +9,7 @@ import { EnergyLedger, INTEGRATED_POINTS } from "../value/energy-ledger";
 import { demoHistory, demoProfiles, DEMO_FARM_SITE } from "../value/demo";
 import { DEFAULT_TIME_ZONE, isValidTimeZone, periodKeys, PeriodKey, resolvePeriod } from "../value/periods";
 import {
+  AcknowledgeLinkAlert,
   AlertMessage,
   Asset,
   AutomationRule,
@@ -30,6 +31,7 @@ import {
   FleetRow,
   FlowReading,
   GREECON_DOMAIN,
+  GatewayContact,
   GatewayHeartbeat,
   ModbusConnection,
   Point,
@@ -52,6 +54,7 @@ import {
   UserRole,
   deriveEnergyFlow,
   alertPriority,
+  alertPriorityWords,
   describeAge,
   describeConnection,
   describeSource,
@@ -80,6 +83,7 @@ import {
   statusLabelFor,
   type AlertChange,
   type Concern,
+  type DerivedStateEvaluation,
   type HealthState,
   type SensorSnapshot,
   type SensorSnapshotValue,
@@ -88,13 +92,17 @@ import {
 } from "@greecon/gaia-core";
 import { Principal } from "../common/principal";
 import { generateGatewaySecret, hashGatewaySecret } from "../common/gateway-secret";
+import { oneLine } from "../common/plain-text";
+import { restartGraceMs } from "../common/runtime-config";
 import { DatabaseService } from "../database/database.service";
 import { buildEdgeConfig } from "../setup/edge-config";
 import type { Confirmation } from "../setup/setup-checklist";
 import { historyBucketMinutes } from "./history";
+import { Listening, RECONNECTING, heardSilenceSince, inRestartGrace } from "./restart-grace";
 import type { DigestFacts } from "../notifications/messages";
 import type { AlertView } from "../notifications/notifications.service";
 import type { AlertEvent } from "../notifications/plan";
+import type { QuietBox } from "../notifications/silent-boxes";
 
 /** A latest reading as the Overview presents it: the value, where it came from, and how old it is. */
 export interface OverviewReading {
@@ -430,6 +438,10 @@ function keepNewestOf<T extends { tenantId: string }>(list: T[], tenantId: strin
 // noticed within about a minute even though nothing is arriving to trigger a refresh.
 const HEALTH_MONITOR_INTERVAL_MS = 60_000;
 
+/** Who acknowledged an alert with the link in an alert message, in the audit trail: no user of the account, so it is kept
+ * with no user and said in words (actorOf). */
+const ACKNOWLEDGED_BY_LINK = "alert-message-link";
+
 @Injectable()
 export class PlatformService implements OnModuleInit, OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(PlatformService.name);
@@ -439,6 +451,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   private siteSetup: SiteSetupRecord[] = [];
   /** The people who work for Greecon and may open a customer's account. They sit in Greecon's own account. */
   private staffIds = new Set<string>();
+  /** When this process started listening, and how long the grace after it lasts (restart-grace.ts). Unset until the
+   * application starts, and in the tests that drive the service by hand: there is no grace then. */
+  private listening?: Listening;
 
   constructor(
     private readonly db: DatabaseService,
@@ -448,6 +463,9 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   // Starts after hydration (onModuleInit) so the first pass sees real data. Derived states are not
   // stored, so without this a restart would leave every site with no states until its next reading.
   async onApplicationBootstrap(): Promise<void> {
+    // The platform starts listening now. Every box's last word is old because the platform was away, so the first
+    // pass, and every pass for the grace after it, must not call that silence.
+    this.markStartedListening();
     await this.refreshAllDerivedStates();
     this.startHealthMonitor();
     this.startLedgerFlush();
@@ -511,6 +529,17 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (!this.healthMonitor) return;
     clearInterval(this.healthMonitor);
     this.healthMonitor = undefined;
+  }
+
+  /** The moment the platform started listening again: a box's silence is counted from then at the earliest, and nothing
+   * that comes from missing data is raised or messaged until the grace after it has passed. A grace of 0 switches this off. */
+  markStartedListening(nowMs: number = Date.now(), graceMs: number = restartGraceMs(process.env)): void {
+    this.listening = graceMs > 0 ? { sinceMs: nowMs, graceMs } : undefined;
+  }
+
+  /** When the grace after a start ends, while it lasts; undefined outside it. */
+  restartGraceUntil(nowMs: number): number | undefined {
+    return this.listening && inRestartGrace(this.listening, nowMs) ? this.listening.sinceMs + this.listening.graceMs : undefined;
   }
 
   async onModuleInit(): Promise<void> {
@@ -1316,14 +1345,25 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     return this.fleetRows(nowMs);
   }
 
+  /** A customer whose sites are in the fleet: not the demo account, which is simulated, not Greecon's own, which has no
+   * sites, and not one that is suspended. */
+  private inFleet(tenant: Tenant): boolean {
+    return tenant.id !== DEMO_TENANT_ID && tenant.domain !== GREECON_DOMAIN && tenant.status === "active";
+  }
+
+  /** When the site was commissioned, if it has been: a site still being set up is not yet live. */
+  private commissionedAt(tenantId: string, siteId: string): Confirmation | undefined {
+    return this.siteSetup.find((record) => record.tenantId === tenantId && record.siteId === siteId)?.confirmations.commissioned;
+  }
+
   private fleetRows(nowMs: number): FleetRow[] {
     const rows: FleetRow[] = [];
     for (const tenant of this.tenants) {
-      if (tenant.id === DEMO_TENANT_ID || tenant.domain === GREECON_DOMAIN || tenant.status !== "active") continue;
+      if (!this.inFleet(tenant)) continue;
       for (const stored of this.sites.filter((site) => site.tenantId === tenant.id)) {
         const site = this.assessSite(stored, nowMs);
         const box = this.fleetBoxOf(tenant.id, stored.id, nowMs);
-        const commissioned = this.siteSetup.find((record) => record.tenantId === tenant.id && record.siteId === stored.id)?.confirmations.commissioned;
+        const commissioned = this.commissionedAt(tenant.id, stored.id);
         const alerts = this.alerts.filter((alert) => alert.tenantId === tenant.id && alert.siteId === stored.id && alert.status !== "resolved");
 
         const reasons = site.health.reasons.map((reason) => reason.message);
@@ -1331,10 +1371,13 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
         // A box that has stopped reporting is a problem on a site that is working. On one still being set up it is
         // only what setting up looks like, so it never makes the morning list longer.
         if (commissioned) {
-          const silence = boxSilenceWords(box, nowMs);
+          // Inside the grace after a start, a box that has not reconnected yet is not called silent: how the site is,
+          // is not known yet.
+          const reconnecting = inRestartGrace(this.listening, nowMs) && box.status === "late";
+          const silence = reconnecting ? RECONNECTING : boxSilenceWords(box, nowMs);
           if (silence) {
-            reasons.unshift(silence);
-            state = worseState(state, "attention");
+            if (!reasons.includes(silence)) reasons.unshift(silence);
+            state = worseState(state, reconnecting ? "unknown" : "attention");
           }
           if (box.devicesNotAnswering > 0) {
             reasons.push(`${box.devicesNotAnswering === 1 ? "A device does" : `${box.devicesNotAnswering} devices do`} not answer the box.`);
@@ -1360,6 +1403,39 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       }
     }
     return orderFleet(rows);
+  }
+
+  /** Boxes at customers' live sites that have stopped reporting, late or silent, by the fleet's own definitions and with
+   * the grace after a start applied: what Greecon's own team is told about at once (notifications/silent-boxes.ts). A
+   * site still being set up, the demo, Greecon's own account and a suspended customer are left out, as in the fleet. */
+  quietBoxes(nowMs: number): QuietBox[] {
+    const boxes: QuietBox[] = [];
+    for (const tenant of this.tenants.filter((candidate) => this.inFleet(candidate))) {
+      for (const site of this.sites.filter((candidate) => candidate.tenantId === tenant.id && this.commissionedAt(tenant.id, candidate.id))) {
+        const lastReadingAtUtc = newestTimestamp(this.telemetry.filter((item) => item.tenantId === tenant.id && item.siteId === site.id));
+        const outOfDateAlertIds = this.alerts
+          .filter((alert) => alert.tenantId === tenant.id && alert.siteId === site.id && alert.category === "communication_degraded" && alert.status !== "resolved")
+          .map((alert) => alert.id);
+        for (const gateway of this.gateways.filter((candidate) => candidate.tenantId === tenant.id && candidate.siteId === site.id)) {
+          const status = this.contactOf(gateway.lastSeenUtc, nowMs);
+          if ((status !== "late" && status !== "offline") || !gateway.lastSeenUtc) continue;
+          boxes.push({
+            tenantId: tenant.id,
+            client: tenant.name,
+            siteId: site.id,
+            site: site.name,
+            gatewayId: gateway.id,
+            box: gateway.name,
+            status,
+            lastSeenUtc: gateway.lastSeenUtc,
+            silentSinceMs: heardSilenceSince(Date.parse(gateway.lastSeenUtc), this.listening),
+            ...(lastReadingAtUtc ? { lastReadingAtUtc } : {}),
+            outOfDateAlertIds
+          });
+        }
+      }
+    }
+    return boxes;
   }
 
   /** The worst of a site's boxes: offline before never-reported before late before waiting before online. */
@@ -1848,9 +1924,22 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   /** The stored status of a box is not trusted: it says what the box was when it was set up. What is
    * shown follows from when it last reported. */
   private assessGateway(stored: EdgeGateway, nowMs: number): EdgeGateway {
-    const contact = gatewayContact(stored.lastSeenUtc, nowMs);
+    const contact = this.contactOf(stored.lastSeenUtc, nowMs);
     const status: EdgeGateway["status"] = contact === "online" ? "OK" : contact === "late" ? "Watch" : contact === "offline" ? "Offline" : "Unknown";
     return { ...stored, contact, status };
+  }
+
+  /** How recently a box has been heard from, by the one set of limits (shared/setup.ts), counting only the time the
+   * platform could have heard it. A box last heard before the platform started listening is only late inside the grace
+   * after a start (it has not had its chance to reconnect), and after it is silent only once it has been silent for as
+   * long as any box must be while the platform listens. */
+  private contactOf(lastSeenUtc: string | undefined, nowMs: number): GatewayContact {
+    const contact = gatewayContact(lastSeenUtc, nowMs);
+    const lastMs = lastSeenUtc ? Date.parse(lastSeenUtc) : Number.NaN;
+    if (contact === "online" || contact === "never" || !this.listening || lastMs >= this.listening.sinceMs) return contact;
+    if (inRestartGrace(this.listening, nowMs)) return "late";
+    const heard = gatewayContact(new Date(heardSilenceSince(lastMs, this.listening)).toISOString(), nowMs);
+    return heard === "online" ? "late" : heard;
   }
 
   /** One box of this account, or undefined. For the setup and edge services, which are told the
@@ -3255,6 +3344,14 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   async acknowledgeAlert(alertId: string, principal: Principal): Promise<AlertRecord> {
     const alert = this.alerts.find((candidate) => candidate.id === alertId && candidate.tenantId === principal.tenantId);
     if (!alert) throw new NotFoundException("Alert not found.");
+    const acknowledger = this.users.find((user) => user.id === principal.userId);
+    return this.acknowledge(alert, { userId: principal.userId, by: acknowledger?.name ?? principal.email, byEmail: (acknowledger?.email ?? principal.email).toLowerCase(), reason: "Alert acknowledged by operator." });
+  }
+
+  /** The one way an alert is acknowledged, by a person in Greecon or with the link in an alert message: the same time, from
+   * the platform's own clock, the same note to the others who were told, the same stop to the messages that were to follow,
+   * and a line in the account's audit trail. */
+  private async acknowledge(alert: AlertRecord, who: { userId: string; by: string; byEmail?: string; reason: string; metadata?: Record<string, unknown> }): Promise<AlertRecord> {
     const before = { status: alert.status };
     alert.status = "acknowledged";
     const acknowledgedAt = new Date();
@@ -3263,35 +3360,78 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (this.db.isConfigured()) {
       // The time is the platform's own, not the database's now(): after a restart it is read back, and the messages that depend on
       // it (an alert that returns after an acknowledgement is told again) keep their time on the platform's clock.
-      await this.db.query(`UPDATE alerts SET status=$1, acknowledged_at=$4 WHERE id=$2 AND tenant_id=$3`, [alert.status, alert.id, principal.tenantId, acknowledgedAt]);
+      await this.db.query(`UPDATE alerts SET status=$1, acknowledged_at=$4 WHERE id=$2 AND tenant_id=$3`, [alert.status, alert.id, alert.tenantId, acknowledgedAt]);
     }
 
-    const acknowledger = this.users.find((user) => user.id === principal.userId);
     this.announce([
       {
         type: "acknowledged",
         atMs: Date.parse(alert.acknowledgedAtUtc as string),
         alert: { ...alert },
         siteName: this.siteNameOf(alert.tenantId, alert.siteId),
-        by: acknowledger?.name ?? principal.email,
-        byEmail: (acknowledger?.email ?? principal.email).toLowerCase()
+        by: who.by,
+        ...(who.byEmail ? { byEmail: who.byEmail } : {})
       }
     ]);
 
     await this.recordAudit({
-      tenantId: principal.tenantId,
-      userId: principal.userId,
+      tenantId: alert.tenantId,
+      userId: who.userId,
       eventType: "alert.acknowledged",
       siteId: alert.siteId,
       assetId: alert.assetId,
       entityType: "alert",
       entityId: alert.id,
       beforeMetadata: before,
-      afterMetadata: { status: alert.status },
-      reason: "Alert acknowledged by operator."
+      afterMetadata: { status: alert.status, ...who.metadata },
+      reason: who.reason
     });
 
     return alert;
+  }
+
+  // ---- The "I have seen this" link in an alert message (notifications/ack-link.ts) ----------------------------------------
+  // Nothing here takes a principal: the caller has proved, with a signed link, that it may answer for one alert of one
+  // account, and each method acts on that alert of that account only.
+
+  /** The alerts, of every account, whose id begins with these 16 hex digits: the start of the id a link carries. Which of
+   * them, if any, the link is for is decided by its signature, which covers the whole id and the account. */
+  alertsForLink(idStartHex: string): Array<{ alertId: string; tenantId: string }> {
+    const start = idStartHex.toLowerCase();
+    return this.alerts.filter((alert) => alert.id.replace(/-/g, "").toLowerCase().startsWith(start)).map((alert) => ({ alertId: alert.id, tenantId: alert.tenantId }));
+  }
+
+  /** What the page behind a link shows of its alert, and nothing else of the account: undefined when the alert is not there,
+   * or the account is suspended (it has left, and nothing of it is answered for). */
+  alertLinkView(tenantId: string, alertId: string): AcknowledgeLinkAlert | undefined {
+    const alert = this.alerts.find((candidate) => candidate.id === alertId && candidate.tenantId === tenantId);
+    if (!alert || !this.isTenantActive(tenantId)) return undefined;
+    return {
+      title: alert.title,
+      siteName: this.siteNameOf(tenantId, alert.siteId),
+      priority: alertPriorityWords[alertPriority(alert.severity)],
+      raisedAtUtc: alert.createdAtUtc,
+      state: alert.status === "resolved" ? "cleared" : alert.status
+    };
+  }
+
+  /** Acknowledges an alert for the person a link in a message was sent to, exactly as Acknowledge in Greecon does, and writes
+   * it in the account's audit trail as done with the link, naming the person when the link says who. An alert already
+   * acknowledged is left as it is (the same answer twice is not an error), and so is one that has cleared. */
+  async acknowledgeAlertByLink(tenantId: string, alertId: string, recipient: { name: string; email?: string } | undefined): Promise<AcknowledgeLinkAlert | undefined> {
+    const alert = this.alerts.find((candidate) => candidate.id === alertId && candidate.tenantId === tenantId);
+    if (!alert || !this.isTenantActive(tenantId)) return undefined;
+    if (alert.status === "open") {
+      const named = recipient ? `${oneLine(recipient.name, 80)}${recipient.email ? `, ${recipient.email}` : ""}` : undefined;
+      await this.acknowledge(alert, {
+        userId: ACKNOWLEDGED_BY_LINK,
+        by: recipient ? oneLine(recipient.name, 80) : "a person on the list",
+        ...(recipient?.email ? { byEmail: recipient.email.toLowerCase() } : {}),
+        reason: `Alert acknowledged with the link in an alert message${named ? ` sent to ${named}` : ""}.`,
+        metadata: { via: ACKNOWLEDGED_BY_LINK, ...(named ? { recipient: named } : {}) }
+      });
+    }
+    return this.alertLinkView(tenantId, alertId);
   }
 
   listIncidents(principal: Principal): IncidentRecord[] {
@@ -3417,7 +3557,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   listAudit(principal: Principal, siteId?: string): Array<AuditEvent & { actor: string }> {
     return this.scope(this.auditEvents, principal.tenantId)
       .filter((event) => !siteId || event.siteId === siteId)
-      .map((event) => ({ ...event, actor: this.actorOf(event.userId, principal.tenantId) }));
+      .map((event) => ({ ...event, actor: this.actorOf(event, principal.tenantId) }));
   }
 
   /** The account's whole audit trail, oldest first, a page at a time, from the database: the list held in memory
@@ -3439,7 +3579,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       if (page.rows.length === 0) return;
       yield page.rows.map((row) => {
         const event = mapAuditRow(row);
-        return { ...event, createdAtUtc: new Date(row.created_at).toISOString(), actor: this.actorOf(event.userId, principal.tenantId) };
+        return { ...event, createdAtUtc: new Date(row.created_at).toISOString(), actor: this.actorOf(event, principal.tenantId) };
       });
       const last = page.rows[page.rows.length - 1] as AuditRow;
       after = { at: new Date(last.created_at).toISOString(), id: last.id };
@@ -3447,8 +3587,14 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     }
   }
 
-  private actorOf(userId: string, tenantId: string): string {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  private actorOf(event: AuditEvent, tenantId: string): string {
+    // An acknowledgement made with the link in an alert message is nobody's session: the trail says so, and whom the link
+    // was sent to when it says who. Only that event, written by acknowledgeAlertByLink, is read this way.
+    if (event.eventType === "alert.acknowledged" && event.afterMetadata?.via === ACKNOWLEDGED_BY_LINK) {
+      const recipient = event.afterMetadata.recipient;
+      return typeof recipient === "string" ? `Link in an alert message (${recipient})` : "Link in an alert message";
+    }
+    const user = this.users.find((candidate) => candidate.id === event.userId);
     if (!user) return "System";
     return user.tenantId === tenantId ? user.name : `Greecon staff (${user.email})`;
   }
@@ -3772,7 +3918,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteName: stored.name,
       readingCount: readings.length,
       communicationProblem: quiet !== undefined,
-      communicationDetail: quiet?.reason,
+      // Still "unknown" right after a start, because it is: but said for what it is, not as a site gone quiet.
+      communicationDetail: quiet && inRestartGrace(this.listening, nowMs) ? RECONNECTING : quiet?.reason,
       alerts: this.alerts.filter((alert) => alert.tenantId === stored.tenantId && alert.siteId === stored.id)
     });
     return { ...stored, status: statusLabelFor(health), edgeStatus: this.edgeStatusOf(readings, nowMs), health, lastReadingAtUtc: newestTimestamp(readings) };
@@ -3790,7 +3937,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     const real = readings.filter((item) => item.source !== "simulator");
     if (real.length === 0) return "Simulated";
     const heardLately = real.some((item) => assessSensorAge(item.canonicalName, this.sensorValue(item), nowMs).freshness === "fresh");
-    return heardLately ? "OK" : "Offline";
+    // Right after a start the platform cannot yet tell a box that is reconnecting from one that is silent.
+    return heardLately ? "OK" : inRestartGrace(this.listening, nowMs) ? "Unknown" : "Offline";
   }
 
   /** The newest reading of each kind across the tenant's sites, with its age at `nowMs`. */
@@ -3840,7 +3988,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   private refreshDerivedStates(tenantId: string, siteId: string, nowMs: number = Date.now()): void {
     const site = this.sites.find((candidate) => candidate.id === siteId && candidate.tenantId === tenantId);
     const sensors = this.sensorSnapshot(tenantId, siteId);
-    const generated = deriveOperationalStates(sensors, { nowMs, limits: site?.safetyLimits });
+    const generated = this.withoutUnheardSilence(deriveOperationalStates(sensors, { nowMs, limits: site?.safetyLimits }), sensors, nowMs);
     const at = new Date(nowMs).toISOString();
 
     // A state keeps its start time for as long as its value holds, so "how long has this been true"
@@ -3869,6 +4017,28 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
         updatedAtUtc: at
       });
     }
+  }
+
+  /** "Out of date" judged fairly after a start: a reading that is old only because the platform itself was away is not a
+   * site gone quiet. Inside the grace after a start, and until some reading has been silent past its own limit counted
+   * from the moment the platform started listening, that state is left out (it cannot be told yet), so an alert about it
+   * neither opens nor closes. Nothing else is touched: an out-of-date reading still feeds no state, and a current one
+   * feeds every state from its first second, so a measured danger is raised at once (docs/18, the safety direction). */
+  private withoutUnheardSilence(states: DerivedStateEvaluation[], sensors: SensorSnapshot, nowMs: number): DerivedStateEvaluation[] {
+    if (!this.listening || this.silenceHeard(sensors, nowMs)) return states;
+    return states.filter((state) => !(state.stateKey === "system.communication_degraded" && state.stateValue === true));
+  }
+
+  /** Whether some reading has gone without renewal for longer than its own limit, counting only the time the platform
+   * could have heard it, outside the grace after a start. A reading with no usable time is silent, as it always was. */
+  private silenceHeard(sensors: SensorSnapshot, nowMs: number): boolean {
+    if (inRestartGrace(this.listening, nowMs)) return false;
+    return (Object.entries(sensors) as Array<[CanonicalPointName, SensorSnapshotValue | undefined]>).some(([name, sensor]) => {
+      if (!sensor) return false;
+      const age = assessSensorAge(name, sensor, nowMs);
+      if (age.freshness !== "stale") return age.freshness === "unknown";
+      return nowMs - heardSilenceSince(Date.parse(sensor.timestampUtc), this.listening) > age.maxAgeSeconds * 1000;
+    });
   }
 
   // Brings a site's alerts into line with what is true now (see gaia-core's alerts.ts for the rules).

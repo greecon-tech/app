@@ -3,6 +3,7 @@ import type { SetupStep } from "@greecon/shared";
 import { STEP_STATUS_WORDS } from "../../lib/setup";
 import { StatusBadge } from "../StatusBadge";
 import { StepDetails } from "./StepDetails";
+import { InlineText } from "../InlineText";
 
 /** One step of a site's setup list: what is true now, what to do next, the parts it covers, and (on the live
  * page) the form for doing it. `open` says whether the step should be open now; the reader can still close it. */
@@ -32,7 +33,7 @@ export function SetupStepCard({ step, number, open, hideItems = false, children 
           {step.nextAction ? (
             <div className="setup-guidance">
               <p>
-                <strong>Next:</strong> {step.nextAction}
+                <strong>Next:</strong> <InlineText text={step.nextAction} />
               </p>
             </div>
           ) : null}

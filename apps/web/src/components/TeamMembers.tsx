@@ -60,7 +60,8 @@ export function TeamMembers({ members, canChange }: { members: StaffMember[]; ca
 
   return (
     <div className="team">
-      <table className="data-table">
+      <div className="table-wrap">
+      <table>
         <thead>
           <tr>
             <th scope="col">Name</th>
@@ -72,14 +73,14 @@ export function TeamMembers({ members, canChange }: { members: StaffMember[]; ca
         <tbody>
           {members.map((member) => (
             <tr key={member.id}>
-              <td>
+              <td data-label="Name">
                 <strong>{member.name}</strong>
                 {member.isYou ? <span className="muted"> (you)</span> : null}
               </td>
-              <td>{member.email}</td>
-              <td>{member.status === "active" ? "Can sign in" : "Turned off"}</td>
+              <td data-label="Email">{member.email}</td>
+              <td data-label="Access">{member.status === "active" ? "Can sign in" : "Turned off"}</td>
               {canChange ? (
-                <td>
+                <td data-label="Change">
                   {member.isYou ? (
                     <span className="muted">Choose your own password in Settings.</span>
                   ) : (
@@ -98,6 +99,7 @@ export function TeamMembers({ members, canChange }: { members: StaffMember[]; ca
           ))}
         </tbody>
       </table>
+      </div>
 
       {canChange ? (
         <form onSubmit={add} className="rule-form" aria-label="Add a team member">

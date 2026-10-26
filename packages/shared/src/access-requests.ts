@@ -13,6 +13,10 @@ export const requestedSiteTypeLabels: Readonly<Record<RequestedSiteType, string>
   other: "Something else"
 };
 
+/** The longest each field of the public "Request access" form may be, in characters: the API refuses longer, and the form can
+ * use the same numbers for its own maximum lengths. */
+export const ACCESS_REQUEST_LIMITS = { name: 80, company: 120, email: 254, phone: 30, message: 1000 } as const;
+
 export const accessRequestStatuses = ["new", "contacted", "onboarded", "declined"] as const;
 export type AccessRequestStatus = (typeof accessRequestStatuses)[number];
 
