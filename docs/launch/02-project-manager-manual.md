@@ -18,8 +18,9 @@ a form with a plain-words check beside it, and so that the platform tells you wh
 2. **Anything inside a distribution board is the electrician's work.** Clamping current transformers around
    live conductors, taking voltage for a meter and connecting a pump's run contact are done by a qualified
    electrician, under the customer's lock-out procedure, with you watching and writing it down. You do the
-   low-voltage part: the box, the network, the converter, the data cable between meters, the 4 to 20 mA
-   signal wires, the 12 or 24 volt supply from a plug-in supply.
+   low-voltage part: the box, the network, the converter, the data cable (you run it to the board; the
+   electrician connects its ends at the meters, because the meters' terminals are inside the board), the
+   4 to 20 mA signal wires, the 12 or 24 volt supply from a plug-in supply.
 3. **Never touch the solar panels' wiring (DC), a tank you must climb into, wastewater, or chemicals.** The
    customer's own staff or installer does that. If the only place for a sensor is there, say it is not
    possible and write why.
@@ -37,7 +38,7 @@ a form with a plain-words check beside it, and so that the platform tells you wh
 | Thing | What it is |
 |---|---|
 | **Your login** | Your own, from the founder. Sign in at `https://app.greecon.earth/login` and choose **Greecon team**. You are asked for a password of your own the first time. Never share it. |
-| **Clients** (the console) | Where you see requests, onboard a customer, open their account to set it up, and see every site's state in **Sites across clients**. |
+| **Today** and **Clients** (the console) | **Today** is where you start: the sites that need a look, the requests waiting and the sites being set up. **Clients** is where you onboard a customer and open their account to set it up. **Requests** lists who has asked for Greecon, and **Team** the people at Greecon who can open a customer's account. |
 | **The setup list** | One page per site (`Set up <site name>`) that shows up to ten steps (a step that does not apply to the site is left out), what is done, what is next, and what to do. Most steps turn **Done** by themselves when the platform sees them work. A few only a person can check. |
 | **The box** | A small computer at the site. It reads the meters and sensors and reports to Greecon. One pasted line installs it. |
 | **The converter** | A small unit that puts the meters' cable (RS-485) on the network so that the box can reach them. |
@@ -51,7 +52,7 @@ a form with a plain-words check beside it, and so that the platform tells you wh
 | 1. First call | Discovery questions ([04](04-sales-kit.md)). Decide: worth a visit? | You | 20 min |
 | 2. Survey visit | Look at the site, fill in the survey form, take photographs, agree what is measured | You (and the electrician if the plan needs one) | 1 hour |
 | 3. Order form | The customer signs the pilot order form ([04](04-sales-kit.md)); the pilot fee is paid | Founder or you | |
-| 4. Prepare in Greecon | Onboard the customer, make the site from the template, add the box (steps 4 to 6 below) | You, at the office | 30 min |
+| 4. Prepare in Greecon | Onboard the customer, make the site from the template, add the box (section 4 below) | You, at the office | 30 min |
 | 5. Prepare the kit | Install the software on the box at the office, test it against the pretend meter, label it, pack it | You | 2 hours |
 | 6. Install day | Mount, wire, connect, power up | You and the electrician | 4 to 6 hours |
 | 7. Commission | Check every number against the real world; confirm the steps only a person can; commission | You | 1 hour |
@@ -114,25 +115,28 @@ controlled, or there is no responsible person to receive alerts.
 
 You can do all of this before you set foot on site, and it makes the install day shorter.
 
-1. **Sign in** with **Greecon team**. You land on **Clients**.
-2. **If the customer asked through the web page:** their request is listed under **Requests**. Click **Onboard**
-   (it fills in the form from their request). **Otherwise,** use **Onboard a new client** (below Requests and
-   **Sites across clients**): company name, owner's name, owner's email. Click **Onboard client**.
-3. A box appears: **Client onboarded: save this password now.** That is the owner's temporary password. It is
+1. **Sign in** with **Greecon team**. You land on **Today**.
+2. **If the customer asked through the web page:** their request is waiting under **Requests waiting** on
+   **Today**, and on the **Requests** page. Press **Onboard** (it opens **Clients** with the form filled in from
+   their request). **Otherwise,** open **Clients** and press **Onboard a client** (top right): company name, owner's
+   name, owner's email. Press **Onboard client**.
+3. A box appears: **Client onboarded — save this password now.** That is the owner's temporary password. It is
    shown **once**. Write it on the handover page, or tell it to the owner by phone. Do not send it by email.
    The owner signs in at `https://app.greecon.earth/login` with **Client login**, and chooses a password of their
    own straight away.
    - If a message says someone already has an account with that email, the person is already a customer. Do not
      use a different address to get round it: add the new site to the customer they already have. (The rehearsal
      in [section 13](#13-rehearsal-the-whole-job-on-a-desk) is the one exception.)
-4. In the customer's row, click **Open for setup**. A banner appears at the top: *You are in <customer> as Greecon
-   staff, setting it up.* Everything you do from now is recorded under your own name in their audit trail. You
-   cannot add people to their account or reset their passwords while inside; their owner does that.
+4. In the customer's row on **Clients**, press **Open for setup** (on **Today** the same button is **Open account**
+   for a site that needs a look and **Continue setup** for a site being set up). You land on the customer's
+   **Sites** page. A banner appears at the top: *You are in <customer> as Greecon staff, setting it up.* Everything
+   you do from now is recorded under your own name in their audit trail. You can see their people but cannot add
+   people to their account or reset their passwords while inside; their owner does that.
    **The setup session lasts four hours.** After that the page sends you to the sign-in page: sign in again with
    **Greecon team** and press **Open for setup** again. What you saved is still there; only what you were in the
    middle of typing is lost. On install day, open it again when you start commissioning.
-5. You land on **Admin**. Scroll to the end of the **Sites** section (below the list of sites): the form there
-   makes a site from a template. Choose **What kind of site**:
+5. On **Sites**, press **Add a site** (top right; in the middle of the page while there is no site yet). The form,
+   *New site from a template*, makes the site. Choose **What kind of site**:
    - **Hotel or guesthouse**: water tank and pump, solar, grid. The usual first site.
    - **Solar plant with grid connection**: solar and grid, with an optional battery and load meter.
    - **Farm or greenhouse with irrigation**: soil probe and weather, with the water supply behind it.
@@ -195,7 +199,7 @@ is N minutes fast".
 | | Electrician | You |
 |---|---|---|
 | 1 | Walk the site with you; agree where each meter and sensor goes; apply the lock-out | Walk with them; photograph before |
-| 2 | Fit the grid meter and the solar meter in the board: voltage connections with their fuses as the meter's manual says, the current clamps around the incoming phases, **arrow towards the site** | Mount the box, the converter and the 12 or 24 V supply on a shelf or rail; run the data cable from the converter to the first meter |
+| 2 | Fit the grid meter and the solar meter in the board: voltage connections with their fuses as the meter's manual says, the current clamps around the incoming phases, **arrow towards the site** | Mount the box, the converter and the 12 or 24 V supply on a shelf or rail; run the data cable from the converter to the board (the electrician connects it at the meters) |
 | 3 | Connect the pump's run contact to the input module; fit the level and pressure transmitters (a wet part: only the electrician or the customer's plumber) | Connect the 4 to 20 mA signal wires to the input module; the module's 24 V supply |
 | 4 | Remove the lock-out only when you both agree the work is closed up | Set each meter's address, speed and parity from its display ([03](03-hardware-and-wiring.md), "Meter settings") and write them down |
 | 5 | Stay until commissioning is done | Set the converter to **Modbus gateway** mode (Modbus TCP to RTU) with the same speed and parity; connect it and the box to the network; power up |
@@ -273,9 +277,9 @@ only by unit number.** **Save.** A wrong address is refused in words (`The addre
 
   prints the raw numbers and the value. If it prints `Could not read`, the problem is the wiring or the
   settings, not Greecon.
-- A reading the site does not have (a flow meter that was not fitted; a battery that does not exist): go to
-  **Sites**, open the site, find it under **Equipment**, in **Devices** or **Reading points**, and press
-  **Delete**. A reading with no register holds the list at this step.
+- A reading the site does not have (a flow meter that was not fitted; a battery that does not exist): open the
+  site (**Sites**), press **Equipment and readings**, find it under **Readings** (or its device under
+  **Equipment**), and press **Remove**. A reading with no register holds the list at this step.
 
 **7.5 Every device answers the box.** Done by itself. Each device shows **Done** ("Answering (N readings)") or
 **Needs attention** with the reason in words ("no answer from 192.168.1.50:502 (unit 2)"); on the box,
@@ -298,9 +302,9 @@ register or a wiring fault.
 - **Check that each person on the list can also acknowledge.** Only a person who can sign in can press
   **Acknowledge** on the **Alerts** page, and pressing it is what stops the chain of messages. Replying to an email
   or a text does not, and a person who has only a phone number has no login. So **everyone on the list should also
-  have their own login with the Operator role**: open **Admin** and look under the people. If someone has none, the
-  customer's owner adds them with **Create user** (a Greecon support session cannot add people), and the new
-  person is given a temporary password, shown once. An Owner or an Administrator can acknowledge too; a Viewer or
+  have their own login with the Operator role**: open **Settings**, then **People**, and look at who has a sign-in.
+  If someone has none, the customer's owner adds them under **Add a person** with **Add person** (a Greecon support
+  session can see the people but cannot add them), and the new person is given a temporary password, shown once. An Owner or an Administrator can acknowledge too; a Viewer or
   an Auditor cannot.
 - **Give everyone an email address as well as a number.** The note that a colleague has acknowledged an alert, and the
   note that it has cleared, go by email only. A person who has only a phone number is texted the urgent alert and then
@@ -330,8 +334,8 @@ only when the box reads both a flow and the pump's running state); battery **Low
 advice and solar surplus have no standard value, and the platform says nothing about them rather than guess.
 **Go through them with the customer.** To change one, open the **Standard** drop-down beside the reading in this
 step (it says **1 set**, **2 set** once changed), type the numbers, press **Save limits**, and when they are agreed
-press **I checked this.** The same drop-down is in the **Limits** column under **Equipment**, **Reading points** on
-the site's page. If the pump's running contact reads the wrong way round, the no-flow alert opens while the pump is
+press **I checked this.** The same drop-down is in the **Limits** column under **Readings** on the site's
+**Equipment and readings** page. If the pump's running contact reads the wrong way round, the no-flow alert opens while the pump is
 stopped: the "Pump running" check in [section 9](#9-commissioning-checks-by-kind-of-site) finds that.
 Agree numbers the customer would act on: an alert nobody acts on trains people to ignore the next.
 
@@ -456,8 +460,10 @@ Do not **start, stop or open** any equipment yourself. The owner's own person do
    It names the customer and site, says where each device is (address, unit number, registers), who is told and
    how to reach them, what was commissioned and by whom, and how to reach Greecon (`info@greecon.earth`).
 2. Show the owner, in ten minutes, in this order: the **Overview** (is everything all right, in one sentence);
-   the **energy flow** moving from the solar to the site and the grid; **what the solar kept on site** this month
-   (and the prices it uses); **Who is told** and a live **test message** arriving on their phone (and that each person on the list has a login of their own, so that they can acknowledge an alert); **Reports**
+   **Energy now**, the flow moving from the solar to the site and the grid; **Value**, what the solar kept on site
+   this month (and the prices it uses); **Who is told** (under **Settings**) and a live **test message** arriving
+   on their phone (and that each person on the list has a login of their own, so that they can acknowledge an
+   alert); **Reports**, under **Downloads**,
    where **their data is theirs**: every reading for the last 31 days, hourly averages for up to a year, the
    alerts, the audit log and how the account is set up can be downloaded whenever they want (and if they stop, they
    can ask Greecon for every reading it holds, as a file).
@@ -465,16 +471,16 @@ Do not **start, stop or open** any equipment yourself. The owner's own person do
    safety layer. You will get one message each morning. If there is nothing to do, it says so.*
 4. Leave: the printed sheet (signed), the box's label, a card with `info@greecon.earth` and your phone.
 5. Photographs and the survey form go in the shared drive, in a folder named for the customer.
-6. Press **Back to the Greecon console** (the banner's button) to leave the customer's account.
+6. Press **Back to the Greecon console** (the banner's button) to leave the customer's account: it returns you to **Today**.
 
 ## 11. After install
 
 | When | Do | Look for |
 |---|---|---|
-| **Day 1** | Open **Sites across clients**; phone the owner: did the morning message arrive? | Box online; readings current; the message reached them |
+| **Day 1** | Open **Today**; phone the owner: did the morning message arrive? | Box online; readings current; the message reached them |
 | **Day 3** | Same; look at one alert if one happened | No alert nobody understood |
 | **Day 7** | Sit with the owner for 15 minutes: **was every alert useful? what would they change?** Adjust limits. | Alert count at most one a day; every one with a clear action |
-| **Every morning** | The morning check email and the **Clients** page ([05](05-runbooks.md)) | A silent box, or a site that needs a look |
+| **Every morning** | The morning check email and **Today** ([05](05-runbooks.md)); each live site shows *Day N* | A silent box, or a site that needs a look |
 | **Day 30** | Short call; ask what they have done because of Greecon | One thing, in their words, for the sales story |
 | **Day 60** | The decision meeting, against the three written goals: data current at least 95 percent of the time; the owner says they read the morning message on at least 5 days in 7 (Greecon does not track opens: ask, and write the answer down); at least one real event caught | Convert, extend by up to 30 days once, or remove |
 | **Day 90** | Convert (order hardware at the agreed price; the monthly fee starts at day 91) or take the kit away within 14 days | Data exported to the customer either way |
@@ -519,15 +525,16 @@ needs no hardware except the box (or a spare computer running Debian, Ubuntu or 
    module would hold a signal that must be converted.)
 5. Watch every step turn **Done**. Then add yourself under **Who is told**, send a test message, and confirm
    the steps that need a person. **Commission** the rehearsal site.
-6. Stop the pretend meter. After about five minutes **Sites across clients** says the readings are out of date and
+6. Stop the pretend meter. After about five minutes **Today** (under **Needs a look**) says the readings are out of date and
    the box says a device does not answer. Start it again with `--tank 12`: **Tank level is critical** (12 percent is
    below the 15 percent limit) is an **Act now**. It arrives by email at once and, if you added your number, by text ten
    minutes later unless you **Acknowledge** it on the **Alerts** page, which then tells the people who were
    told who took it.
-7. Print the handover sheet. Download the readings from **Reports**. Open the file in a spreadsheet.
-8. When finished, remove the rehearsal site's devices and then the site (**Admin**, **Sites**: a site that still has
-   devices cannot be deleted), or suspend the client from **Clients**, so that it does not appear in the morning
-   check. If you will use the Rehearsal client to show **Who is told** and **Reports** in a sales demonstration
+7. Print the handover sheet. Download the readings from **Reports** (**Downloads**). Open the file in a spreadsheet.
+8. When finished, remove the rehearsal site's equipment and then the site (on the site's **Equipment and readings**
+   page: **Remove** beside each piece of equipment, then **The site itself**: a site that still has equipment cannot
+   be deleted), or suspend the client from **Clients** (**More**, then **Suspend this client**), so that it does not
+   appear in the morning check. If you will use the Rehearsal client to show **Who is told** and **Reports** in a sales demonstration
    ([04, section 4](04-sales-kit.md#4-the-pitch-five-minutes-and-the-demo-ten)), keep it and its site until then, and
    start the pretend meter before the meeting: with the meter stopped the site shows as out of date.
 

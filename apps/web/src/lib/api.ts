@@ -121,5 +121,7 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
       // not JSON: fall through to the plain message
     }
   }
-  return error.message || fallback;
+  // The platform's own failure text ("Greecon API request failed: …") is for the log, not for a person: say what the screen would say.
+  if (!error.message || error.message.startsWith("Greecon API request failed") || error.message.startsWith("Greecon API returned")) return fallback;
+  return error.message;
 }

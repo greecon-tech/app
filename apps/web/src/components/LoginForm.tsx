@@ -27,7 +27,7 @@ export function LoginForm() {
       {/* Both buttons hit the same real login — this only decides where a successful login lands.
           "Greecon team" is rejected server-side for any account without isPlatformAdmin, so it
           can't be used to guess at staff access; it exists purely so someone who already has that
-          access lands straight on /platform instead of clicking through the client dashboard first
+          access lands straight on Today instead of clicking through the client dashboard first
           every time. */}
       <div className="login-area-toggle" role="radiogroup" aria-label="Signing in as">
         <button
@@ -51,11 +51,11 @@ export function LoginForm() {
       </div>
       <label>
         Email
-        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@greecon.earth" required />
+        <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" autoComplete="username" required />
       </label>
       <label>
         Password
-        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
       </label>
       <button type="submit" disabled={isPending}>
         {isPending ? "Signing in…" : "Continue"}

@@ -40,9 +40,13 @@ async function boxCall(secret, method, path, body) {
   await page.fill('input[type="email"]', "eridon.manuka@greecon.earth");
   await page.fill('input[type="password"]', "E2E-Admin-Passw0rd!");
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.waitForURL("**/platform");
-  ok("staff sign in to the Greecon console", true);
+  await page.waitForURL("**/today");
+  await page.locator("main").getByText("No customer site is live yet.").waitFor(); // the URL changes a moment before the page is drawn
+  ok("staff sign in to the Greecon console and land on Today", true);
+  ok("Today says no customer site is live yet, and offers to onboard one", (await page.locator("main").innerText()).includes("No customer site is live yet.") && (await page.getByRole("link", { name: "Onboard a client" }).count()) >= 1);
 
+  await page.goto(base + "/platform?onboard=new", { waitUntil: "networkidle" });
+  ok("the Clients page opens the onboarding panel when asked", await page.locator("#onboard").evaluate((el) => el.open));
   await page.fill('input[placeholder^="e.g. Vjosa"]', "Hotel Adriatik");
   await page.fill('input[placeholder="Full name"]', "Besa Krasniqi");
   await page.fill('input[type="email"]', "besa@hotel-adriatik.example");
@@ -55,14 +59,20 @@ async function boxCall(secret, method, path, body) {
 
   // 2. Staff go into the client's account.
   await row.getByRole("button", { name: "Open for setup" }).click();
-  await page.waitForURL("**/admin");
+  await page.waitForURL("**/sites");
   const banner = page.locator(".support-banner");
   ok("a banner says staff are inside the client's account", (await banner.innerText()).includes("Hotel Adriatik"), (await banner.innerText()).slice(0, 80));
-  ok("staff cannot add people while inside", (await page.getByRole("heading", { name: "Create user" }).count()) === 0);
+  ok("inside, the navigation is the client's: Overview, Sites, Alerts, Reports, Settings", (await page.locator(".main-nav").innerText()).replace(/\s+/g, " ").trim() === "Overview Sites Alerts Reports Settings");
+  await page.goto(base + "/admin", { waitUntil: "networkidle" });
+  ok("staff cannot add people while inside", (await page.getByRole("heading", { name: "Add a person" }).count()) === 0);
   ok("nor reset passwords", (await page.getByRole("button", { name: /reset password/i }).count()) === 0);
   await page.screenshot({ path: SP + "/pm-2-support-admin.png", fullPage: true });
 
   // 3. A site from the hotel template.
+  await page.goto(base + "/sites", { waitUntil: "networkidle" });
+  ok("the new account has no site, and Sites offers to add one", (await page.locator("main").innerText()).includes("No site yet"));
+  await page.getByRole("link", { name: "Add a site" }).first().click();
+  await page.waitForURL("**/sites/new");
   const form = page.getByRole("form", { name: "New site from a template" });
   await form.getByLabel("What kind of site").selectOption({ label: "Hotel or guesthouse" });
   await form.getByLabel("Site name").fill("Hotel Adriatik");
@@ -272,22 +282,43 @@ async function boxCall(secret, method, path, body) {
   ok("the email links to the alert in Greecon", actNow?.text.includes("http://localhost:3000/alerts"));
   ok("nobody else is told yet, and no text yet", !(await recorded()).some((item) => item.to === "arben@hotel-adriatik.example" && item.subject?.startsWith("Act now")) && !(await recorded()).some((item) => item.channel === "sms" && item.text.startsWith("Act now")));
 
+  // 8c. The link in the email: opening it changes nothing; pressing its button is what acknowledges. A person on a phone who never signed in.
+  const ackLink = (actNow.text.match(/https?:\/\/\S+\/ack\/[A-Za-z0-9_-]{36}/) ?? [])[0];
+  ok("the Act now email carries an 'I have seen this' link, on a line of its own", Boolean(ackLink) && actNow.text.split("\n").includes(ackLink), ackLink);
+  const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phone = await phoneContext.newPage();
+  phone.on("pageerror", (e) => errors.push(String(e)));
+  await phone.goto(ackLink, { waitUntil: "networkidle" });
+  const linkText = await phone.locator("main").innerText();
+  ok("the link opens, with no sign-in, on a page that names the alert and the site", linkText.includes("Tank level is critical") && linkText.includes("Hotel Adriatik") && linkText.includes("Act now"), linkText.replace(/\n+/g, " | ").slice(0, 160));
+  ok("it has one button, and says what pressing it does and does not do", (await phone.getByRole("button", { name: "Yes, I have seen it" }).count()) === 1 && linkText.includes("does not fix anything"));
+  await phone.screenshot({ path: SP + "/pm-10a-ack-link.png", fullPage: true });
+  await phone.reload({ waitUntil: "networkidle" });
   await page.goto(`${base}/alerts`, { waitUntil: "networkidle" });
-  ok("the alert is on the Alerts page", (await page.locator("main").innerText()).includes("Tank level is critical"));
-  await page.getByRole("button", { name: /Acknowledge/ }).first().click();
-  let acknowledged;
-  for (let attempt = 0; attempt < 40 && !acknowledged; attempt += 1) {
-    acknowledged = (await recorded()).find((item) => item.channel === "email" && item.subject?.startsWith("Acknowledged"));
-    if (!acknowledged) await page.waitForTimeout(500);
-  }
-  ok("acknowledging tells the person who was told who took it", acknowledged?.to === "besa@hotel-adriatik.example" && acknowledged?.text.startsWith("Acknowledged by Eridon Manuka"), acknowledged?.text?.split("\n")[0]);
+  ok("the alert is on the Alerts page, and opening the link twice acknowledged nothing", (await page.locator("main").innerText()).includes("Tank level is critical") && (await page.getByRole("button", { name: /Acknowledge/ }).count()) >= 1);
+  const wrongLink = ackLink.slice(0, -1) + (ackLink.endsWith("A") ? "B" : "A");
+  await phone.goto(wrongLink, { waitUntil: "networkidle" });
+  ok("a link with one character changed says only that it no longer works", (await phone.locator("main").innerText()).includes("This link no longer works") && (await phone.getByRole("button", { name: "Yes, I have seen it" }).count()) === 0);
+  await phone.goto(ackLink, { waitUntil: "networkidle" });
+  await phone.getByRole("button", { name: "Yes, I have seen it" }).click();
+  await phone.getByText("Thank you. Greecon has your answer.").waitFor();
+  ok("pressing the button answers, in words, that nobody else will be reminded", (await phone.locator("main").innerText()).includes("Nobody else will be reminded"));
+  // Besa is the only person who was told, and she is the one who pressed it: nobody is told "Acknowledged by" about their own acknowledgement.
+  await page.waitForTimeout(3000);
+  ok("nobody is sent an 'Acknowledged by' note: the only person told is the one who pressed the button", !(await recorded()).some((item) => item.subject?.startsWith("Acknowledged")));
+  await page.goto(`${base}/alerts`, { waitUntil: "networkidle" });
+  const alertsText = await page.locator("main").innerText();
+  ok("Greecon now shows the alert as acknowledged and not yet cleared, and offers no second Acknowledge", alertsText.includes("Acknowledged, not yet cleared") && (await page.getByRole("button", { name: /Acknowledge/ }).count()) === 0, alertsText.replace(/\n+/g, " | ").slice(0, 200));
+  await phone.reload({ waitUntil: "networkidle" });
+  ok("the link, opened again, says it was already acknowledged", (await phone.locator("main").innerText()).includes("Already acknowledged"));
+  await phoneContext.close();
 
   await page.goto(`${base}/settings/people`, { waitUntil: "networkidle" });
   const logText = await page.locator("main").innerText();
   ok("the log shows what was sent, and what is still waiting", logText.includes("What was sent") && logText.includes("Alert") && logText.includes("Sent") && logText.includes("Waiting"));
   await page.screenshot({ path: SP + "/pm-11-log.png", fullPage: true });
 
-  // 8c. The customer's data can be taken away as files.
+  // 8d. The customer's data can be taken away as files.
   await page.goto(`${base}/reports`, { waitUntil: "networkidle" });
   ok("the Reports page offers downloads, not a pretend request", (await page.locator("main").innerText()).includes("Your data is yours") && (await page.getByRole("button", { name: "Request export" }).count()) === 0);
   const readingsForm = page.getByRole("form", { name: "Download readings" });
@@ -332,19 +363,21 @@ async function boxCall(secret, method, path, body) {
   // 10. The audit trail shows who did this.
   await page.goto(base + "/audit", { waitUntil: "networkidle" });
   const audit = await page.locator("main").innerText();
+  ok("the audit trail says the alert was acknowledged with the link in an alert message, and for whom", audit.includes("Alert acknowledged with the link in an alert message sent to Besa Krasniqi"), audit.slice(0, 120).replace(/\n/g, " | "));
   ok("the customer's audit trail shows Greecon staff by name", audit.includes("Greecon staff (eridon.manuka@greecon.earth)") || audit.includes("eridon.manuka@greecon.earth"), audit.slice(0, 200).replace(/\n/g, " | "));
 
   // 11. Back to Greecon's own console, still signed in as staff.
   await page.getByRole("button", { name: "Back to the Greecon console" }).click();
-  await page.waitForURL("**/platform");
-  ok("leaving returns to the console with the staff session intact", (await page.getByRole("button", { name: "Open for setup" }).count()) >= 1);
+  await page.waitForURL("**/today");
+  await page.getByRole("button", { name: /Open account|Continue setup/ }).first().waitFor();
+  ok("leaving returns to Today with the staff session intact", (await page.getByRole("button", { name: /Open account|Continue setup/ }).count()) >= 1);
   ok("and the banner is gone", (await page.locator(".support-banner").count()) === 0);
 
   // 11b. Greecon's team sees every customer's sites in one list, and is sent the morning check about them.
-  await page.goto(base + "/platform", { waitUntil: "networkidle" });
-  const fleetSection = page.locator("section", { hasText: "Sites across clients" }).first();
+  await page.goto(base + "/today", { waitUntil: "networkidle" });
+  const fleetSection = page.locator("section.section", { has: page.getByRole("heading", { name: "Needs a look", exact: true }) }).first();
   const fleetText = await fleetSection.innerText();
-  ok("the console lists the hotel's site with its state and what is wrong", fleetText.includes("Hotel Adriatik") && fleetText.includes("Action required") && fleetText.includes("Tank level is critical"), fleetText.replace(/\n+/g, " | ").slice(0, 260));
+  ok("Today lists the hotel's site under Needs a look, with its state and what is wrong", fleetText.includes("Hotel Adriatik") && fleetText.includes("Action required") && fleetText.includes("Tank level is critical"), fleetText.replace(/\n+/g, " | ").slice(0, 260));
   ok("with the box's state, the open alert and the day it is on", /Online|Late|Offline/.test(fleetText) && fleetText.includes("1 Act now") && fleetText.includes("Day 1"), fleetText.replace(/\n+/g, " | ").slice(0, 400));
   await page.screenshot({ path: SP + "/pm-13-fleet.png", fullPage: true });
 
@@ -372,7 +405,7 @@ async function boxCall(secret, method, path, body) {
   // 12. A phone-width look at the setup list.
   await page.goto(base + "/platform", { waitUntil: "networkidle" });
   await page.locator("tr", { hasText: "Hotel Adriatik" }).first().getByRole("button", { name: "Open for setup" }).click();
-  await page.waitForURL("**/admin");
+  await page.waitForURL("**/sites");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${base}/sites/${siteId}/setup`, { waitUntil: "networkidle" });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -257,6 +257,11 @@ describe("the box", () => {
     expect(step(offline, "box")?.detail).toContain("offline");
   });
 
+  it("takes the platform's own word for the box: right after a restart, one not heard from yet is late, not offline", () => {
+    const reconnecting = computeSetup(input({ gateways: [gateway({ lastSeenUtc: secondsAgo(7200), contact: "late" })] }));
+    expect(step(reconnecting, "box")?.detail).toBe("Plant room box: Last heard from 2 hours ago.");
+  });
+
   it("needs attention when the box's clock is wrong, because readings are stamped with it", () => {
     const fast = computeSetup(input({ gateways: [gateway({ clockSkewSeconds: 3600 })] }));
     expect(step(fast, "box")?.status).toBe("attention");

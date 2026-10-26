@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { RequestAccessForm } from "../../components/RequestAccessForm";
 
-export const metadata = { title: "Request access · Greecon" };
+export const metadata = { title: "Request access" };
 
 // Public, like the sign-in page. Greecon is set up with each site by a project manager, who installs
 // the equipment and creates the account, so this asks to be contacted rather than creating anything.

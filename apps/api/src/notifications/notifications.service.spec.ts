@@ -16,6 +16,8 @@ const NOON = Date.parse("2026-10-19T10:00:00Z"); // 12:00 in Europe/Tirane (UTC+
 
 class FakeSource implements AlertSource {
   alerts = new Map<string, AlertView>();
+  /** The site of an alert, where it is not the usual one. */
+  siteNames = new Map<string, string>();
   stable = true;
   /** Accounts the platform has suspended. */
   suspended = new Set<string>();
@@ -27,7 +29,7 @@ class FakeSource implements AlertSource {
     return alert && alert.tenantId === tenantId ? { ...alert } : undefined;
   }
   openAlertsAcrossTenants() {
-    return [...this.alerts.values()].filter((alert) => alert.status === "open").map((alert) => ({ alert: { ...alert }, siteName: "Hotel Adriatik" }));
+    return [...this.alerts.values()].filter((alert) => alert.status === "open").map((alert) => ({ alert: { ...alert }, siteName: this.siteNames.get(alert.id) ?? "Hotel Adriatik" }));
   }
   tenantNameOf(tenantId: string): string {
     return tenantId === T1 ? "Hotel Adriatik Ltd" : "Vlora Farm";
@@ -145,6 +147,7 @@ describe("telling people", () => {
 
     it("sends the text in the cheap alphabet", async () => {
       const alert = source.add({ title: "Tank level is critical" });
+      source.siteNames.set(alert.id, "Hotel Adriatik, Durrës");
       await service.onAlertEvents([{ type: "opened", atMs: NOON, alert, siteName: "Hotel Adriatik, Durrës" }], NOON);
       await service.tick(NOON + 10 * MIN);
       const text = fake.sent.find((message) => message.channel === "sms");

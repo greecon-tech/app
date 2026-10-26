@@ -2,7 +2,7 @@
 
 import { FormEvent, useState, useTransition } from "react";
 import { currencyCodes, siteTemplates } from "@greecon/shared";
-import { createSiteFromTemplateAction } from "../app/admin/actions";
+import { createSiteFromTemplateAction } from "../app/sites/actions";
 
 // A new site starts from the kind of place it is: the template brings the assets, the equipment (with its
 // readings already tied to registers where Greecon knows the meter) and the list of what to bring and ask.

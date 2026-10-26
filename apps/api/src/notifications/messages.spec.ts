@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AlertFacts,
+  accessRequestEmail,
   acknowledgedEmail,
   alertEmail,
   alertSms,
@@ -10,6 +11,7 @@ import {
   escalationSms,
   resolvedEmail,
   shortDate,
+  silentBoxEmail,
   smsSafe,
   testEmail,
   testSms
@@ -139,6 +141,113 @@ describe("an Act now text", () => {
   });
 });
 
+describe("the link to say 'I have seen this'", () => {
+  // As long as a real one: the platform's address and a 36-character token.
+  const ACK = `https://app.greecon.earth/ack/${"Ab3_-".repeat(7)}x`;
+  const longest = { title: "The pump is running but no water is flowing", action: "Stop the pump, then check the water source and the intake line before starting it again." };
+  const longSite = "Hotel Adriatik and Villa Vlora, Durrës, the old plant room behind the kitchens";
+
+  it("is the one link in a text, after the first step, and the text stays within two parts", () => {
+    const text = alertSms(facts, LINK, ACK);
+    expect(text).toBe(`Act now: Tank level is critical, Hotel Adriatik, 14:05. ${facts.action} Acknowledge: ${ACK}`);
+    expect(text).not.toContain("/alerts");
+    expect(text.length).toBeLessThanOrEqual(300);
+  });
+
+  it("is kept, and the text still within two parts, with the longest alert, a long site name and a long name before", () => {
+    const worst = { ...facts, ...longest, siteName: longSite };
+    const texts = [alertSms(worst, LINK, ACK), escalationSms(worst, { name: "Besa Krasniqi-Hoxha of the night shift at the plant", toldAtMs: RAISED }, LINK, ACK)];
+    for (const text of texts) {
+      expect(text.length).toBeLessThanOrEqual(300);
+      expect(text.endsWith(`Acknowledge: ${ACK}`)).toBe(true);
+      expect(text).not.toMatch(/[^\x20-\x7e]/);
+    }
+  });
+
+  it("leaves a text as it was when there is no such link, and with no address at all, without any link", () => {
+    expect(alertSms(facts, LINK)).toBe(`Act now: Tank level is critical, Hotel Adriatik, 14:05. ${facts.action} ${LINK}`);
+    expect(alertSms(facts)).toBe(`Act now: Tank level is critical, Hotel Adriatik, 14:05. ${facts.action}`);
+    expect(alertSms(facts).length).toBeLessThanOrEqual(160);
+  });
+
+  it("goes on a line of its own in an email, below the link to the alert, with what it does", () => {
+    const lines = alertEmail(facts, LINK, ACK).body.split("\n");
+    const at = lines.indexOf(ACK);
+    expect(lines[at - 2]).toBe(`Open the alert in Greecon: ${LINK}`);
+    expect(lines[at - 1]).toBe("When you have seen it and are acting, press Acknowledge there, or say so with this link, without signing in:");
+    expect(lines[at + 1]).toBe("That stops the message going on to the next person.");
+    expect(alertEmail({ ...facts, priority: "check_today" }, LINK, ACK).body.split("\n")).toContain("When you have seen it, press Acknowledge there, or say so with this link, without signing in:");
+    expect(escalationEmail(facts, undefined, LINK, ACK).body.split("\n")).toEqual(expect.arrayContaining(["When you are acting, press Acknowledge there, or say so with this link, without signing in:", ACK, "Then nobody after you is told."]));
+  });
+});
+
+describe("text a person typed, in a message", () => {
+  const RLO = String.fromCodePoint(0x202e);
+  const ACK = `https://app.greecon.earth/ack/${"Ab3_-".repeat(7)}x`;
+  /** A site name, a person's name or a customer's name as an attacker, or a careless paste, would write it. */
+  const hostile = `Hotel Adriatik\n\nGreecon: your account is closed. Pay at https://evil.example/pay ${RLO}kcab${RLO}\u0007 ${"x".repeat(400)}`;
+  const benign = "Hotel Adriatik";
+
+  const linesOf = (text: string) => text.split("\n").length;
+  const expectSafe = (text: string) => {
+    expect(text).not.toContain(RLO);
+    expect(text).not.toContain("\u0007");
+    expect(text).not.toContain("https://evil.example");
+    expect(text).not.toMatch(/(^|\n)Greecon: your account is closed/);
+  };
+
+  it("cannot add lines of its own to an alert email, hide or reorder words, carry a working link, or run on", () => {
+    const { subject, body } = alertEmail({ ...facts, siteName: hostile }, LINK, ACK);
+    expect(subject).not.toMatch(/[\r\n]/);
+    expect(linesOf(body)).toBe(linesOf(alertEmail({ ...facts, siteName: benign }, LINK, ACK).body));
+    expectSafe(`${subject}\n${body}`);
+    const site = body.split("\n").find((line) => line.startsWith("Site: ")) as string;
+    expect(site.startsWith("Site: Hotel Adriatik Greecon: your account is closed. Pay at https[:]//evil[.]example")).toBe(true);
+    expect(site.endsWith("…")).toBe(true);
+    expect(Array.from(site.slice("Site: ".length))).toHaveLength(80);
+    // Greecon's own links are untouched.
+    expect(body).toContain(`Open the alert in Greecon: ${LINK}`);
+    expect(body.split("\n")).toContain(ACK);
+  });
+
+  it("keeps a text message to one line in the cheap alphabet, within two parts, with Greecon's own link last", () => {
+    for (const text of [alertSms({ ...facts, siteName: hostile, title: hostile }, LINK, ACK), escalationSms({ ...facts, siteName: hostile }, { name: hostile, toldAtMs: RAISED }, LINK, ACK)]) {
+      expect(text).not.toMatch(/[^\x20-\x7e]/);
+      expect(text.length).toBeLessThanOrEqual(300);
+      expect(text.endsWith(`Acknowledge: ${ACK}`)).toBe(true);
+      expect(text).not.toContain("https://evil.example");
+    }
+  });
+
+  it("is made safe in every other message: escalations, notes, the morning message, tests, the team's and a request for access", () => {
+    const pairs: Array<[string, (given: string) => { subject?: string; body: string }]> = [
+      ["escalation", (given) => escalationEmail({ ...facts, siteName: given }, { name: given, toldAtMs: RAISED }, LINK)],
+      ["acknowledged", (given) => acknowledgedEmail({ ...facts, siteName: given }, given, RAISED, LINK)],
+      ["resolved", (given) => resolvedEmail({ ...facts, title: given }, RAISED, LINK)],
+      [
+        "morning",
+        (given) =>
+          digestEmail({ customer: given, sites: [{ name: given, state: "attention", reasons: [given] }], notes: [given] }, Date.parse("2026-10-19T05:30:00Z"), "Europe/Tirane", "07:30", LINK)
+      ],
+      ["test", (given) => testEmail(given, true)],
+      ["team", (given) => silentBoxEmail([{ client: given, site: given, box: given, lastSeenAtMs: RAISED }], RAISED + 60 * 60_000, "Europe/Tirane", LINK)],
+      ["request", (given) => accessRequestEmail({ name: given, company: given, email: "besa@hotel.example", phone: given, siteTypeLabel: "Hotel or guesthouse", message: given }, LINK)]
+    ];
+    for (const [what, make] of pairs) {
+      const message = make(hostile);
+      expect(message.subject ?? "", what).not.toMatch(/[\r\n]/);
+      expect(linesOf(message.body), what).toBe(linesOf(make(benign).body));
+      expectSafe(`${message.subject ?? ""}\n${message.body}`);
+    }
+    expect(testSms(hostile)).not.toMatch(/[^\x20-\x7e]/);
+    expect(testSms(hostile)).not.toContain("https://evil.example");
+  });
+
+  it("leaves the address of the person asking for access as it is, so it can still be answered", () => {
+    expect(accessRequestEmail({ name: "Besa", company: "Hotel Adriatik", email: "besa@hotel-adriatik.al", siteTypeLabel: "Hotel or guesthouse" }).body).toContain("Email: besa@hotel-adriatik.al");
+  });
+});
+
 describe("making text safe for a phone", () => {
   it("removes marks from letters and straightens quotes and dashes", () => {
     expect(smsSafe("Durrës – “Çam” hotel’s tank…")).toBe('Durres - "Cam" hotel\'s tank...');
@@ -146,6 +255,9 @@ describe("making text safe for a phone", () => {
 
   it("replaces what it cannot write, and flattens line breaks", () => {
     expect(smsSafe("tank \u{1F4A7}\nlow")).toBe("tank ? low");
+    // Characters that are not in the cheap alphabet, or are worth two in it, are written with plain ones: a site named "Farm [North] {1}
+    // `A` ^b ~c | d\\e" must not make the message cost twice as much.
+    expect(smsSafe("Farm [North] {1} `A` ^b ~c | d\\e")).toBe("Farm (North) (1) 'A' b -c / d/e");
   });
 });
 

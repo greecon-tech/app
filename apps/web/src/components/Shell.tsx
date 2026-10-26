@@ -1,13 +1,33 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { GREECON_COMPANY, GREECON_DOMAIN, GREECON_PUBLIC_EMAILS, userRoles } from "@greecon/shared";
-import { DEMO_ROLE } from "../lib/api";
+import { AccessRequest, DEMO_TENANT_ID, userRoles } from "@greecon/shared";
+import { apiGet, DEMO_ROLE } from "../lib/api";
 import { logoutAction } from "../app/login/actions";
 import { leaveSetupAction } from "../app/platform/actions";
+import { roleLabel } from "../lib/roles";
 import { getSession } from "../lib/session";
-import { Nav, SectionTabs } from "./Nav";
+import { DemoBanner } from "./DemoBanner";
+import { Frame } from "./Frame";
+import { UserMenu } from "./UserMenu";
 
-export async function Shell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
+/** How many requests for access nobody has looked at yet, for the badge on Requests. It must never be the reason a page fails. */
+async function requestsWaiting(): Promise<number> {
+  try {
+    return (await apiGet<AccessRequest[]>("/platform-admin/access-requests")).filter((request) => request.status === "new").length;
+  } catch (error) {
+    // A session the platform no longer accepts is sent to the sign-in page (apiGet redirects); that is the page's business, not something to swallow here.
+    if (typeof error === "object" && error !== null && String((error as { digest?: unknown }).digest ?? "").startsWith("NEXT_REDIRECT")) throw error;
+    return 0;
+  }
+}
+
+/**
+ * The frame of every page, with the person it is for filled in (docs/28-ux-definition.md, section 5).
+ *
+ * Greecon's team has its own five places and its own home (Today); everyone else has the client's. A member of the team who is
+ * inside a customer's account to set it up sees that customer's places, under a banner that says whose account it is.
+ */
+export async function Shell({ children, title, subtitle, action }: { children: ReactNode; title: string; subtitle?: string; action?: ReactNode }) {
   // Set only by the multi-role GitHub Pages build (docs/12-deployment-github-pages.md), which
   // publishes one static snapshot per role under sibling paths — a normal SSR deployment has a
   // single live role and no sibling builds to switch to, so the menu stays hidden there.
@@ -16,86 +36,67 @@ export async function Shell({ children, title, subtitle }: { children: ReactNode
   // since middleware.ts already redirected anyone without one to /login before this rendered.
   const session = await getSession();
   const role = session?.user.role ?? DEMO_ROLE;
-  const roleLabel = titleCase(role);
-  const isPlatformAdmin = session?.user.isPlatformAdmin ?? false;
+  const roleName = roleLabel(role);
+  const audience = session?.user.isPlatformAdmin && !session.user.support ? "team" : "client";
+  const waiting = audience === "team" ? await requestsWaiting() : 0;
+  const home = audience === "team" ? "/today" : "/";
+
+  const isDemoAccount = session?.user.tenantId === DEMO_TENANT_ID;
+  const banner = session?.user.support ? (
+    <div className="support-banner" role="status">
+      <p>
+        You are in <strong>{session.user.customer ?? "a customer's account"}</strong> as Greecon staff, setting it up. What you do here is recorded under your name in their audit trail.
+        You cannot add people to the account or change their passwords.
+      </p>
+      <form action={leaveSetupAction}>
+        <button type="submit" className="button-ghost">
+          Back to the Greecon console
+        </button>
+      </form>
+    </div>
+  ) : isDemoAccount ? (
+    <DemoBanner />
+  ) : undefined;
+
+  const tools =
+    siteRoot !== undefined ? (
+      <details className="user-menu role-switch">
+        <summary aria-label={`Viewing as ${roleName}. Choose another role`}>
+          <span className="user-menu__who user-menu__who--always">
+            <span>Viewing as</span>
+            <strong>{roleName}</strong>
+          </span>
+        </summary>
+        <div className="user-menu__panel">
+          {userRoles
+            .filter((other) => other !== DEMO_ROLE)
+            .map((other) => (
+              <a href={`${siteRoot}${other === "operator" ? "/" : `/${other}/`}`} key={other}>
+                {roleLabel(other)}
+              </a>
+            ))}
+        </div>
+      </details>
+    ) : session ? (
+      <UserMenu
+        name={session.user.name}
+        role={roleName}
+        email={session.user.email}
+        logout={
+          <form action={logoutAction}>
+            <button type="submit" className="button-ghost">
+              Log out
+            </button>
+          </form>
+        }
+      />
+    ) : (
+      <UserMenu name="Secure access" role={roleName} />
+    );
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar" aria-label="Main navigation">
-        <Link href="/" className="brand">
-          <img src={`${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`} alt="" width="22" height="31" />
-          <span>Greecon</span>
-        </Link>
-        <Nav role={role} isPlatformAdmin={isPlatformAdmin} />
-        <div className="sidebar-foot">
-          <p>{GREECON_COMPANY}</p>
-          <span>{GREECON_DOMAIN}</span>
-          <span className="sidebar-foot__links">
-            <a href={`mailto:${GREECON_PUBLIC_EMAILS[0]}`}>Help</a> · <Link href="/privacy">Privacy</Link>
-          </span>
-        </div>
-      </aside>
-      <div className="workspace">
-        {session?.user.support ? (
-          <div className="support-banner" role="status">
-            <p>
-              You are in <strong>{session.user.customer ?? "a customer's account"}</strong> as Greecon staff, setting it up. What you do here is recorded under your name in their audit
-              trail. You cannot add people to the account or change their passwords.
-            </p>
-            <form action={leaveSetupAction}>
-              <button type="submit" className="button-ghost">
-                Back to the Greecon console
-              </button>
-            </form>
-          </div>
-        ) : null}
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Greecon Platform</p>
-            <h1>{title}</h1>
-            {subtitle ? <p className="topbar__subtitle">{subtitle}</p> : null}
-          </div>
-          {siteRoot !== undefined ? (
-            <details className="role-switch">
-              <summary className="access-chip">
-                <div>
-                  <span>Viewing as</span>
-                  <strong>{roleLabel}</strong>
-                </div>
-              </summary>
-              <div className="role-switch__menu">
-                {userRoles
-                  .filter((role) => role !== DEMO_ROLE)
-                  .map((role) => (
-                    <a href={`${siteRoot}${role === "operator" ? "/" : `/${role}/`}`} key={role}>
-                      {titleCase(role)}
-                    </a>
-                  ))}
-              </div>
-            </details>
-          ) : (
-            <div className="access-chip">
-              <div>
-                <span>{session ? session.user.name : "Secure access"}</span>
-                <strong>{roleLabel}</strong>
-              </div>
-              {session ? (
-                <form action={logoutAction}>
-                  <button type="submit" className="button-ghost">
-                    Log out
-                  </button>
-                </form>
-              ) : null}
-            </div>
-          )}
-        </header>
-        <SectionTabs role={role} />
-        <main>{children}</main>
-      </div>
-    </div>
+    <Frame audience={audience} role={role} home={home} waiting={waiting} title={title} subtitle={subtitle} action={action} tools={tools} banner={banner}>
+      {children}
+    </Frame>
   );
-}
-
-function titleCase(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

@@ -1,12 +1,15 @@
 import { Logger } from "@nestjs/common";
 import { AccessRequest, requestedSiteTypeLabels } from "@greecon/shared";
+import { configuredPublicWebUrl } from "../common/public-url";
+import { AccessRequestNotifier, SALES_EMAILS_PER_DAY } from "../modules/access-requests/access-requests.service";
 import { Channels } from "./channels";
-import { accessRequestEmail } from "./messages";
+import { Message, accessRequestEmail, accessRequestFloodEmail } from "./messages";
 
 /** Tells Greecon's own team, by email, when someone asks to be set up, so that a request is answered the same
  * day instead of sitting in the inbox until someone looks. The inbox stays the record; this is a courtesy on
- * top of it. Absent when email is not set up or nobody is named in SALES_NOTIFY_EMAIL. */
-export function createAccessRequestNotifier(channels: Channels, env: NodeJS.ProcessEnv): ((request: AccessRequest) => Promise<void>) | undefined {
+ * top of it. In a flood of requests it says so once, instead of once for each (AccessRequestsService). Absent
+ * when email is not set up or nobody is named in SALES_NOTIFY_EMAIL. */
+export function createAccessRequestNotifier(channels: Channels, env: NodeJS.ProcessEnv): AccessRequestNotifier | undefined {
   const recipients = (env.SALES_NOTIFY_EMAIL ?? "")
     .split(",")
     .map((address) => address.trim().toLowerCase())
@@ -15,15 +18,22 @@ export function createAccessRequestNotifier(channels: Channels, env: NodeJS.Proc
   if (!email || recipients.length === 0) return undefined;
 
   const logger = new Logger("AccessRequestNotifier");
-  const webUrl = env.PUBLIC_WEB_URL?.replace(/\/+$/, "");
-  return async (request) => {
-    const message = accessRequestEmail(
-      { name: request.name, company: request.company, email: request.email, phone: request.phone, siteTypeLabel: requestedSiteTypeLabels[request.siteType] ?? request.siteType, message: request.message },
-      webUrl ? `${webUrl}/platform` : undefined
-    );
+  const webUrl = configuredPublicWebUrl(env);
+  const link = webUrl ? `${webUrl}/platform` : undefined;
+  const tellEveryone = async (message: Message, key: string, what: string): Promise<void> => {
     for (const to of recipients) {
-      const result = await email.send({ to, subject: message.subject ?? "New request for access", body: message.body, idempotencyKey: `access-request:${request.id}:${to}` });
-      if (!result.ok) logger.warn(`Could not tell ${to} about request ${request.id}: ${result.error}`);
+      const result = await email.send({ to, subject: message.subject ?? "Greecon", body: message.body, idempotencyKey: `${key}:${to}` });
+      if (!result.ok) logger.warn(`Could not tell ${to} about ${what}: ${result.error}`);
     }
   };
+  const aboutOne = async (request: AccessRequest): Promise<void> => {
+    const message = accessRequestEmail(
+      { name: request.name, company: request.company, email: request.email, phone: request.phone, siteTypeLabel: requestedSiteTypeLabels[request.siteType] ?? request.siteType, message: request.message },
+      link
+    );
+    await tellEveryone(message, `access-request:${request.id}`, `request ${request.id}`);
+  };
+  const flood = (requestsInTheLastDay: number): Promise<void> =>
+    tellEveryone(accessRequestFloodEmail(requestsInTheLastDay, SALES_EMAILS_PER_DAY, link), `access-request-flood:${Date.now()}`, "a flood of requests");
+  return Object.assign(aboutOne, { flood });
 }

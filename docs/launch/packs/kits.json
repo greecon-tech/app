@@ -1,0 +1,396 @@
+{
+  "about": "What each standard kit contains, taken from docs/launch/03-hardware-and-wiring.md, section 2 (the rows, the quantities and the planning estimates in EUR, excluding VAT and labour). The site packs, the hardware reference and the shopping lists in the guides are all written from this one file, so they cannot disagree with each other. Change a figure here and rebuild. The estimates are planning figures, not quotes.",
+  "parts": {
+    "box": {
+      "row": 1,
+      "item": "Box",
+      "spec": "Fanless x86 mini PC (see the box specification), 8 GB, 128 GB or more SSD or eMMC, 12 to 24 V DC input",
+      "estimate": "180 to 300",
+      "does": "Reads the meters and sensors and reports to Greecon. If the internet is down it keeps about three days of readings (for a site of up to about thirteen devices) and sends them in order when the internet returns."
+    },
+    "converter": {
+      "row": 2,
+      "item": "Converter",
+      "spec": "RS-485 to Ethernet, DIN rail, 9 to 36 V DC, Modbus TCP to RTU gateway mode",
+      "estimate": "30 to 60 (basic) or 250 and up (industrial)",
+      "does": "Puts the meters' cable (RS-485) on the network, so that the box can reach every meter and module on it. It must be in Modbus TCP to RTU gateway mode."
+    },
+    "meter3": {
+      "row": 3,
+      "item": "Three-phase meter",
+      "spec": "Eastron SDM630 Modbus. The MCT version comes with three clamp-on current sensors for up to 100 A a phase; for more than 100 A, the ordinary SDM630 with 5 A current transformers",
+      "estimate": "90 to 180 each",
+      "does": "Measures electrical power on three phases. One at the grid connection gives both Grid import and Grid export; one on the inverter's AC output gives Solar production. Fitted by the electrician."
+    },
+    "analog": {
+      "row": 4,
+      "item": "Analog input module",
+      "spec": "Modbus RTU, at least 4 channels, 4 to 20 mA, 7 to 36 V DC",
+      "estimate": "30 to 60 (basic) or 150 to 250 (industrial)",
+      "does": "Reads the 4 to 20 mA signals of the level, pressure and flow transmitters, and the pump's run contact, and answers the box on the same RS-485 cable as the meters."
+    },
+    "pumpin": {
+      "row": 5,
+      "item": "Pump run input",
+      "spec": "A Modbus RTU digital input (dry contact) module, or one spare channel of a combined module",
+      "estimate": "30 to 60",
+      "does": "Reports whether the pump is running, from a spare contact of its starter. It only reports; it never switches anything."
+    },
+    "level": {
+      "row": 6,
+      "item": "Level transmitter",
+      "spec": "Submersible, vented cable, 4 to 20 mA, range at least the tank's height, wetted parts approved for drinking water (or a non-contact ultrasonic sensor above the tank)",
+      "estimate": "120 to 400",
+      "does": "Measures how full the tank is. It hangs at the bottom of the tank."
+    },
+    "pressure": {
+      "row": 7,
+      "item": "Pressure transmitter",
+      "spec": "4 to 20 mA, range to suit the pipe (0 to 10 bar is usual), stainless wetted parts",
+      "estimate": "40 to 150",
+      "does": "Measures the pressure in the pipe, through an isolating valve so that it can be removed without draining."
+    },
+    "flow": {
+      "row": 8,
+      "item": "Flow meter",
+      "spec": "4 to 20 mA output. Needed for \"the pump is running but no water is flowing\"",
+      "estimate": "150 to 500",
+      "does": "Measures the flow in the pipe. Without it (or without the pump's running contact) the alert for a pump that runs with no water moving cannot be raised."
+    },
+    "psu": {
+      "row": 9,
+      "item": "24 V DIN power supply",
+      "spec": "30 to 60 W",
+      "estimate": "25 to 50",
+      "does": "Powers the input module, the loop transmitters and the converter from one place."
+    },
+    "ups": {
+      "row": 10,
+      "item": "UPS",
+      "spec": "A 12 V DC UPS for the box and converter, or a 600 VA line-interactive UPS",
+      "estimate": "60 to 150",
+      "does": "Keeps the box and the converter up through short power cuts and long enough to say that the grid is down."
+    },
+    "enclosure": {
+      "row": 11,
+      "item": "Enclosure and fittings",
+      "spec": "IP54 (IP65 outdoors), DIN rail, terminals, fuses or small breakers for the meters' voltage taps, glands",
+      "estimate": "80 to 150",
+      "does": "Holds the converter, the input module, the supply, the fuses, the terminal blocks and, if there is room, the box."
+    },
+    "cable": {
+      "row": 12,
+      "item": "Cable and labels",
+      "spec": "Shielded twisted pair for the RS-485 line, network patch cords, ferrules, labels",
+      "estimate": "40 to 80",
+      "does": "The RS-485 data cable (shielded twisted pair), network patch cords, ferrules and labels."
+    },
+    "cell": {
+      "row": 13,
+      "item": "Cellular router",
+      "spec": "4G, DIN rail, data SIM",
+      "estimate": "150 to 200",
+      "does": "Gives the box and the converter an internet connection where the site has no usable one: a 4G router with a data SIM."
+    },
+    "sdm230": {
+      "row": null,
+      "item": "Single-phase meter",
+      "spec": "Eastron SDM230, on the pump's feed, to measure its electricity",
+      "estimate": "35 to 60",
+      "does": "Measures the electricity of one pump or a small load (single-phase), on its own feed."
+    },
+    "soil": {
+      "row": null,
+      "item": "Soil moisture probe",
+      "spec": "RS-485 Modbus, with a published register table, one for each zone",
+      "estimate": "40 to 120 each",
+      "does": "Measures soil moisture at the probe's depth. Its depth and place are written down, because soil readings mean little without them."
+    },
+    "climate": {
+      "row": null,
+      "item": "Temperature and humidity sensor",
+      "spec": "RS-485 Modbus, with a published register table",
+      "estimate": "20 to 80",
+      "does": "Measures air temperature and humidity at the field."
+    }
+  },
+  "kits": {
+    "H": {
+      "letter": "H",
+      "name": "Hotel or guesthouse",
+      "short": "Water, solar and grid",
+      "template": "Hotel or guesthouse",
+      "pdf": "04-Site-Pack-H-Hotel-or-Guesthouse.pdf",
+      "headline": "About EUR 800 to 1,800; typically 1,100 to 1,300. Add the electrician's time (half a day to a day) and yours.",
+      "bom": [
+        {
+          "part": "box",
+          "qty": "1"
+        },
+        {
+          "part": "converter",
+          "qty": "1"
+        },
+        {
+          "part": "meter3",
+          "qty": "2",
+          "note": "one at the grid connection, one on the inverter's AC output"
+        },
+        {
+          "part": "analog",
+          "qty": "1"
+        },
+        {
+          "part": "pumpin",
+          "qty": "1"
+        },
+        {
+          "part": "level",
+          "qty": "1"
+        },
+        {
+          "part": "pressure",
+          "qty": "1"
+        },
+        {
+          "part": "flow",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "needed for the no-flow alert"
+        },
+        {
+          "part": "psu",
+          "qty": "1"
+        },
+        {
+          "part": "ups",
+          "qty": "1"
+        },
+        {
+          "part": "enclosure",
+          "qty": "1"
+        },
+        {
+          "part": "cable",
+          "qty": "1 lot"
+        },
+        {
+          "part": "cell",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "only without usable internet"
+        }
+      ],
+      "running": "Hotel or guesthouse"
+    },
+    "S": {
+      "letter": "S",
+      "name": "Solar plant with grid connection",
+      "short": "Solar and grid, with an optional battery",
+      "template": "Solar plant with grid connection",
+      "pdf": "05-Site-Pack-S-Solar-Plant.pdf",
+      "headline": "About EUR 600 to 1,200.",
+      "bom": [
+        {
+          "part": "box",
+          "qty": "1"
+        },
+        {
+          "part": "converter",
+          "qty": "1"
+        },
+        {
+          "part": "meter3",
+          "qty": "2, or 3",
+          "note": "grid and solar; a third on the site's own consumption if the owner wants it measured"
+        },
+        {
+          "part": "psu",
+          "qty": "1"
+        },
+        {
+          "part": "ups",
+          "qty": "1"
+        },
+        {
+          "part": "enclosure",
+          "qty": "1"
+        },
+        {
+          "part": "cable",
+          "qty": "1 lot"
+        },
+        {
+          "part": "cell",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "only without usable internet; not in the hardware guide's list for this kit, see the network rules"
+        }
+      ],
+      "running": "Solar plant"
+    },
+    "F": {
+      "letter": "F",
+      "name": "Farm or greenhouse with irrigation",
+      "short": "Soil and weather, with the water supply behind it",
+      "template": "Farm or greenhouse with irrigation",
+      "pdf": "06-Site-Pack-F-Farm-or-Greenhouse.pdf",
+      "headline": "About EUR 700 to 1,500.",
+      "bom": [
+        {
+          "part": "box",
+          "qty": "1"
+        },
+        {
+          "part": "converter",
+          "qty": "1"
+        },
+        {
+          "part": "analog",
+          "qty": "1"
+        },
+        {
+          "part": "level",
+          "qty": "1"
+        },
+        {
+          "part": "pressure",
+          "qty": "1"
+        },
+        {
+          "part": "psu",
+          "qty": "1"
+        },
+        {
+          "part": "enclosure",
+          "qty": "1"
+        },
+        {
+          "part": "cable",
+          "qty": "1 lot"
+        },
+        {
+          "part": "cell",
+          "qty": "0 or 1",
+          "note": "the likelier case in a field"
+        },
+        {
+          "part": "soil",
+          "qty": "1 for each zone"
+        },
+        {
+          "part": "climate",
+          "qty": "1"
+        },
+        {
+          "part": "pumpin",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "if there is a pump to watch"
+        },
+        {
+          "part": "flow",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "if there is a pump to watch"
+        }
+      ],
+      "running": "Farm or greenhouse"
+    },
+    "W": {
+      "letter": "W",
+      "name": "Water tank and pump station",
+      "short": "Tank, pump and the pipe it feeds",
+      "template": "Water tank and pump station",
+      "pdf": "07-Site-Pack-W-Water-Tank-and-Pump-Station.pdf",
+      "headline": "About EUR 650 to 1,300.",
+      "bom": [
+        {
+          "part": "box",
+          "qty": "1"
+        },
+        {
+          "part": "converter",
+          "qty": "1"
+        },
+        {
+          "part": "analog",
+          "qty": "1"
+        },
+        {
+          "part": "pumpin",
+          "qty": "1"
+        },
+        {
+          "part": "level",
+          "qty": "1"
+        },
+        {
+          "part": "pressure",
+          "qty": "1"
+        },
+        {
+          "part": "flow",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "needed for the no-flow alert"
+        },
+        {
+          "part": "psu",
+          "qty": "1"
+        },
+        {
+          "part": "ups",
+          "qty": "1"
+        },
+        {
+          "part": "enclosure",
+          "qty": "1"
+        },
+        {
+          "part": "cable",
+          "qty": "1 lot"
+        },
+        {
+          "part": "cell",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "only without usable internet"
+        },
+        {
+          "part": "sdm230",
+          "qty": "0 or 1",
+          "optional": true,
+          "note": "to measure the pump's electricity"
+        }
+      ],
+      "running": "Water tank and pump station"
+    }
+  },
+  "spares": [
+    "A converter",
+    "An input module",
+    "A meter",
+    "A 24 V supply",
+    "A transmitter (pressure)",
+    "A spare box, pre-installed, with no code, ready to take one",
+    "Network cables",
+    "A loop calibrator",
+    "A multimeter",
+    "Fuses",
+    "A spare SIM"
+  ],
+  "tools": [
+    "A laptop",
+    "A USB-to-RS-485 adapter (to talk to a meter alone)",
+    "A loop calibrator (or a 4 to 20 mA source)",
+    "A multimeter",
+    "Screwdrivers (slotted and Phillips, small and medium)",
+    "Wire strippers and a ferrule crimper",
+    "A network cable tester",
+    "Cable ties and labels",
+    "A head torch",
+    "Spare fuses and terminals",
+    "A phone for photographs"
+  ]
+}

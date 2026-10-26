@@ -1,0 +1,3 @@
+::: do
+**The internet cut, step by step.** Cut only the site's internet, for ten minutes: unplug the router's uplink cable (the one that goes to the wall or the modem), or take the SIM out of the cellular router. **Leave the box and the converter plugged into the router:** if the box cannot reach the converter it reads nothing, and there is nothing to test. While it is out, `greecon-edge status` shows a queue. Then restore the internet. A few minutes after it returns the queue is empty and the readings from the gap are in the downloads. **Write the result down:** it is the evidence for the statement that the box keeps its readings.
+:::

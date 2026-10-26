@@ -57,6 +57,7 @@ export * from "./device-profiles";
 export * from "./site-templates";
 export * from "./setup";
 export * from "./notifications";
+export * from "./acknowledge-link";
 export * from "./fleet";
 
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;

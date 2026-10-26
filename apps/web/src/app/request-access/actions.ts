@@ -42,7 +42,12 @@ export async function requestAccessAction(input: AccessRequestInput): Promise<{ 
   }
 
   if (response.status === 429) return { error: "Too many requests right now. Please try again later, or write to info@greecon.earth." };
-  if (response.status === 400) return { error: "Something in the form is not valid. Please check the email address and try again." };
+  if (response.status === 400) {
+    // The API words its own refusals for this form ("Please give at most 2 web addresses in your message."): say those as they are,
+    // so that a real prospect knows what to change. What it did not word itself (a field the form's own checks missed) stays general.
+    const refusal = (await response.json().catch(() => undefined)) as { message?: unknown } | undefined;
+    return { error: typeof refusal?.message === "string" && refusal.message.startsWith("Please ") ? refusal.message : "Something in the form is not valid. Please check the email address and try again." };
+  }
   if (!response.ok) return { error: "Something went wrong on our side. Please try again, or write to info@greecon.earth." };
   return { received: true };
 }

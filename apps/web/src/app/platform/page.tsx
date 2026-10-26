@@ -1,18 +1,19 @@
 import Link from "next/link";
-import { AccessRequest, FleetRow, requestedSiteTypeLabels, StaffMember } from "@greecon/shared";
-import { Ago } from "../../components/Ago";
-import { DataTable } from "../../components/DataTable";
-import { FleetTable } from "../../components/FleetTable";
+import { AccessRequest } from "@greecon/shared";
 import { ClientPeople } from "../../components/ClientPeople";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
+import { DataTable } from "../../components/DataTable";
 import { OpenForSetupButton } from "../../components/OpenForSetupButton";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
-import { TeamMembers } from "../../components/TeamMembers";
+import { StatusBadge } from "../../components/StatusBadge";
 import { requirePlatformAdmin } from "../../lib/access";
 import { apiGet } from "../../lib/api";
 import { getSession } from "../../lib/session";
-import { updateAccessRequestAction, updateTenantStatusAction } from "./actions";
+import { isOwnAccount } from "../../lib/team";
+import { updateTenantStatusAction } from "./actions";
+
+export const metadata = { title: "Clients" };
 
 interface TenantSummary {
   id: string;
@@ -30,17 +31,16 @@ interface TenantsResponse {
   pageSize: number;
 }
 
-// Manages Greecon's own clients (tenants) — separate from /admin, which manages users/sites
-// within one client's own account. Only ever reachable by a real logged-in platform-admin session
-// (see apps/api/src/common/principal.ts); this page is only used for the SSR build (Railway/GCP)
-// — see platform/page.static.tsx for the static GitHub Pages twin.
+// Greecon's own clients (tenants), as a list to open from — separate from /people (/admin), which manages the people of one
+// client's own account. Only ever reachable by a real logged-in platform-admin session (see apps/api/src/common/principal.ts);
+// this page is only used for the SSR build (Railway/GCP) — see platform/page.static.tsx for the static GitHub Pages twin.
 //
 // Search + pagination are server-side (see PlatformService.listAllTenants) — at pilot scale
 // ("about to have 1600 customers or more") a plain fetch-and-render of every client was the one
 // screen in the app that could not stay unpaginated.
 export const dynamic = "force-dynamic";
 
-export default async function PlatformAdminPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; onboard?: string }> }) {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; onboard?: string }> }) {
   const session = await getSession();
   requirePlatformAdmin(session?.user.isPlatformAdmin ?? false);
 
@@ -51,139 +51,94 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
   const query = new URLSearchParams({ page: String(page), pageSize: "25" });
   if (search) query.set("q", search);
 
-  const [{ tenants, total, pageSize }, requests, team, fleet] = await Promise.all([
+  const [{ tenants, total, pageSize }, requests] = await Promise.all([
     apiGet<TenantsResponse>(`/platform-admin/tenants?${query.toString()}`),
-    apiGet<AccessRequest[]>("/platform-admin/access-requests"),
-    apiGet<StaffMember[]>("/platform-admin/staff"),
-    apiGet<FleetRow[]>("/platform-admin/fleet")
+    params.onboard && params.onboard !== "new" ? apiGet<AccessRequest[]>("/platform-admin/access-requests") : Promise.resolve([] as AccessRequest[])
   ]);
   const lastPage = Math.max(Math.ceil(total / pageSize), 1);
-  const open = requests.filter((request) => request.status === "new" || request.status === "contacted");
-  const onboarding = params.onboard ? requests.find((request) => request.id === params.onboard) : undefined;
+  const onboarding = params.onboard && params.onboard !== "new" ? requests.find((request) => request.id === params.onboard) : undefined;
+  const clients = tenants.filter((tenant) => !isOwnAccount(tenant.domain));
+  const own = tenants.filter((tenant) => isOwnAccount(tenant.domain));
+  const canReset = session?.user.role === "owner";
+
+  const columns = [
+    {
+      key: "name" as const,
+      label: "Client",
+      render: (tenant: TenantSummary) => (
+        <>
+          <strong>{tenant.name}</strong>
+          <br />
+          <span className="muted">{tenant.domain}</span>
+        </>
+      )
+    },
+    { key: "siteCount" as const, label: "Sites" },
+    {
+      key: "userCount" as const,
+      label: "People",
+      render: (tenant: TenantSummary) => (
+        <>
+          {tenant.userCount}
+          <ClientPeople tenantId={tenant.id} clientName={tenant.name} canReset={canReset} />
+        </>
+      )
+    },
+    { key: "status" as const, label: "State", render: (tenant: TenantSummary) => <StatusBadge status={tenant.status === "active" ? "Active" : "Suspended"} /> },
+    {
+      key: "id" as const,
+      label: "",
+      render: (tenant: TenantSummary) => (
+        <div className="row-actions">
+          <OpenForSetupButton tenantId={tenant.id} name={tenant.name} disabled={tenant.status !== "active"} primary />
+          <details className="row-menu">
+            <summary>More</summary>
+            <div className="row-menu__panel">
+              <form action={updateTenantStatusAction.bind(null, tenant.id, tenant.status === "active" ? "suspended" : "active")}>
+                <button type="submit" className="button-ghost">
+                  {tenant.status === "active" ? "Suspend this client" : "Reactivate this client"}
+                </button>
+              </form>
+              <p className="muted">{tenant.status === "active" ? "Its people cannot sign in and its box is turned away. Nothing is deleted." : "Its people can sign in again and its box reports again."}</p>
+            </div>
+          </details>
+        </div>
+      )
+    }
+  ];
 
   return (
-    <Shell title="Clients" subtitle="Onboard and manage every Greecon client account. Visible only to Greecon platform administrators.">
-      <Section title="Requests" aside={<span className="muted">{open.length} waiting</span>}>
-        {open.length === 0 ? (
-          <div className="empty-state">No one is waiting. Requests from the sign-in page appear here.</div>
-        ) : (
-          <DataTable
-            rows={open}
-            columns={[
-              { key: "createdAtUtc", label: "Received", render: (request) => <Ago iso={request.createdAtUtc} /> },
-              {
-                key: "company",
-                label: "Who",
-                render: (request) => (
-                  <>
-                    <strong>{request.company}</strong>
-                    <br />
-                    {request.name}
-                  </>
-                )
-              },
-              {
-                key: "email",
-                label: "Contact",
-                render: (request) => (
-                  <>
-                    <a href={`mailto:${request.email}`}>{request.email}</a>
-                    {request.phone ? (
-                      <>
-                        <br />
-                        <a href={`tel:${request.phone.replace(/\s+/g, "")}`}>{request.phone}</a>
-                      </>
-                    ) : null}
-                  </>
-                )
-              },
-              { key: "siteType", label: "Runs", render: (request) => requestedSiteTypeLabels[request.siteType] },
-              { key: "message", label: "Said", render: (request) => request.message ?? "" },
-              {
-                key: "status",
-                label: "Next",
-                render: (request) => (
-                  <div className="rule-actions">
-                    <Link href={`/platform?onboard=${request.id}#onboard`} className="button-primary">
-                      Onboard
-                    </Link>
-                    {request.status === "new" ? (
-                      <form action={updateAccessRequestAction.bind(null, request.id, "contacted")}>
-                        <button type="submit" className="button-ghost">
-                          Mark contacted
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="muted">Contacted</span>
-                    )}
-                    <form action={updateAccessRequestAction.bind(null, request.id, "declined")}>
-                      <button type="submit" className="button-ghost">
-                        Decline
-                      </button>
-                    </form>
-                  </div>
-                )
-              }
-            ]}
-          />
-        )}
-      </Section>
-      <Section title="Sites across clients" aside={<span className="muted">Worst first. Look here each morning.</span>}>
-        <FleetTable rows={fleet} nowMs={Date.now()} />
-      </Section>
-      <section id="onboard" className="section">
-        <div className="section__header">
-          <h2>Onboard a new client</h2>
-          <div>
-            <span className="muted">{onboarding ? `From the request by ${onboarding.name}` : "Creates the client's account and its first owner login"}</span>
-          </div>
-        </div>
+    <Shell
+      title="Clients"
+      subtitle="Every customer account. Open one to set it up or to look after it."
+      action={
+        <Link href="/platform?onboard=new#onboard" className="button-primary">
+          Onboard a client
+        </Link>
+      }
+    >
+      <details className="panel onboard" id="onboard" open={Boolean(params.onboard)}>
+        <summary>
+          <h2>Onboard a client</h2>
+          <span className="muted">{onboarding ? `From the request by ${onboarding.name}` : "Creates the client's account and its first owner login"}</span>
+        </summary>
         <CreateTenantForm
           key={onboarding?.id ?? "blank"}
           prefill={onboarding ? { requestId: onboarding.id, name: onboarding.company, ownerName: onboarding.name, ownerEmail: onboarding.email } : undefined}
         />
-      </section>
-      <Section title="All clients" aside={<span className="muted">{total} total</span>}>
-        <form method="get" className="user-row-form" style={{ marginBottom: 12 }}>
-          <input type="search" name="q" placeholder="Search by name, domain, or status" defaultValue={search} />
+      </details>
+
+      <Section title="All clients" aside={<span className="muted">{clients.length} {clients.length === 1 ? "client" : "clients"}{search ? ` matching "${search}"` : ""}</span>}>
+        <form method="get" className="client-search" role="search">
+          <label className="visually-hidden" htmlFor="client-search">
+            Search clients
+          </label>
+          <input id="client-search" type="search" name="q" placeholder="Search by name or domain" defaultValue={search} />
           <button type="submit" className="button-ghost">
             Search
           </button>
         </form>
-        <DataTable
-          rows={tenants}
-          columns={[
-            { key: "name", label: "Client" },
-            { key: "domain", label: "Domain" },
-            {
-              key: "userCount",
-              label: "Users",
-              render: (tenant) => (
-                <>
-                  {tenant.userCount}
-                  <ClientPeople tenantId={tenant.id} clientName={tenant.name} canReset={session?.user.role === "owner"} />
-                </>
-              )
-            },
-            { key: "siteCount", label: "Sites" },
-            {
-              key: "id",
-              label: "Setup",
-              render: (tenant) => <OpenForSetupButton tenantId={tenant.id} name={tenant.name} disabled={tenant.status !== "active"} />
-            },
-            {
-              key: "status",
-              label: "Status",
-              render: (tenant) => (
-                <form action={updateTenantStatusAction.bind(null, tenant.id, tenant.status === "active" ? "suspended" : "active")}>
-                  <button type="submit" className={tenant.status === "active" ? "button-ghost" : undefined}>
-                    {tenant.status === "active" ? "Active — Suspend" : "Suspended — Reactivate"}
-                  </button>
-                </form>
-              )
-            }
-          ]}
-        />
+        <DataTable rows={clients} emptyLabel={search ? "No client matches that." : "No client yet. Use Onboard a client, or look at Requests."} columns={columns} />
         {lastPage > 1 ? (
           <div className="dashboard-order-controls">
             <Link href={buildHref(search, page - 1)} aria-disabled={page <= 1} className="button-ghost">
@@ -198,9 +153,14 @@ export default async function PlatformAdminPage({ searchParams }: { searchParams
           </div>
         ) : null}
       </Section>
-      <Section title="Greecon team" aside={<span className="muted">{team.length} {team.length === 1 ? "person" : "people"}</span>}>
-        <TeamMembers members={team} canChange={session?.user.role === "owner"} />
-      </Section>
+
+      {own.length > 0 ? (
+        <details className="panel own-accounts">
+          <summary>Greecon's own accounts ({own.length})</summary>
+          <p className="muted">The team's own account and the published demo. They are not customers.</p>
+          <DataTable rows={own} columns={columns.filter((column) => column.key !== "id")} />
+        </details>
+      ) : null}
     </Shell>
   );
 }

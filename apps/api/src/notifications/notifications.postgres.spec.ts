@@ -88,6 +88,30 @@ describe.skipIf(!testDatabaseUrl)("the message outbox, on a real PostgreSQL", ()
     });
   });
 
+  it("keeps a message to Greecon's team about a silent box, and a line that stands for one told with others, in one statement", async () => {
+    await inWorld(async ({ connect, tenants }) => {
+      const db = connect();
+      const outbox = new PostgresOutboxStore(db);
+      const team = { alertId: undefined, priority: undefined, kind: "box_silent" as const, subject: "Box silent: Hotel Adriatik Ltd, Main site" };
+      const stored = await outbox.plan(
+        tenants[0],
+        [
+          message({ ...team, dedupeKey: "boxes-silent:00000000-0000-4000-8000-000000000001:1:c1" }),
+          message({ ...team, dedupeKey: "box-silent:00000000-0000-4000-8000-000000000001:1", skipped: "Told in one message about the 3 boxes that went silent at the same time." })
+        ],
+        NOON
+      );
+      expect(stored.map((row) => `${row.kind} ${row.status} ${row.error ?? ""}`.trim())).toEqual([
+        "box_silent planned",
+        "box_silent skipped Told in one message about the 3 boxes that went silent at the same time."
+      ]);
+      // Only the message is handed out to be sent; the line is in the log, and its key is taken.
+      expect((await outbox.claimDue(NOON, 10)).map((row) => row.dedupeKey)).toEqual(["boxes-silent:00000000-0000-4000-8000-000000000001:1:c1"]);
+      expect(await outbox.existingKeys(tenants[0], ["box-silent:00000000-0000-4000-8000-000000000001:1"])).toEqual(new Set(["box-silent:00000000-0000-4000-8000-000000000001:1"]));
+      await db.onModuleDestroy();
+    });
+  });
+
   it("gives back what a worker took and never finished", async () => {
     await inWorld(async ({ connect, tenants }) => {
       const db = connect();

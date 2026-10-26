@@ -23,6 +23,14 @@ export async function withEmptyDatabase<T>(use: (pool: Pool, connectionString: s
     return await use(pool, target.toString());
   } finally {
     await pool.end();
+    // pool.end() answers while its connections are still closing. Dropping the database now, with FORCE, would send each of them a
+    // "terminating connection" error that nothing is listening for, and the test run would end with an unhandled error (on a busy
+    // machine, now and then). Wait until the server has seen them go; FORCE is only for one that will not.
+    for (let waited = 0; waited < 4_000; waited += 50) {
+      const open = await admin.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", [name]);
+      if ((open.rows[0]?.n ?? 0) === 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     await admin.query(`DROP DATABASE ${name} WITH (FORCE)`);
     await admin.end();
   }

@@ -4,7 +4,7 @@ This repository is the first technical foundation for the Greecon Platform: a ca
 
 The platform is organized as a TypeScript monorepo:
 
-- `apps/web` - Next.js operator interface.
+- `apps/web` - the Next.js app: Greecon's own console (Today, Clients, Requests, Team) and the clients' app (Overview, Sites, Alerts, Reports, Settings), one codebase for two audiences (`docs/28-ux-definition.md`).
 - `apps/api` - NestJS API and platform services.
 - `apps/edge-agent` - the program on the box at a site: reads meters and sensors over Modbus, reports to the platform, keeps readings through an outage, updates itself. Built into one file the API serves, and installed with one pasted line.
 - `apps/edge-simulator` - simulated edge gateway, telemetry publisher, buffer, and command acknowledgement flow, for development.
@@ -14,7 +14,7 @@ The platform is organized as a TypeScript monorepo:
 - `infra/terraform` - Google Cloud deployment foundation placeholders.
 - `scripts` - the smoke tests that drive a running platform over HTTP, a pretend meter for rehearsals, and the box software's build.
 - `docs` - architecture, data, security, edge, frontend, and deployment documentation, the product's constitution, reality audit, research and decision records. Start with `docs/README.md`.
-- `docs/launch` - putting Greecon on the market with a project manager: go-live, the project manager's manual, hardware, sales kit, runbooks.
+- `docs/launch` - putting Greecon on the market with a project manager: go-live, the project manager's manual, hardware, sales kit, runbooks, and the printable PDF guides (`docs/launch/pdf`, one pack for each kind of site).
 
 ## Local Development
 

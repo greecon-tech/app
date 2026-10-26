@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Serif } from "next/font/google";
 import "./globals.css";
 
@@ -16,12 +16,19 @@ const plexSerif = IBM_Plex_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Greecon Platform",
+  // Each page names itself ("Alerts · Greecon"), so a tab, a bookmark and a screen reader's page title say where the person is.
+  title: { default: "Greecon Platform", template: "%s · Greecon" },
   description: "Operational platform foundation for Greecon Sh.p.k.",
+  // A private platform and a demo, not a page to be found by search: the sales material is where people are sent.
+  robots: { index: false, follow: false },
   icons: {
-    icon: `${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`
-  }
+    icon: `${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`,
+    apple: `${process.env.NEXT_BASE_PATH ?? ""}/apple-touch-icon.png`
+  },
+  appleWebApp: { capable: true, title: "Greecon", statusBarStyle: "default" }
 };
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f7f1e9" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

@@ -32,7 +32,7 @@ These are decided so that you do not have to think about them. The second one ma
 
 | What | Address | Why |
 |---|---|---|
-| The web app (customers, staff, the project manager) | `https://app.greecon.earth` | What people type and bookmark |
+| The web app (customers, staff, the project manager) | `https://app.greecon.earth` | What people type and bookmark. The public website, greecon.earth, already has a button to exactly this address |
 | The platform's own address, which every box at every site reports to | `https://api.greecon.earth` | **A box remembers this address for as long as it lives.** If it ever changes, someone has to visit every box. Choose it once, here, and never change it. |
 | Where alert emails come from | `alerts@greecon.earth` | Replies go to `info@greecon.earth` |
 
@@ -70,20 +70,27 @@ column is the name, exactly as written.
 | `PORT` | `4000` | The door the platform listens on |
 | `TRUST_PROXY` | `1` | Lets the platform see each caller's real address behind Railway |
 | `PUBLIC_API_URL` | `https://api.greecon.earth` | The address written into every box's install command |
-| `PUBLIC_WEB_URL` | `https://app.greecon.earth` | The link in each alert message |
+| `PUBLIC_WEB_URL` | `https://app.greecon.earth` | The links in each alert message: to the alert, and to say it has been seen |
 | `BOOTSTRAP_ADMIN_EMAIL` | `eridon.manuka@greecon.earth` | Your own login, created on the first start. **Removed in step 6.** |
 | `BOOTSTRAP_ADMIN_PASSWORD` | a password of at least 12 characters, not used anywhere else | Your first password. **Removed in step 6.** |
-| `SALES_NOTIFY_EMAIL` | `info@greecon.earth` | Who is emailed when someone asks for access |
+| `SALES_NOTIFY_EMAIL` | `info@greecon.earth` | Who is emailed when someone asks for access (the first ten requests of a day; every request is kept under **Requests**, and a day with more says so in one email) |
 
 Messages are added in steps 7 and 8. Do not set `ENABLE_API_DOCS`, `AUTO_MIGRATE` or the old `EDGE_INGEST_*`
 variables.
+
+One setting is optional and best left alone: `RESTART_GRACE_MINUTES` (default `10`, from 0 to 60). After the
+platform itself restarts (a deploy, a crash), the boxes' last words are older than usual for a few minutes
+because the platform was not listening, not because they are silent. For this many minutes after it starts,
+nothing that comes from *missing* readings (a box silent, a reading out of date) is raised or messaged, and the
+screens say "Greecon was just restarted; boxes are reconnecting". A reading that is measured and dangerous (a
+tank nearly empty) is never held back by it. `0` switches the wait off.
 
 **Settings → Networking → Generate Domain** gives the API a temporary Railway address (ending
 `.up.railway.app`). Use it only to check that the API is alive, below. Then **Custom Domain → `api.greecon.earth`**:
 Railway shows a record to add to your DNS (step 5).
 
 **You should see:** after a minute or two, in the service's **Deployments → View logs**, a line such as
-`Database updated: 17 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
+`Database updated: 18 migration(s) applied, 0 recorded as already applied.` (on later deploys, `Database is up to
 date.`), then `Nest application successfully started`. Also, the first time:
 
 ```
@@ -132,14 +139,15 @@ when it sees them, and then issues the padlock (HTTPS) by itself. This can take 
 
 1. Open `https://app.greecon.earth/login`. Click **Greecon team**. Enter `eridon.manuka@greecon.earth` and the
    starting password. **Continue.**
-2. You land on **Clients**. If you see it, the platform works end to end.
-3. Click **Settings** in the left menu and use **Change password** to choose your own, long and not used
-   anywhere else. Put it in the password manager.
+2. You land on **Today**, Greecon's own start page. With no customer yet it says *No customer site is live yet.*
+   If you see it, the platform works end to end.
+3. Open **Settings**, then its **Account** tab, and under **Change your password** use **Change password** to
+   choose your own, long and not used anywhere else. Put it in the password manager.
 4. **Remove the two `BOOTSTRAP_ADMIN_` variables** from the API service in Railway. Leaving them is not
    dangerous (they only fill a gap and never replace a password), but there is no reason to leave a password
    in a settings page.
-5. Give the project manager a login of their own: on **Clients**, under **Greecon team**, enter their name and
-   email and **Add to the team**. A temporary password is shown **once**. Tell it to them by phone or in
+5. Give the project manager a login of their own: open **Team**, and under **Greecon team** enter their name and
+   email and press **Add to the team**. A temporary password is shown **once**. Tell it to them by phone or in
    person, not by email. They sign in with **Greecon team**, and are asked for a password of their own
    straight away.
 
@@ -166,8 +174,8 @@ that tells you someone asked for access.
    | `ALERT_REPLY_TO` | `info@greecon.earth` |
 
    Railway redeploys the service.
-5. **Test it:** sign in, go to **Who is told**, add yourself with your email, **Save the list**, then **Send a
-   test message**. It should say "Accepted for delivery" and the email should arrive within a minute. Look in
+5. **Test it:** sign in, open **Settings** and its **Who is told** tab, add yourself with your email, **Save the
+   list**, then **Send a test message**. It should say "Accepted for delivery" and the email should arrive within a minute. Look in
    spam too. If it is in spam, mark it "not spam" and ask the Resend support page about your domain's setup
    (a missing record is the usual reason).
 
@@ -199,7 +207,7 @@ thirty minutes after the alert began, and so on down the list.
    | `TWILIO_AUTH_TOKEN` | from the Twilio dashboard. Treat it like a password. |
    | `TWILIO_FROM` | `Greecon`, or the number in international form, such as `+1...` |
 
-4. **Test it:** on **Who is told**, add yourself with your mobile number *with the country code*
+4. **Test it:** on **Who is told** (in **Settings**), add yourself with your mobile number *with the country code*
    (`+355 69 ...`), save, and **Send a test message**. A text should arrive within a minute. Ask three people
    on other networks to try it too.
 
@@ -215,13 +223,14 @@ until at least one of the two ways works.
 
 Greecon must hear that a customer's box has gone quiet before the customer does.
 
-1. Sign in as yourself (Greecon team) and open **Who is told**. This is Greecon's own list.
+1. Sign in as yourself (**Greecon team**), open **Settings**, then **Who is told**. This is Greecon's own list.
 2. Add yourself and the project manager, each with an email address. **Save the list.**
 3. Leave the morning message on. It is sent at 07:30, Albania time (change it under the list if you prefer).
 
 Each morning you get one email: "Greecon, Mon 19 Oct: Stable. All 3 sites are reporting and nothing needs
 doing." or "Attention needed. 1 of 3 sites need a look." with the reasons in the line for each site. The same list is on
-**Clients** under **Sites across clients**, worst first. The runbook ([05](05-runbooks.md)) says what to do.
+**Today**, under **Needs a look**, worst first; the sites that are fine are folded away below it, and each live site
+shows how many days it has been live (*Day N*). The runbook ([05](05-runbooks.md)) says what to do.
 
 ## 10. The demo
 
@@ -236,8 +245,8 @@ to `main`, it publishes by itself. Use this for the link in an email.
 `demo@greecon.earth`, password `demo123`. It shows three simulated sites, a farm, a water site and a
 solar-plus-battery site (there is no hotel in it), that move as the day goes (the solar picture follows the sun).
 It holds nothing real, it can only look and try, and it cannot send anyone a message. This login is an
-**operator**: it has no **Who is told** and no **Reports** page, so those two are shown on your own rehearsal
-client instead ([04, section 4](04-sales-kit.md#4-the-pitch-five-minutes-and-the-demo-ten)). The password is
+**operator**: it has no **Who is told**, and its **Reports** shows **Trends** only, with no **Downloads**, so those
+two are shown on your own rehearsal client instead ([04, section 4](04-sales-kit.md#4-the-pitch-five-minutes-and-the-demo-ten)). The password is
 public on purpose; do not give it to a customer as their own login.
 
 ## 11. Watching it
@@ -258,7 +267,7 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 **Go-live checklist.** Tick each one yourself; none needs a technician.
 
 - [ ] `https://api.greecon.earth/health` shows `"status":"OK"` and `"database":"connected"`, and `https://app.greecon.earth/login` shows a padlock
-- [ ] I signed in with **Greecon team** and saw **Clients**
+- [ ] I signed in with **Greecon team** and saw **Today**
 - [ ] The two `BOOTSTRAP_ADMIN_` variables are gone, and my password is in the password manager
 - [ ] The project manager signed in with their own login and chose their own password
 - [ ] A test email reached my inbox (not spam), and says it is from `alerts@greecon.earth`
@@ -268,7 +277,7 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 - [ ] The outside check is watching both addresses and has my phone number
 - [ ] A backup exists (the Backups tab shows one, or I took one by hand and put it in the shared drive)
 - [ ] `https://app.greecon.earth/privacy` opens without signing in, and says what Greecon keeps (the lawyer reads it before the first customer signs)
-- [ ] I sent myself a "Request access" from the sign-in page and it arrived at `info@greecon.earth` and appeared under **Requests** on **Clients**
+- [ ] I sent myself a "Request access" from the sign-in page and it arrived at `info@greecon.earth` and appeared under **Requests** (and in **Requests waiting** on **Today**)
 - [ ] The rehearsal was done, and its notes are fixed or written down
 
 ## If something goes wrong
@@ -292,6 +301,10 @@ afternoon, and it finds the mistakes in the room instead of at a hotel.
 - **Hold every box on the software it has** (while a problem is investigated): set `EDGE_AUTO_UPDATE` to `false`
   on the API. Boxes then stop taking new versions until it is removed.
 - **Turn the live demo's simulated feed off:** set `DEMO_FEED` to `false`. Only the demo account changes.
+- **Change how long Greecon waits after a restart before it calls a box silent** (ten minutes unless you say otherwise,
+  so that a deploy does not alarm anyone while the boxes reconnect): set `RESTART_GRACE_MINUTES` to a whole number of
+  minutes from 0 to 60; 0 switches the wait off. Leave it unset unless there is a reason. What the wait does:
+  [05 Runbooks, R7](05-runbooks.md#r7-the-platform-is-down) (point 6).
 - **Move to Google Cloud:** when this outgrows Railway, see [10 Deployment on Google Cloud](../10-deployment-gcp.md).
   The services are ordinary containers; nothing here ties them to Railway.
 

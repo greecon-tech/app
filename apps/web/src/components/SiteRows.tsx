@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HEALTH_LABELS, SiteHealth } from "@greecon/shared";
+import { siteKindWords } from "../lib/equipment";
 import { worstFirst } from "../lib/health";
 import { Ago } from "./Ago";
 import { StatusBadge } from "./StatusBadge";
@@ -25,7 +26,7 @@ export function SiteRows({ sites }: { sites: readonly SiteRowData[] }) {
           <Link href={`/sites/${site.id}`} className="site-row" key={site.id}>
             <div>
               <strong>{site.name}</strong>
-              <p className="muted">{[site.locationName, site.type.replace(/_/g, " ")].filter(Boolean).join(" · ")}</p>
+              <p className="muted">{[site.locationName, siteKindWords(site.type)].filter(Boolean).join(" · ")}</p>
             </div>
             <div className="site-row__state">
               <StatusBadge status={HEALTH_LABELS[site.health.state]} />

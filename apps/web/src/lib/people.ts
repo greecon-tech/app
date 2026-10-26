@@ -8,7 +8,8 @@ export const KIND_WORDS: Record<NotificationKind, string> = {
   acknowledged: "Acknowledged",
   resolved: "Resolved",
   digest: "Morning message",
-  test: "Test"
+  test: "Test",
+  box_silent: "A customer's box went silent"
 };
 
 export const SEND_STATUS_WORDS: Record<NotificationStatus, string> = {

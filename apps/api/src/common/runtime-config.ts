@@ -2,9 +2,29 @@
 // identifies callers. Kept apart from main.ts so each rule can be unit-tested without booting Nest.
 
 import { createChannels } from "../notifications/channels";
-import { configuredPublicApiUrl } from "./public-url";
+import { RESTART_GRACE_MS } from "../platform/restart-grace";
+import { configuredPublicApiUrl, configuredPublicWebUrl } from "./public-url";
 
 type Env = Record<string, string | undefined>;
+
+/** The longest grace after a start that can be asked for: longer would hide a real silence for too long. */
+export const MAX_RESTART_GRACE_MINUTES = 60;
+
+/** RESTART_GRACE_MINUTES as given, when it is a whole number of minutes from 0 to the maximum; otherwise undefined. */
+function restartGraceMinutes(env: Env): number | undefined {
+  const raw = env.RESTART_GRACE_MINUTES?.trim();
+  if (!raw || !/^\d{1,2}$/.test(raw)) return undefined;
+  const minutes = Number(raw);
+  return minutes <= MAX_RESTART_GRACE_MINUTES ? minutes : undefined;
+}
+
+/** How long, after the platform starts listening, it waits before it calls a box silent or a reading out of date
+ * (platform/restart-grace.ts): RESTART_GRACE_MINUTES in whole minutes, 0 to switch the wait off. Unset, or not a whole
+ * number of minutes from 0 to 60: the standard ten minutes. */
+export function restartGraceMs(env: Env): number {
+  const minutes = restartGraceMinutes(env);
+  return minutes === undefined ? RESTART_GRACE_MS : minutes * 60_000;
+}
 
 /** The Swagger UI and the machine-readable spec (/docs, /docs-yaml, /docs-json) describe every
  * route. They are useful while building, but a public deployment has no need to hand that map to
@@ -70,6 +90,10 @@ export function checkRuntimeConfig(env: Env): ConfigReport {
     warnings.push("BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD only work as a pair; set both or neither.");
   }
 
+  if (env.RESTART_GRACE_MINUTES?.trim() && restartGraceMinutes(env) === undefined) {
+    warnings.push(`RESTART_GRACE_MINUTES is not a whole number of minutes from 0 to ${MAX_RESTART_GRACE_MINUTES}, so the standard ${RESTART_GRACE_MS / 60_000} minutes are used.`);
+  }
+
   if (Boolean(env.EDGE_INGEST_TOKEN) !== Boolean(env.EDGE_INGEST_TENANT_ID)) {
     warnings.push("EDGE_INGEST_TOKEN and EDGE_INGEST_TENANT_ID only work as a pair, so the shared device token is switched off. Per-gateway credentials (Add gateway) are the supported route.");
   }
@@ -95,8 +119,10 @@ export function checkRuntimeConfig(env: Env): ConfigReport {
     } else if (!channels.email) {
       warnings.push("Email (RESEND_API_KEY) is not set up. Only Act now reaches people, by text; Check today and the morning message are not sent.");
     }
-    if (!env.PUBLIC_WEB_URL?.trim()) {
-      warnings.push("PUBLIC_WEB_URL is not set, so the messages have no link back to Greecon. Set it to the web app's public address, for example https://app.greecon.earth.");
+    if (!configuredPublicWebUrl(env)) {
+      warnings.push(
+        "PUBLIC_WEB_URL is not set (or is not an address), so the messages have no link back to Greecon and no link to acknowledge an alert. Set it to the web app's public address, for example https://app.greecon.earth."
+      );
     }
     if ((env.SALES_NOTIFY_EMAIL ?? "").trim() === "") {
       warnings.push("SALES_NOTIFY_EMAIL is not set, so a new request for access waits in the inbox until someone looks. Set it to the address that should hear of each one.");

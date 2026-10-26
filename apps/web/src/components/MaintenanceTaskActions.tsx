@@ -30,18 +30,26 @@ export function MaintenanceTaskActions({ taskId, status }: { taskId: string; sta
         <button type="button" className="button-ghost" disabled={isPending} onClick={reopen}>
           Reopen
         </button>
-        {error ? <p className="rule-actions__error">{error}</p> : null}
+        {error ? (
+          <p className="rule-actions__error" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   return (
     <div className="rule-actions">
-      <input value={completionLog} onChange={(event) => setCompletionLog(event.target.value)} placeholder="Completion note (optional)" />
+      <input value={completionLog} onChange={(event) => setCompletionLog(event.target.value)} placeholder="Completion note (optional)" aria-label="Completion note (optional)" />
       <button type="button" className="button-ghost" disabled={isPending} onClick={complete}>
         {isPending ? "Completing…" : "Mark complete"}
       </button>
-      {error ? <p className="rule-actions__error">{error}</p> : null}
+      {error ? (
+        <p className="rule-actions__error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -185,8 +185,18 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; path: string }> = [
   { method: "GET", path: "/edge/bundle.json" }
 ];
 
+/** Public routes with a part of their own in the path: the "I have seen this" link in an alert message, which rests on its
+ * signed token alone and is good for one alert (modules/alerts/acknowledge-link.controller.ts). */
+const PUBLIC_ROUTE_PATTERNS: ReadonlyArray<{ method: string; path: RegExp }> = [
+  { method: "GET", path: /^\/public\/acknowledge\/[^/]+$/ },
+  { method: "POST", path: /^\/public\/acknowledge\/[^/]+$/ }
+];
+
 function isPublicRoute(request: RequestWithPrincipal): boolean {
-  return PUBLIC_ROUTES.some((route) => route.method === request.method && route.path === request.path);
+  return (
+    PUBLIC_ROUTES.some((route) => route.method === request.method && route.path === request.path) ||
+    PUBLIC_ROUTE_PATTERNS.some((route) => route.method === request.method && route.path.test(request.path))
+  );
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {

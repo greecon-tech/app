@@ -23,6 +23,8 @@ import { CONTACT_WORDS, nextStep } from "../../../../lib/setup";
 import { deleteGatewayAction } from "../actions";
 import { deleteDeviceFromSetupAction } from "./actions";
 
+export const metadata = { title: "Setup list" };
+
 interface SiteDetail {
   site: { id: string; name: string; type: string; locationName: string };
   assets: Array<{ id: string; name: string; type: string }>;
@@ -78,7 +80,7 @@ export default async function SetupPage({ params }: { params: Promise<{ siteId: 
       {next ? (
         <div className="setup-next">
           <p>
-            <strong>Do next: {next.title}</strong> <a href={`#step-${next.key}`}>Go to the step</a>
+            <strong>Do next: {next.title}</strong> <a href={`#step-${next.key}`} className="standalone-link">Go to the step</a>
           </p>
         </div>
       ) : null}

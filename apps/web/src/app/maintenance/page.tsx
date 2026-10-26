@@ -8,6 +8,8 @@ import { requirePermission } from "../../lib/access";
 import { apiGet, DEMO_ROLE } from "../../lib/api";
 import { getSession } from "../../lib/session";
 
+export const metadata = { title: "Maintenance" };
+
 interface MaintenanceTask {
   id: string;
   siteId: string;
@@ -39,7 +41,7 @@ export default async function MaintenancePage() {
   const completedTasks = tasks.filter((task) => task.status === "complete");
 
   return (
-    <Shell title="Maintenance" subtitle="Scheduled and reactive upkeep for site equipment.">
+    <Shell title="Maintenance" subtitle="Upkeep that is due, and what has been done.">
       <Section title="Open tasks">
         {openTasks.length > 0 ? (
           <DataTable
@@ -74,18 +76,6 @@ export default async function MaintenancePage() {
         ) : (
           <div className="empty-state">No completed tasks yet.</div>
         )}
-      </Section>
-      <Section title="Status">
-        <div className="metric-grid">
-          <div className="panel">
-            <h3>{openTasks.length}</h3>
-            <p className="muted">Open</p>
-          </div>
-          <div className="panel">
-            <h3>{completedTasks.length}</h3>
-            <p className="muted">Completed</p>
-          </div>
-        </div>
       </Section>
     </Shell>
   );

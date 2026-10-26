@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { openForSetupAction } from "../app/platform/actions";
 
-/** For Greecon's project manager: go into this client's account to set it up. */
-export function OpenForSetupButton({ tenantId, name, disabled }: { tenantId: string; name: string; disabled?: boolean }) {
+/** For Greecon's project manager: go into this client's account to set it up (or to look after it). */
+export function OpenForSetupButton({ tenantId, name, disabled, label = "Open for setup", primary = false }: { tenantId: string; name: string; disabled?: boolean; label?: string; primary?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -18,8 +18,8 @@ export function OpenForSetupButton({ tenantId, name, disabled }: { tenantId: str
 
   return (
     <div className="stack">
-      <button type="button" className="button-ghost" onClick={open} disabled={isPending || disabled} title={`Go into ${name}'s account to set it up. Everything you do is recorded under your name in their audit trail.`}>
-        {isPending ? "Opening…" : "Open for setup"}
+      <button type="button" className={primary ? undefined : "button-ghost"} onClick={open} disabled={isPending || disabled} title={`Go into ${name}'s account. Everything you do is recorded under your name in their audit trail.`}>
+        {isPending ? "Opening…" : label}
       </button>
       {error ? (
         <p className="rule-actions__error" role="alert">

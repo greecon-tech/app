@@ -132,7 +132,7 @@ export async function openForSetupAction(tenantId: string): Promise<{ error?: st
   const options = { ...cookieBase, maxAge: session.expiresInSeconds };
   store.set(SESSION_TOKEN_COOKIE, session.token, options);
   store.set(SESSION_USER_COOKIE, JSON.stringify({ ...session.user, customer: session.customer }), options);
-  redirect("/admin");
+  redirect("/sites");
 }
 
 /** Back from a customer's account to Greecon's own console. */
@@ -151,5 +151,5 @@ export async function leaveSetupAction(): Promise<void> {
   const options = { ...cookieBase, maxAge: 60 * 60 * 12 };
   store.set(SESSION_TOKEN_COOKIE, token, options);
   store.set(SESSION_USER_COOKIE, user, options);
-  redirect("/platform");
+  redirect("/today");
 }

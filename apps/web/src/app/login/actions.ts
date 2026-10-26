@@ -53,7 +53,7 @@ export async function loginAction(email: string, password: string, intendedArea:
 
   // A temporary password (the one the project manager handed over) is good for choosing a new one.
   if (user.mustChangePassword) redirect("/change-password");
-  redirect(intendedArea === "staff" ? "/platform" : "/");
+  redirect(intendedArea === "staff" ? "/today" : "/");
 }
 
 export async function logoutAction(): Promise<void> {

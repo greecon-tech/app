@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { ChangePasswordForm } from "../../components/ChangePasswordForm";
 import { getSession } from "../../lib/session";
 
+export const metadata = { title: "Choose a new password" };
+
 export const dynamic = "force-dynamic";
 
 // Where someone lands when they sign in with the temporary password they were handed. Everything else

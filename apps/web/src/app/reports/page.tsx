@@ -5,6 +5,8 @@ import { requirePermission } from "../../lib/access";
 import { apiGet, DEMO_ROLE } from "../../lib/api";
 import { getSession } from "../../lib/session";
 
+export const metadata = { title: "Reports" };
+
 // Rendered on request: the download routes read the person's session.
 export const dynamic = "force-dynamic";
 

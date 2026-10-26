@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { CanonicalPointName } from "@greecon/shared";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
-import { kindCharts } from "../../components/KindCharts";
+import { TrendSections } from "../../components/TrendSections";
 import { apiGet } from "../../lib/api";
 import { seriesByKind } from "../../lib/telemetry-history";
+
+export const metadata = { title: "Reports" };
 
 interface TelemetryReading {
   timestampUtc: string;
@@ -18,32 +19,6 @@ interface Site {
   id: string;
   name: string;
 }
-
-interface ResourceMetric {
-  canonicalName: CanonicalPointName;
-  label: string;
-  unit: string;
-}
-
-const ENERGY_METRICS: ResourceMetric[] = [
-  { canonicalName: "energy.solar.power.kw", label: "Solar production", unit: "kW" },
-  { canonicalName: "energy.consumption.kw", label: "Consumption", unit: "kW" },
-  { canonicalName: "energy.grid.import.kw", label: "Grid import", unit: "kW" },
-  { canonicalName: "energy.grid.export.kw", label: "Grid export", unit: "kW" },
-  { canonicalName: "energy.battery.soc.percent", label: "Battery state of charge", unit: "%" }
-];
-
-const WATER_METRICS: ResourceMetric[] = [
-  { canonicalName: "water.tank.level.percent", label: "Tank level", unit: "%" },
-  { canonicalName: "water.flow.lpm", label: "Flow", unit: "lpm" },
-  { canonicalName: "water.pressure.bar", label: "Line pressure", unit: "bar" }
-];
-
-const AGRICULTURE_METRICS: ResourceMetric[] = [
-  { canonicalName: "agri.soil.moisture.percent", label: "Soil moisture", unit: "%" },
-  { canonicalName: "agri.air.temperature.c", label: "Air temperature", unit: "°C" },
-  { canonicalName: "agri.humidity.percent", label: "Humidity", unit: "%" }
-];
 
 const RANGES: Record<string, number> = { "24h": 24, "7d": 24 * 7, "30d": 24 * 30, "90d": 24 * 90 };
 const DEFAULT_RANGE = "7d";
@@ -69,7 +44,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const seriesOf = seriesByKind(readings);
 
   return (
-    <Shell title="Analytics" subtitle="Real historical trends across energy, water, and agriculture — not a snapshot.">
+    <Shell title="Reports" subtitle="How things have been over time: energy, water and the land, with their normal band.">
       <Section title="Time range">
         <div className="tabs">
           {Object.keys(RANGES).map((key) => (
@@ -90,21 +65,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           </div>
         </Section>
       ) : null}
-      <Section title="Energy" aside={<span className="muted">Production, consumption, and grid exchange</span>}>
-        <div className="chart-grid">
-          {ENERGY_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
-        </div>
-      </Section>
-      <Section title="Water">
-        <div className="chart-grid">
-          {WATER_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
-        </div>
-      </Section>
-      <Section title="Agriculture">
-        <div className="chart-grid">
-          {AGRICULTURE_METRICS.flatMap((metric) => kindCharts(metric, seriesOf.get(metric.canonicalName)))}
-        </div>
-      </Section>
+      <TrendSections seriesOf={seriesOf} />
     </Shell>
   );
 }

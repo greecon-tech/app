@@ -1,10 +1,12 @@
 import { Global, Module } from "@nestjs/common";
 import { ACCESS_REQUEST_NOTIFIER } from "../modules/access-requests/access-requests.service";
+import { configuredPublicWebUrl } from "../common/public-url";
 import { DatabaseService } from "../database/database.service";
+import { ackLinkKey } from "../notifications/ack-link";
 import { createAccessRequestNotifier } from "../notifications/access-request-notifier";
 import { Channels, NOTIFICATION_CHANNELS, createChannels } from "../notifications/channels";
 import { NotificationConfig } from "../notifications/config";
-import { NOTIFICATION_OPTIONS, NotificationsService, OUTBOX_STORE } from "../notifications/notifications.service";
+import { NOTIFICATION_OPTIONS, NotificationOptions, NotificationsService, OUTBOX_STORE } from "../notifications/notifications.service";
 import { createOutboxStore } from "../notifications/outbox";
 import { EdgeBundleService } from "../setup/edge-bundle";
 import { createEnrolmentStore } from "../setup/enrolment-store";
@@ -24,7 +26,8 @@ import { PlatformService } from "./platform.service";
     EdgeBundleService,
     // Telling people (docs/27-launch-decisions.md): email and text messages when something needs a person.
     { provide: NOTIFICATION_CHANNELS, useFactory: () => createChannels(process.env) },
-    { provide: NOTIFICATION_OPTIONS, useFactory: () => ({ webUrl: process.env.PUBLIC_WEB_URL }) },
+    // The link in each message, and the key that signs the "I have seen this" link in an alert message (notifications/ack-link.ts).
+    { provide: NOTIFICATION_OPTIONS, useFactory: (): NotificationOptions => ({ webUrl: configuredPublicWebUrl(process.env), ackLinkKey: ackLinkKey(process.env.JWT_SECRET) }) },
     { provide: OUTBOX_STORE, useFactory: (db: DatabaseService) => createOutboxStore(db), inject: [DatabaseService] },
     { provide: "ALERT_SOURCE", useExisting: PlatformService },
     NotificationConfig,
@@ -32,6 +35,6 @@ import { PlatformService } from "./platform.service";
     { provide: ACCESS_REQUEST_NOTIFIER, useFactory: (channels: Channels) => createAccessRequestNotifier(channels, process.env), inject: [NOTIFICATION_CHANNELS] },
     SetupService
   ],
-  exports: [PlatformService, SetupService, EdgeBundleService, NotificationsService, NotificationConfig, ACCESS_REQUEST_NOTIFIER]
+  exports: [PlatformService, SetupService, EdgeBundleService, NotificationsService, NotificationConfig, NOTIFICATION_OPTIONS, ACCESS_REQUEST_NOTIFIER]
 })
 export class PlatformModule {}

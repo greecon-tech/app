@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configuredPublicApiUrl, publicApiUrl } from "./public-url";
+import { configuredPublicApiUrl, configuredPublicWebUrl, publicApiUrl } from "./public-url";
 
 const request = (host: string | undefined, protocol = "http") => ({ protocol, get: (name: string) => (name === "host" ? host : undefined) });
 
@@ -30,5 +30,18 @@ describe("the address a box can reach the API at", () => {
       expect(configuredPublicApiUrl({ PUBLIC_API_URL: value }), value).toBeUndefined();
     }
     expect(publicApiUrl({ PUBLIC_API_URL: "api.greecon.earth" }, request("localhost:4000"))).toBe("http://localhost:4000");
+  });
+});
+
+describe("the address of the web app, for the links in messages", () => {
+  it("is the configured one, tidied, with a path kept for an app served under one", () => {
+    expect(configuredPublicWebUrl({ PUBLIC_WEB_URL: " https://app.greecon.earth/ " })).toBe("https://app.greecon.earth");
+    expect(configuredPublicWebUrl({ PUBLIC_WEB_URL: "https://example.org/greecon//" })).toBe("https://example.org/greecon");
+  });
+
+  it("is none, so that a message has no link rather than one that does not work, when it is missing or not an address", () => {
+    for (const value of [undefined, "", "app.greecon.earth", "ftp://app.greecon.earth", "javascript:alert(1)"]) {
+      expect(configuredPublicWebUrl({ PUBLIC_WEB_URL: value }), String(value)).toBeUndefined();
+    }
   });
 });

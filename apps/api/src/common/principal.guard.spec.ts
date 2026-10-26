@@ -233,6 +233,25 @@ describe("PrincipalGuard", () => {
 
       await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
     });
+
+    it("lets the link in an alert message be read and answered with no session, because the person may have no login", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const method of ["GET", "POST"]) {
+        await expect(guard.canActivate(contextWithHeaders({}, { path: "/public/acknowledge/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", method }))).resolves.toBe(true);
+      }
+    });
+
+    it("does not let that pass reach anything beside the one route", async () => {
+      const guard = new PrincipalGuard(fakeDatabase(false));
+      for (const route of [
+        { path: "/public/acknowledge", method: "GET" },
+        { path: "/public/acknowledge/token/more", method: "GET" },
+        { path: "/public/acknowledge/token", method: "PUT" },
+        { path: "/alerts/abc/acknowledge", method: "POST" }
+      ]) {
+        await expect(guard.canActivate(contextWithHeaders({}, route)), `${route.method} ${route.path}`).rejects.toThrow(UnauthorizedException);
+      }
+    });
   });
 
   describe("per-gateway edge device secret", () => {

@@ -12,7 +12,7 @@ the platform does updates this page in the same commit.
 
 ## 1. How things were checked
 
-- `npm run typecheck` and `npm test` for every package. At the time of writing: API 790 tests,
+- `npm run typecheck` and `npm test` for every package. At the time of writing: API 895 tests,
   edge agent 123, edge simulator 1, GAIA core 107, shared 78, all passing. (The separate Modbus
   driver service of the first pass is gone: its job is done inside the edge agent.)
 - A real PostgreSQL 16, not a fake, for the parts where a fake would hide the bug: the migration
@@ -29,8 +29,12 @@ the platform does updates this page in the same commit.
   stand-in provider receives, the downloads, the Greecon team, the fleet table, a support session
   and a locked-out customer's reset. CI runs it after the build.
 - Two journeys in a real browser against the real stack (`scripts/e2e`): the project manager's whole
-  job from onboarding to handover, and the Greecon team's (the owner adds a person, sessions end
-  when access does, a locked-out customer's person is reset).
+  job from onboarding to handover (82 checks, including the "I have seen this" link opened by a person
+  who never signed in), and the Greecon team's (24 checks: the owner adds a person, sessions end when
+  access does, a locked-out customer's person is reset).
+- A tour of every screen (`scripts/e2e/ux-tour.cjs`) as the Greecon team, as a client and as the demo, on a
+  desk and on a phone, which takes a picture of each and reports pages that scroll sideways, controls with
+  no name, buttons under 40 px, text under 12 px and errors in the console. Its last run had no findings.
 - An upgrade from a database built the old way, with the old migration that used to reset the
   founder's password: the password survives (`scripts/e2e/upgrade-from-legacy.sh`).
 - The GitHub Pages export built for all five roles against the seeded API, then served and opened
@@ -106,7 +110,7 @@ All commands are still simulated; nothing is written to equipment (see 2 in the 
 | # | Finding | Severity | Status and evidence |
 |---|---|---|---|
 | 21 | The sidebar "Sites" link pointed at one hard-coded demo site. A real client could not open it. | High | Fixed. A real Sites index (`783758f`) |
-| 22 | Fake tabs on the site page that did nothing; thirteen flat menu entries. | Low | Fixed. Five destinations, with Monitoring, Devices, Maintenance and Analytics as tabs inside them, and Settings, Admin, Audit log and Clients under Account (`783758f`) |
+| 22 | Fake tabs on the site page that did nothing; thirteen flat menu entries. | Low | Fixed. Five destinations, with Monitoring, Devices, Maintenance and Analytics as tabs inside them, and Settings, Admin, Audit log and Clients under Account (`783758f`). Superseded by finding 80: two audiences now have two sets of five places (`docs/28-ux-definition.md`) |
 | 23 | Status colours failed WCAG AA text contrast (warning 3.5:1, ok 4.1:1, captions 2.9:1) and status was colour plus an identical dot. | Medium | Fixed. All at least 5:1 on their tint; each state is a word and a different shape (`783758f`) |
 | 24 | The Alerts page mixed cleared alerts into "Active", had no site and no order. | Low | Fixed. Active by priority with site and age, and a log of recently cleared ones (`783758f`) |
 | 25 | The new Sites index would have collided with the per-site pages in the static export. | Low | Fixed. Folder-style URLs (`6edb18c`) |
@@ -192,6 +196,28 @@ noticed (findings 67 to 75).
 | 74 | The time of an acknowledgement was stamped by the database's own clock, and read back from it after a restart, while the messages' timing is kept on the platform's. With the two clocks half a minute apart, an alert that came back soon after an acknowledgement was paged again every thirty seconds until the clocks agreed. | Low (needs clocks that disagree) | Fixed at the source: the platform writes its own time, so there is one clock. `platform.alerts.spec` |
 | 75 | On a platform with email but no text provider (a supported way to start), every Act now alert showed "2 alert messages could not be delivered" to the customer, and Greecon's morning message listed the customer for it, though nobody had made a mistake. | Low | Fixed. A way of sending that is not set up is shown as **Not sent** in the log and once on the screen as off; it is not counted as a failure to put right. `notifications.service.spec` |
 
+### The experience, the alert link and the restart (added 2026-10-26)
+
+The experience was defined screen by screen for two audiences (`docs/28-ux-definition.md`) and built; and the alert messaging
+got the four things a first deploy day would have needed. Rows 76 to 79 are the messaging, 80 to 86 the experience and the
+platform's own hygiene. Each was checked in a real browser or against a real PostgreSQL before it is called fixed.
+
+| # | Finding | Severity | Status and evidence |
+|---|---|---|---|
+| 76 | A restart of the platform (a deploy, a crash, a database outage) made every box's last word older than usual for several minutes, so deploy day could raise "out of date" and "box silent" alerts and message every customer at once, though no box had stopped. | High | Fixed. For ten minutes after it starts listening (`RESTART_GRACE_MINUTES`, 0 to 60) the platform raises and messages nothing that comes from missing readings, counts a box's silence from the moment it could hear, and the screens say "Greecon was just restarted; boxes are reconnecting". A measured danger (a tank nearly empty) is never held back: a reading that arrives in the first second after a start is judged at once. The morning message waits out the wait and may go a little late, never missing. `platform/restart-grace.ts`, `platform.restart.spec.ts` |
+| 77 | Greecon's own team learned that a customer's box had gone silent only in the next morning's message. | Medium | Fixed. A message to Greecon's own list at once: the client, the site, since when, the last reading, and whether the customer was told (this kind never goes to a customer; migration 018). Once for each silence, even across a restart; three or more boxes silent within ten minutes are one message that says it is probably the platform or a provider; held through quiet hours, and dropped if the box is back by then. `notifications/silent-boxes.ts` and its spec |
+| 78 | To say "I have seen this" a person had to sign in to Greecon on a phone, at night. | Medium | Fixed. Each alert message holds a link: a signed 36-character token (96 bits), good for 72 hours, for one alert of one account and the person it was sent to. Opening it changes nothing (mail and text scanners open links); the button on its page acknowledges exactly as Acknowledge does and the audit log says "Alert acknowledged with the link in an alert message sent to …". An altered, expired, foreign or suspended-account link answers one and the same "no longer works"; thirty calls a minute from one address. `notifications/ack-link.ts`, `modules/alerts/acknowledge-link.*`, the page `/ack/[token]`, and eight steps of the project manager's browser journey |
+| 79 | Text a person typed (a name, a site's name, a request's words) went as it came into messages other people receive and into Greecon's own email, and the public request form limited only how often it could be used. | Medium | Fixed. A person's text goes into a message as one line, without control or invisible characters (line breaks, direction overrides), within its limit and without a working link (`https[:]//…`); the request form has field limits shared with the API, at most two web addresses in the words, one request an address a day, a hidden field, a flood cap on emails to the sales address and a hard cap on what is kept. No CAPTCHA (open item 18). `common/plain-text.ts`, `modules/access-requests` |
+| 80 | Greecon's team and its customers used the same navigation, and the team's home was a customer's "getting started" text that sent people to a file name. | High | Fixed. The team has Today, Clients, Requests, Team and Settings; clients have Overview, Sites, Alerts, Reports and Settings; a team member inside a customer's account sees the customer's places under a banner. On a phone the five places are a bar at the foot of the screen and a person's menu is a mark at the top right. `docs/28-ux-definition.md`; the two browser journeys |
+| 81 | Screens that pretended, against decision L13 (Greecon reads and sends no command): an Automation page with rules and "Run manually", a Manual Control panel marked "Simulated", an Incidents table with a status menu, a Devices registry, a dashboard-widget table, and cards saying "Alert routing placeholder" and "Stripe planned". | High | Fixed. Taken out, with the web's one action that sent a command. The old addresses lead to the Overview or Sites. |
+| 82 | On a phone, tables scrolled sideways, buttons were smaller than a thumb, some text was under 12 px, and one wide form (a grid that grew to its widest content, a map 420 px wide on a 390 px phone) stretched a whole page. | Medium | Fixed. Tables become cards, every button and field is at least 44 px, no text is under 12 px, no page scrolls sideways at 390 px. Checked by `scripts/e2e/ux-tour.cjs` over every screen for the team, a client and the demo, on a desk and on a phone; its last run had no findings |
+| 83 | Words a customer cannot read: "Tenant", role and state code words, raw codes in the audit log, a failed request's raw text, backticks in a hint. | Low | Fixed. Roles say what they may do; equipment, site kinds and audit entries are named; a failed request says what the screen would say. |
+| 84 | The installed Next.js (16.4.0) had three published serious advisories (an unauthenticated remote code execution in image optimisation with SVG files, a denial of service in Server Actions, which the app uses, and one in `use cache`), and body-parser 2.3.0, which reads every request, one for a compressed body. | High | Fixed. Next.js 16.4.3 (same major version) and body-parser 2.4.0, with `npm audit` as the check. Accepted, because not reachable: `multer` (the API has no file upload; the web framework package pins the version), `js-yaml` (only the API documentation page, off in production) and `uuid` through `gaxios` (the bounds fault needs a buffer argument that is never given). To be cleared when NestJS is next upgraded |
+| 85 | The web app set no security headers. | Medium | Fixed. A page cannot be put inside another site's page (an Acknowledge button in a frame is a trap), content types are not guessed, the referrer is trimmed, camera, microphone and location are refused, and HTTPS is required in production. A static demo is a file host's to configure. |
+| 86 | Pages had no titles of their own, no friendly page for loading, failing, a page that is not there or a page a role may not open, and the app could not be put on a phone's home screen. | Low | Fixed. Each page names itself; there are skeletons, a "could not be loaded" page with Try again, one "page not found" page for both cases; an app icon and manifest. |
+| 87 | An independent read of the new messaging code (the alert link, the request form, the restart wait, the silent-box message) found no blocker, and these defects. A form filled in by machine could use up the email provider's daily allowance, which customers' alert emails share (thirty sales emails an hour, counted so that requests arriving together all passed). A silent-box message was lost for good when the email service failed for more than a quarter of an hour. A box on a poor connection sent the team a message every time it came back and went again. The sales email carried an address or a number as typed, so words could ride in them, and a short link was not recognised as a link. The request form answered "check the email address" to every refusal, so a prospect with three website addresses never learned why. A contact's address went into the audit log as typed. | Medium | Fixed. At most ten sales emails a day in all (a place is taken before anything is awaited), then one message a day saying so; every request is still kept. A silent-box message is tried again every five minutes for six hours; the team is told of the same box three times a day at most; a storm of three or more boxes waits for the ones still catching up. An email address must be an address, a number keeps its digits, the usual short-link endings are written so that they are not links, the form says what the API refused, the audit line is one line, a text message has none of the characters that make it cost double, and the restart wait is written in the log at every start. `access-requests.service.spec.ts`, `silent-boxes.spec.ts`, `plain-text.spec.ts`, `acknowledge-link.spec.ts` |
+
+
 ## 3. Mistakes in our own first pass, caught by testing
 
 A short list, because they are the kind a reader should expect more of:
@@ -256,9 +282,9 @@ of this list, so that an earlier reference still points at the same thing.
    write are in `docs/23-safety-and-security-case.md` (release gate).
 3. **The box is built and has only met a pretend meter.** The heartbeat, the three-day queue and the
    updates with rollback are tested in software (finding 30). They have not been shown on a real box
-   with the internet cut, and there is **no immediate message for a silent box**: Greecon's own team
-   hears of it in the morning check and the fleet table, and the customer by the morning message.
-   Decided to wait for about fifteen sites.
+   with the internet cut, and the immediate message for a silent box (finding 77) has only met a stand-in
+   provider: Greecon's own team is told at once, the customer by the morning message and the alert that readings
+   are out of date.
 4. **No asset health model.** Sites, devices and readings have computed health; assets do not.
 5. **Security hardening, partly done.** Done: one demo login with its own password, staff accounts of
    Greecon's own, sessions that end the moment a person is turned off or changes password, one account
@@ -303,21 +329,26 @@ of this list, so that an earlier reference still points at the same thing.
     non-urgent kinds); a number is not confirmed by a code first, a premium-rate number is allowed, there is
     no country restriction and no cap across the platform. Confirming each number and restricting
     countries is the fix.
-18. **The "Request access" form has one flood cap for the whole platform** (forty an hour), so a spammer can
-    keep real prospects out of the inbox; each visitor is limited separately (twenty an hour), and there
-    is no CAPTCHA.
+18. **The "Request access" form has limits but no CAPTCHA.** It has field lengths, text without control or hidden
+    characters, at most two web addresses in the words, one request an address a day, a hidden field a script
+    fills in, a flood cap (past ten requests a day the sales address is no longer emailed about each, and is
+    told once a day; every request is still kept) and a hard cap of three hundred kept an hour (findings 79, 87). A person
+    who wants to fill the inbox with believable requests, one address each, still can.
 19. **A box takes new software on the word of the platform it reports to.** The checksum comes from the same
     platform, so whoever controls the platform controls every box; code signing is not built. A box now
     refuses a plain-http platform address except on a private network.
-20. **After a restart that follows more than about four minutes of platform downtime**, every site reads
-    "Readings out of date" until its box reports again, and each customer's first contact gets one Check
-    today email. A grace period at start is not built.
+20. **A restart is calm for ten minutes (finding 76), and no longer.** A box that has not reconnected after
+    the wait is called silent, as it should be. The wait is `RESTART_GRACE_MINUTES` (0 to 60); the browser
+    journeys set it to one. A platform that restarts again before the ten minutes are over says nothing about
+    missing readings for as long as it keeps doing so; the outside check on `/health` is what calls that, and the log
+    says the wait at every start (finding 87).
 21. **One bad sample from a level sensor opens an Act now alert.** There is deliberately no delay on a tank
     (a delay would lengthen every real alert); the alert resolves itself after fifteen minutes of clear
     readings. To decide with real sites' numbers.
-22. **A person who is told by message but has no login cannot acknowledge**, so cannot stop the chain. The
-    manual says everyone on the list needs their own login (Operator); an acknowledge link in the message
-    is the better answer and is not built.
+22. **A person who is told by message but has no login can acknowledge with the link in the message**
+    (finding 78): it works for 72 hours and only says "I have seen this". Anyone who receives the message can
+    use it, as anyone who reads the text on a phone could press Acknowledge; a forwarded text carries it on.
+    It changes nothing else.
 23. **A box whose clock is more than five minutes wrong has its readings refused**, and the box discards
     what the platform refuses. The installer warns about the clock; the platform's heartbeat reports the
     difference.
@@ -342,6 +373,8 @@ of this list, so that an earlier reference still points at the same thing.
     Measured at 600,000 rows each takes about a seventh of a second; at five customers that is years away.
     Before about fifty customers: a retention rule and two partial indexes.
 30. **Small things in the alert messaging that were seen, understood and left as they are:**
+    - Boxes that go silent in two waves (two, then two more a few minutes later) are two messages, not one storm
+      of four: a storm is boxes that began within two minutes of each other. Nothing is lost.
     - A person with a phone number and no email address is texted the urgent alert and escalations, and is
       never told that a colleague acknowledged it or that it cleared (texts are for Act now only,
       `docs/27`, L11). The manual says to give everyone an email address.
@@ -354,3 +387,11 @@ of this list, so that an earlier reference still points at the same thing.
       moved up the list does not have their steps pulled forward.
     - If the database fails between an Act now message being refused and its next try being saved, the message
       can be sent twice. That was chosen over the loss it prevents.
+
+31. **The limits for each address (sign-in, the request form, the alert link) are kept in the API's memory by a
+    library that never forgets an address it has seen.** Someone with tens of thousands of different addresses
+    could slow the platform for some seconds; looking at an alert link and pressing its button are counted apart
+    (thirty a minute each, not together). Not needed for five sites; a limit at the host's edge is the fix. They also
+    rely on the host putting the visitor's address last in `X-Forwarded-For` (Railway does, and the web app reads
+    the last entry). Check it on the first deploy: wrong passwords from your phone, on its mobile network, must not
+    stop a sign-in from a laptop on another network.
