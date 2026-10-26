@@ -18,8 +18,9 @@ a form with a plain-words check beside it, and so that the platform tells you wh
 2. **Anything inside a distribution board is the electrician's work.** Clamping current transformers around
    live conductors, taking voltage for a meter and connecting a pump's run contact are done by a qualified
    electrician, under the customer's lock-out procedure, with you watching and writing it down. You do the
-   low-voltage part: the box, the network, the converter, the data cable between meters, the 4 to 20 mA
-   signal wires, the 12 or 24 volt supply from a plug-in supply.
+   low-voltage part: the box, the network, the converter, the data cable (you run it to the board; the
+   electrician connects its ends at the meters, because the meters' terminals are inside the board), the
+   4 to 20 mA signal wires, the 12 or 24 volt supply from a plug-in supply.
 3. **Never touch the solar panels' wiring (DC), a tank you must climb into, wastewater, or chemicals.** The
    customer's own staff or installer does that. If the only place for a sensor is there, say it is not
    possible and write why.
@@ -198,7 +199,7 @@ is N minutes fast".
 | | Electrician | You |
 |---|---|---|
 | 1 | Walk the site with you; agree where each meter and sensor goes; apply the lock-out | Walk with them; photograph before |
-| 2 | Fit the grid meter and the solar meter in the board: voltage connections with their fuses as the meter's manual says, the current clamps around the incoming phases, **arrow towards the site** | Mount the box, the converter and the 12 or 24 V supply on a shelf or rail; run the data cable from the converter to the first meter |
+| 2 | Fit the grid meter and the solar meter in the board: voltage connections with their fuses as the meter's manual says, the current clamps around the incoming phases, **arrow towards the site** | Mount the box, the converter and the 12 or 24 V supply on a shelf or rail; run the data cable from the converter to the board (the electrician connects it at the meters) |
 | 3 | Connect the pump's run contact to the input module; fit the level and pressure transmitters (a wet part: only the electrician or the customer's plumber) | Connect the 4 to 20 mA signal wires to the input module; the module's 24 V supply |
 | 4 | Remove the lock-out only when you both agree the work is closed up | Set each meter's address, speed and parity from its display ([03](03-hardware-and-wiring.md), "Meter settings") and write them down |
 | 5 | Stay until commissioning is done | Set the converter to **Modbus gateway** mode (Modbus TCP to RTU) with the same speed and parity; connect it and the box to the network; power up |
