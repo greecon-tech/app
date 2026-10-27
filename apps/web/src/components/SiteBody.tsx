@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { EnergyFlowView, HEALTH_LABELS, SiteHealth, valuePoints } from "@greecon/shared";
+import { EnergyFlowView, GREECON_PUBLIC_EMAILS, HEALTH_LABELS, SiteHealth, valuePoints } from "@greecon/shared";
 import { AlertRow, partitionAlerts } from "../lib/alerts";
 import { equipmentKind } from "../lib/equipment";
 import { priorityWord } from "../lib/health";
@@ -68,13 +68,16 @@ export function SiteBody({
   const siteNames = new Map([[site.id, site.name]]);
   const { shown, rest } = splitReadings(buildMetrics(detail));
   const hasValue = detail.points.some((point) => (valuePoints as readonly string[]).includes(point.canonicalName));
+  // Before the first reading there is nothing to draw: the page says so once, and what happens next, instead of six empty charts.
+  const waiting = detail.latestTelemetry.length === 0;
 
   return (
     <>
       <SiteAnswer detail={detail} />
+      {waiting ? <SiteWaiting siteId={site.id} canSetUp={canSetUp} /> : null}
       {active.length > 0 ? (
         <Section title="Needs you here" aside={<Link href="/alerts">Open alerts</Link>}>
-          <AlertList alerts={active.map((alert) => ({ ...alert, siteId: site.id }))} siteNames={siteNames} />
+          <AlertList alerts={active.map((alert) => ({ ...alert, siteId: site.id }))} siteNames={siteNames} linkSites={false} />
         </Section>
       ) : null}
       {detail.energyFlow?.hasEnergy ? (
@@ -100,7 +103,7 @@ export function SiteBody({
         ) : null}
       </Section>
       <Section title="Trends" aside={<Link href={`/analytics?siteId=${site.id}`}>All trends</Link>}>
-        {trendPoints.length === 0 ? (
+        {trendPoints.length === 0 || (waiting && history.length === 0) ? (
           <div className="empty-state">Nothing to chart yet. Charts appear when the site&apos;s readings start to arrive.</div>
         ) : (
           <>
@@ -134,7 +137,8 @@ export function SiteBody({
           columns={[
             { key: "name", label: "Equipment" },
             { key: "deviceType", label: "Kind", render: (row) => equipmentKind(row.deviceType) },
-            { key: "health", label: "State", render: (row) => <StatusBadge status={row.health} /> },
+            // Equipment that has never answered has not gone offline: it has not been connected yet.
+            { key: "health", label: "State", render: (row) => (row.lastSeenUtc ? <StatusBadge status={row.health} /> : <StatusBadge status="Unknown" label="Not connected yet" />) },
             { key: "lastSeenUtc", label: "Last heard from", render: (row) => (row.lastSeenUtc ? <Ago iso={row.lastSeenUtc} /> : "Not yet") }
           ]}
         />
@@ -177,6 +181,29 @@ export function SiteBody({
         </Section>
       ) : null}
     </>
+  );
+}
+
+/** What a site that has sent nothing yet says: that it is being set up, why the answer is Unknown, and what happens next. */
+function SiteWaiting({ siteId, canSetUp }: { siteId: string; canSetUp: boolean }) {
+  return (
+    <Section title="Being set up">
+      <div className="first-run">
+        <p>
+          <strong>Greecon is setting this site up.</strong> Until its box is fitted and each piece of equipment has answered, nothing has been measured, so Greecon says Unknown rather than guess.
+        </p>
+        <p className="muted">When the first readings arrive this page fills in by itself: how the site is doing, what needs a person, and what it is worth.</p>
+        {canSetUp ? (
+          <p>
+            <Link href={`/sites/${siteId}/setup`} className="button-primary">
+              Open the setup list
+            </Link>
+          </p>
+        ) : (
+          <p className="muted">Questions: {GREECON_PUBLIC_EMAILS[0]}.</p>
+        )}
+      </div>
+    </Section>
   );
 }
 

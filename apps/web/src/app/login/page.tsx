@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { GREECON_PUBLIC_EMAILS } from "@greecon/shared";
 import { LoginForm } from "../../components/LoginForm";
+import { SUSPENDED_SENTENCE } from "../../lib/refusals";
 
 export const metadata = { title: "Sign in" };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ changed?: string; ended?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ changed?: string; ended?: string; suspended?: string }> }) {
   const params = await searchParams;
   const changed = params.changed === "1";
   const ended = params.ended === "1";
+  const suspended = params.suspended === "1";
   return (
     <main className="login-page">
       <section className="login-panel" aria-label="Secure access">
@@ -25,6 +27,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         {ended ? (
           <p className="login-error" role="status">
             Your session has ended, because you were signed out or your access changed. Sign in again. If that does not work, ask the account&apos;s owner.
+          </p>
+        ) : null}
+        {suspended ? (
+          <p className="login-error" role="status">
+            {SUSPENDED_SENTENCE}
           </p>
         ) : null}
         <LoginForm />

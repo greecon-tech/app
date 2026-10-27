@@ -30,9 +30,10 @@ export function HowAlertsReach({ forTeam = false }: { forTeam?: boolean }) {
           <>
             <dt>A customer&apos;s box goes silent</dt>
             <dd>
-              Greecon&apos;s own team, and only the team, is told at once: the client, the site, since when, and the last reading. Once for each silence. If three or more boxes go silent
-              within ten minutes it is one message that says so, because that is usually Greecon&apos;s platform or a provider, not the customers. Nothing is sent to the customer by it. For a few
-              minutes after the platform itself restarts nothing is called silent.
+              Greecon&apos;s own team, and only the team, is told: the client, the site, since when, and the last reading. Once for each silence. By day it is sent as soon as the box has been
+              silent for a quarter of an hour; in the team&apos;s quiet hours it waits in the list below, marked Waiting with the time it is due, and goes when they end. If three or more boxes
+              go silent within ten minutes it is one message that says so, because that is usually Greecon&apos;s platform or a provider, not the customers. Nothing is sent to the customer by
+              it. For a few minutes after the platform itself restarts nothing is called silent.
             </dd>
           </>
         ) : null}

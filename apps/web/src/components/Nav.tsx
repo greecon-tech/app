@@ -3,32 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
-import { hasPermission, Permission, UserRole } from "@greecon/shared";
+import { Audience, currentPlace, hasPermission, IconName, isWithin, placesFor, tabsFor, UserRole } from "@greecon/shared";
 
-// Two audiences, two sets of five places (docs/28-ux-definition.md, section 3). Greecon's team has its own: what a project
-// manager does in a day is nothing like what a hotel owner does, and they used to be given the same bar. Settings is the
-// fifth place for both, and holds the tabs that used to hang under "Account". On a phone the same five links are the bar at
-// the foot of the screen (see "The shell" in globals.css), so nothing important sits behind a menu icon.
-export type Audience = "team" | "client";
+// Two audiences, two sets of five places (docs/28-ux-definition.md, section 3), defined in packages/shared/src/places.ts so that quick find offers
+// exactly what this bar does. On a phone the same five links are the bar at the foot of the screen (see "The shell" in globals.css),
+// so nothing important sits behind a menu icon.
+export type { Audience };
 
-interface Entry {
-  label: string;
-  /** Where the link goes. */
-  href: string;
-  /** Every path this place owns: the place is "current" while the page is in any of them. The longest match wins. */
-  owns: readonly string[];
-  icon: ReactNode;
-  /** A number to show beside the name (requests waiting). */
-  badge?: number;
-}
-
-interface Tab {
-  href: string;
-  label: string;
-  requires?: Permission;
-}
-
-const icons = {
+const icons: Record<IconName, ReactNode> = {
   today: (
     <>
       <circle cx="12" cy="12" r="3.6" />
@@ -85,68 +67,9 @@ const icons = {
   )
 };
 
-/** The tabs of the Settings place. Which of them a person sees follows what their role may do. */
-const SETTINGS_TABS: readonly Tab[] = [
-  { href: "/settings/people", label: "Who is told", requires: "settings:manage" },
-  { href: "/admin", label: "People", requires: "user:manage" },
-  { href: "/audit", label: "Audit log", requires: "audit:read" },
-  { href: "/settings", label: "Account" }
-];
-
-const REPORT_TABS: readonly Tab[] = [
-  { href: "/reports", label: "Downloads", requires: "report:export" },
-  { href: "/analytics", label: "Trends" }
-];
-
-const isWithin = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`));
-
-/** The tabs that go with the place the person is in, or none. */
-function tabsFor(pathname: string, audience: Audience): readonly Tab[] {
-  if (SETTINGS_TABS.some((tab) => isWithin(pathname, tab.href))) return audience === "team" ? SETTINGS_TABS.filter((tab) => tab.href !== "/admin") : SETTINGS_TABS;
-  if (REPORT_TABS.some((tab) => isWithin(pathname, tab.href))) return REPORT_TABS;
-  return [];
-}
-
-function places(role: UserRole, audience: Audience, requestsWaiting: number): Entry[] {
-  const settingsHref = hasPermission(role, "settings:manage") ? "/settings/people" : "/settings";
-  const settings: Entry = { label: "Settings", href: settingsHref, owns: ["/settings", "/admin", "/audit", "/change-password"], icon: icons.settings };
-  if (audience === "team") {
-    return [
-      { label: "Today", href: "/today", owns: ["/today"], icon: icons.today },
-      { label: "Clients", href: "/platform", owns: ["/platform"], icon: icons.clients },
-      { label: "Requests", href: "/platform/requests", owns: ["/platform/requests"], icon: icons.requests, badge: requestsWaiting },
-      { label: "Team", href: "/platform/team", owns: ["/platform/team"], icon: icons.team },
-      settings
-    ];
-  }
-  // Anyone may see the trends; only roles that may export see the downloads, so they land on the trends.
-  const reportsHref = hasPermission(role, "report:export") ? "/reports" : "/analytics";
-  return [
-    { label: "Overview", href: "/", owns: ["/"], icon: icons.overview },
-    // Devices and maintenance are staff tools reached from a site's equipment page; they belong to Sites, not to a place of their own.
-    { label: "Sites", href: "/sites", owns: ["/sites", "/devices", "/maintenance"], icon: icons.sites },
-    { label: "Alerts", href: "/alerts", owns: ["/alerts"], icon: icons.alerts },
-    { label: "Reports", href: reportsHref, owns: ["/reports", "/analytics"], icon: icons.reports },
-    settings
-  ];
-}
-
-/** The place whose path matches the page most closely, so /platform/requests is Requests and not Clients. */
-function currentPlace(entries: readonly Entry[], pathname: string): Entry | undefined {
-  let best: { entry: Entry; length: number } | undefined;
-  for (const entry of entries) {
-    for (const path of entry.owns) {
-      if (!isWithin(pathname, path)) continue;
-      const length = path === "/" ? 1 : path.length;
-      if (!best || length > best.length) best = { entry, length };
-    }
-  }
-  return best?.entry;
-}
-
 export function Nav({ role, audience = "client", requestsWaiting = 0 }: { role: UserRole; audience?: Audience; requestsWaiting?: number }) {
   const pathname = usePathname();
-  const entries = places(role, audience, requestsWaiting);
+  const entries = placesFor(role, audience, requestsWaiting);
   const current = currentPlace(entries, pathname);
 
   return (
@@ -154,7 +77,7 @@ export function Nav({ role, audience = "client", requestsWaiting = 0 }: { role: 
       {entries.map((entry) => (
         <Link href={entry.href} key={entry.label} aria-current={entry === current ? "page" : undefined}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            {entry.icon}
+            {icons[entry.icon]}
           </svg>
           <span className="main-nav__label">{entry.label}</span>
           {entry.badge ? (

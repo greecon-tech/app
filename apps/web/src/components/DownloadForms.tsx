@@ -28,6 +28,15 @@ export function DownloadForms({ sites, role }: { sites: Array<{ id: string; name
         written in the audit log with who took it.
       </p>
 
+      {sites.length === 0 ? (
+        <div className="rule-form">
+          <h3>Readings</h3>
+          <p className="muted">
+            There is no site yet, so there are no readings to take away. When your first site has started sending them, they can be downloaded here: hourly averages for up to a year, or
+            every reading for up to 31 days.
+          </p>
+        </div>
+      ) : (
       <form method="get" action="/export/readings" className="rule-form" aria-label="Download readings">
         <h3>Readings</h3>
         <p className="muted">What each sensor read, one row per reading. Hourly averages go back a year; every reading goes back up to 31 days. Times are given in UTC and on the site&apos;s own clock.</p>
@@ -62,12 +71,10 @@ export function DownloadForms({ sites, role }: { sites: Array<{ id: string; name
           {STYLES}
         </div>
         <div className="rule-form__footer">
-          <button type="submit" disabled={sites.length === 0}>
-            Download readings
-          </button>
-          {sites.length === 0 ? <span className="muted">There is no site yet.</span> : null}
+          <button type="submit">Download readings</button>
         </div>
       </form>
+      )}
 
       <form method="get" action="/export/alerts" className="rule-form" aria-label="Download alerts">
         <h3>Alerts</h3>

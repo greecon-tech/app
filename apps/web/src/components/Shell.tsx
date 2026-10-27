@@ -4,6 +4,7 @@ import { AccessRequest, DEMO_TENANT_ID, userRoles } from "@greecon/shared";
 import { apiGet, DEMO_ROLE } from "../lib/api";
 import { logoutAction } from "../app/login/actions";
 import { leaveSetupAction } from "../app/platform/actions";
+import { quickFindAction } from "../app/quick-find/actions";
 import { roleLabel } from "../lib/roles";
 import { getSession } from "../lib/session";
 import { DemoBanner } from "./DemoBanner";
@@ -95,7 +96,7 @@ export async function Shell({ children, title, subtitle, action }: { children: R
     );
 
   return (
-    <Frame audience={audience} role={role} home={home} waiting={waiting} title={title} subtitle={subtitle} action={action} tools={tools} banner={banner}>
+    <Frame audience={audience} role={role} home={home} waiting={waiting} title={title} subtitle={subtitle} action={action} tools={tools} banner={banner} search={quickFindAction}>
       {children}
     </Frame>
   );

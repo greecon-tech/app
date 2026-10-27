@@ -1,18 +1,40 @@
 import Link from "next/link";
 import { GREECON_COMPANY, GREECON_PUBLIC_EMAILS } from "@greecon/shared";
+import { Shell } from "../../components/Shell";
+import { isStaticExport } from "../../lib/api";
+import { getSession } from "../../lib/session";
 
 export const metadata = { title: "Privacy" };
 
 // Public, like the sign-in page: the people whose details Greecon keeps should be able to read what it keeps without an account.
 // A plain statement of what the platform does today, written to be true of it; a lawyer reads it before the first customer signs
 // (docs/launch/04-sales-kit.md), and it changes when the platform does.
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const session = await getSession();
   const email = GREECON_PUBLIC_EMAILS[0];
+  // Public, and also reachable from inside the app (the bar's foot): a signed-in person keeps their bar and their way back; a visitor gets the bare page.
+  if (isStaticExport() || session) {
+    return (
+      <Shell title="Privacy" subtitle="What Greecon keeps about you, and why.">
+        <div className="privacy privacy--in-app">
+          <PrivacyBody email={email} signedIn />
+        </div>
+      </Shell>
+    );
+  }
   return (
     <main className="privacy">
       <img src={`${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`} alt="Greecon" width="32" height="45" />
       <p className="eyebrow">Privacy</p>
       <h1>What Greecon keeps about you, and why</h1>
+      <PrivacyBody email={email} />
+    </main>
+  );
+}
+
+function PrivacyBody({ email, signedIn = false }: { email: string; signedIn?: boolean }) {
+  return (
+    <>
       <p>
         This is {GREECON_COMPANY}, Durana Tech Park, Albania. For anything about your data, write to <a href={`mailto:${email}`}>{email}</a>.
       </p>
@@ -74,9 +96,13 @@ export default function PrivacyPage() {
       <p className="muted">
         This page is a plain summary of what the platform does today. It does not replace the agreement between you and Greecon, and it changes as the platform does. Last changed 19 October 2026.
       </p>
-      <p>
-        <Link className="standalone-link" href="/login">Back to sign in</Link>
-      </p>
-    </main>
+      {signedIn ? null : (
+        <p>
+          <Link className="standalone-link" href="/login">
+            Back to sign in
+          </Link>
+        </p>
+      )}
+    </>
   );
 }

@@ -47,6 +47,15 @@
   --unknown-fg: #4a4f4b;
   --unknown-bg: rgba(74, 79, 75, 0.1);
 
+  /* What sits above the page (menus, the finder) and what is drawn around it. In the light these are the page's own colour and a soft
+     shadow; in the dark (end of this file) a surface that is above is lighter, as Apple's "elevated" backgrounds are (docs/29). */
+  --bg-elevated: var(--bg);
+  --line-strong: rgba(47, 61, 53, 0.35);
+  --shadow-card: 0 1px 3px rgba(26, 33, 29, 0.1);
+  --shadow-pop: 0 8px 24px rgba(26, 33, 29, 0.16);
+  --scrim: rgba(26, 33, 29, 0.4);
+  --grid-line: rgba(0, 0, 0, 0.035);
+
   /* Spacing and radius scale, straight from the spec — pills for buttons/tags/swatches, large
      radii for cards, a small radius for controls (fields keep radius-sm; buttons and tags are
      radius-pill). */
@@ -64,6 +73,9 @@
   --radius-lg: 24px;
   --radius-pill: 999px;
 
+  /* The page says it can be light or dark, so scrollbars, form controls and the browser's own pages follow the person's setting. */
+  color-scheme: light dark;
+
   font-family: var(--font-plex-serif), "IBM Plex Serif", Georgia, "Times New Roman", serif;
 }
 
@@ -80,7 +92,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.5;
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
@@ -163,6 +175,27 @@ a.button-ghost:focus-visible {
   color: var(--text);
 }
 
+/* A control that cannot be used says so: it is dimmed (Apple: "dim a control that is not available") and does not answer the pointer. A
+   button that is working says so the same way. Colour is not the only cue: the pointer, the label ("Opening…") and the disabled state itself
+   are what a screen reader and a keyboard are told. */
+button:disabled,
+button:disabled:hover,
+button:disabled:focus-visible {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--on-action);
+}
+
+button.button-ghost:disabled,
+button.button-ghost:disabled:hover,
+button.button-ghost:disabled:focus-visible {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--text);
+}
+
 input,
 select {
   width: 100%;
@@ -192,7 +225,8 @@ label {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  /* 15rem is 240 px at the usual size; at larger text it grows with it, but never past a quarter of the screen. */
+  grid-template-columns: clamp(240px, 15rem, 25vw) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -384,8 +418,8 @@ main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 2.125rem;
+  height: 2.125rem;
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--accent-strong);
@@ -436,8 +470,8 @@ main {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: 8px;
-  background: var(--bg);
-  box-shadow: 0 8px 24px rgba(26, 33, 29, 0.16);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
 }
 
 .user-menu__panel a,
@@ -513,8 +547,8 @@ main {
 }
 
 .metric-card:hover {
-  border-color: rgba(47, 61, 53, 0.35);
-  box-shadow: 0 1px 3px rgba(26, 33, 29, 0.1);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-card);
 }
 
 .metric-card--small {
@@ -586,8 +620,8 @@ main {
 
 .site-map--field {
   background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px) 0 0 / 12.5% 100%,
-    linear-gradient(0deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 12.5% 100%,
+    linear-gradient(0deg, var(--grid-line) 1px, transparent 1px) 0 0 / 100% 25%,
     var(--pale-green-blue);
 }
 
@@ -675,12 +709,13 @@ main {
 
 .sensor-map {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
   gap: 12px;
 }
 
 .sensor-node {
   display: grid;
+  min-width: 0;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -690,15 +725,16 @@ main {
 }
 
 .sensor-node:hover {
-  border-color: rgba(47, 61, 53, 0.35);
-  box-shadow: 0 1px 3px rgba(26, 33, 29, 0.1);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-card);
 }
 
 .sensor-node__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
 }
 
 .sensor-node__header p {
@@ -716,9 +752,10 @@ main {
 
 .sensor-node__reading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 4px 10px;
   font-size: 0.86rem;
 }
 
@@ -728,8 +765,9 @@ main {
 
 .sensor-node__reading-value {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
 }
 
 .sensor-node__reading-value strong {
@@ -743,6 +781,7 @@ main {
 
 .sensor-node__meta {
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--faint);
   font-size: 0.76rem;
 }
@@ -924,8 +963,8 @@ main {
 
 .site-row:hover,
 .site-row:focus-visible {
-  border-color: rgba(47, 61, 53, 0.35);
-  box-shadow: 0 1px 3px rgba(26, 33, 29, 0.1);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-card);
 }
 
 .table-wrap {
@@ -1074,6 +1113,16 @@ tbody tr:hover {
   max-width: 46rem;
   margin: 0 auto;
   padding: 32px 16px 64px;
+}
+
+/* Inside the app the page already has its own margins and heading: only the reading width is kept. */
+.privacy--in-app {
+  margin: 0;
+  padding: 0;
+}
+
+.privacy--in-app h2:first-child {
+  margin-top: 0;
 }
 
 .privacy h1 {
@@ -1256,7 +1305,7 @@ tbody tr:hover {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(26, 33, 29, 0.4);
+  background: var(--scrim);
   padding: 20px;
 }
 
@@ -1264,9 +1313,9 @@ tbody tr:hover {
   width: min(420px, 100%);
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--warm-background);
+  background: var(--bg-elevated);
   padding: 20px;
-  box-shadow: 0 8px 24px rgba(26, 33, 29, 0.2);
+  box-shadow: var(--shadow-pop);
 }
 
 .dialog__actions {
@@ -1297,7 +1346,7 @@ tbody tr:hover {
   gap: 20px;
   width: min(400px, 100%);
   padding: 32px;
-  box-shadow: 0 1px 3px rgba(26, 33, 29, 0.1);
+  box-shadow: var(--shadow-card);
 }
 
 .login-panel img {
@@ -1710,7 +1759,7 @@ tbody tr:hover {
 }
 
 .ef-hub {
-  fill: var(--forest);
+  fill: var(--flow-site);
 }
 
 .ef-node__ring {
@@ -2230,6 +2279,8 @@ input[type="checkbox"] {
 
 .handover dd {
   margin: 0;
+  /* An address or a long name breaks at the edge of the sheet instead of widening it (320 px, docs/29 S1). */
+  overflow-wrap: anywhere;
 }
 
 .handover__sign {
@@ -2736,18 +2787,20 @@ main:focus {
   background: var(--bg-hover);
 }
 
+/* An open menu takes the row's width and its panel opens in the flow of the row, not over it: a table's box clips what floats out of it and
+   turns it into a scroll, which hid the words on the last row (the consequence of "Suspend this client"). */
+.row-menu[open] {
+  flex: 1 1 100%;
+}
+
 .row-menu__panel {
-  position: absolute;
-  right: 0;
-  z-index: 20;
   display: grid;
   gap: 8px;
-  width: min(280px, 80vw);
+  width: 100%;
   margin-top: 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--bg);
-  box-shadow: 0 8px 24px rgba(26, 33, 29, 0.16);
+  background: var(--bg-elevated);
   padding: 12px;
 }
 
@@ -2765,12 +2818,6 @@ main:focus {
   .today-item > a.button-primary {
     width: 100%;
     min-height: 44px;
-  }
-
-  .row-menu__panel {
-    position: static;
-    width: 100%;
-    box-shadow: none;
   }
 
   .row-actions {
@@ -2826,6 +2873,11 @@ main:focus {
 .help-list dd,
 .account-list dd {
   margin: 0;
+}
+
+/* "Owner" and what an owner may do, "Greecon" and who to write to: two lines, so that the name does not run into the sentence after it. */
+.account-list dd > .muted {
+  display: block;
 }
 
 /* A list that already lays each row out as a pair (the roles) keeps its own grid. */
@@ -3154,4 +3206,392 @@ main dd a:not([class]):hover,
 .privacy a:not([class]):hover,
 a.standalone-link:hover {
   text-decoration-thickness: 2px;
+}
+
+/* ---- Quick find ------------------------------------------------------------------------------------ */
+/* docs/29-apple-notion-standards.md. Ctrl+K, Command+K or "/" opens one box that finds a page, a site, a client or an action by what the
+   person remembers of its name. On a desk its button is a field at the top of the bar; on a phone, an icon in the top bar. The box is a
+   modal dialog in the browser's own sense: the page behind it is inert, Escape closes it, and the focus goes back where it was. */
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg-sidebar);
+  color: var(--muted);
+  padding: 0 5px;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+button.find-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 0.89rem;
+  font-weight: 400;
+  text-align: left;
+}
+
+button.find-button:hover,
+button.find-button:focus-visible {
+  border-color: var(--line-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.find-button__label {
+  flex: 1;
+}
+
+button.find-button--bar {
+  display: none;
+  flex-shrink: 0;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  border-radius: 50%;
+  padding: 0;
+}
+
+dialog.find {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+dialog.find:not([open]) {
+  display: none;
+}
+
+dialog.find::backdrop {
+  background: var(--scrim);
+}
+
+body:has(dialog.find[open]) {
+  overflow: hidden;
+}
+
+.find__panel {
+  position: absolute;
+  top: min(12vh, 120px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100% - 32px));
+  max-height: calc(100% - min(12vh, 120px) - 16px);
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
+}
+
+.find__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 8px 8px 16px;
+  color: var(--muted);
+}
+
+.find__field svg {
+  flex-shrink: 0;
+}
+
+.find__field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 0 4px;
+  font-size: 1.05rem;
+}
+
+.find__field input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.find__field input:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+
+.find__results {
+  max-height: min(50vh, 420px);
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.find__result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+/* The one that Enter opens is marked by a bar and a tint, not by colour alone. */
+.find__result[aria-selected="true"] {
+  background: var(--bg-hover-strong);
+  box-shadow: inset 3px 0 0 var(--action);
+}
+
+.find__main {
+  display: grid;
+  min-width: 0;
+}
+
+.find__main strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.find__main span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.find__kind {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.find__empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: var(--muted);
+}
+
+.find__hint {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding: 8px 16px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+@media (hover: none) {
+  .find__hint {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  button.find-button--sidebar {
+    display: none;
+  }
+
+  button.find-button--bar {
+    display: inline-flex;
+  }
+
+  .find__panel {
+    top: 8px;
+    width: calc(100% - 16px);
+    max-height: calc(100% - 16px);
+  }
+}
+
+/* ---- A thumb, and the bar at the foot of a phone ---------------------------------------------------- */
+/* docs/29: Apple's control is 44 pt; WCAG 2.2's floor is 24 px. A heading that opens a section is a control too. */
+@media (max-width: 900px) {
+  /* What the keyboard focus scrolls into view must stop above the fixed bar, not under it (WCAG 2.4.11). */
+  html {
+    scroll-padding-bottom: calc(64px + env(safe-area-inset-bottom) + 16px);
+  }
+}
+
+@media (max-width: 700px) {
+  /* An address or a domain is one long word: in a card it breaks where it must, instead of widening the page (WCAG 1.4.10, 320 px). */
+  .table-wrap td {
+    overflow-wrap: anywhere;
+  }
+
+  details > summary {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding-block: 10px;
+  }
+
+  .panel > summary,
+  details.panel > summary,
+  .help-jump a,
+  .checkbox-row {
+    min-height: 44px;
+  }
+}
+
+/* ---- The person's own settings: more contrast, dark, forced colours ------------------------------- */
+/* docs/29. Greecon has no switch of its own for any of these: it follows what the person's device is set to, and changes while the page
+   is open when they change it. Each pair of colours was measured in each setting, text at 4.5:1 or more and, for small text, 7:1. */
+
+@media (prefers-contrast: more) {
+  :focus-visible {
+    outline-width: 3px;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  .metric-card,
+  .panel,
+  .login-panel,
+  .site-row {
+    border-width: 2px;
+  }
+}
+
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root {
+    --muted: rgba(26, 33, 29, 0.92);
+    --faint: rgba(26, 33, 29, 0.86);
+    --line: rgba(26, 33, 29, 0.62);
+    --line-strong: rgba(26, 33, 29, 0.85);
+    --bg-card: rgba(232, 224, 211, 0.75);
+    --critical-fg: #6f1f19;
+    --warning-fg: #4f3a0c;
+    --watch-fg: #243b36;
+    --ok-fg: #1a4430;
+    --unknown-fg: #2b2f2c;
+  }
+}
+
+@media screen and (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131916;
+    --bg-sidebar: #0e1411;
+    --bg-elevated: #1d2520;
+    --bg-card: rgba(239, 233, 222, 0.055);
+    --bg-hover: rgba(239, 233, 222, 0.08);
+    --bg-hover-strong: rgba(239, 233, 222, 0.14);
+    --text: #efe9de;
+    --muted: rgba(239, 233, 222, 0.78);
+    --faint: rgba(239, 233, 222, 0.7);
+    --line: rgba(239, 233, 222, 0.2);
+    --line-strong: rgba(239, 233, 222, 0.38);
+    --accent: #62b389;
+    --action: #4fa377;
+    --on-action: #0c130f;
+    --accent-soft: rgba(98, 179, 137, 0.2);
+    --critical-fg: #f4a79f;
+    --critical-bg: rgba(240, 120, 108, 0.16);
+    --warning-fg: #e8c880;
+    --warning-bg: rgba(226, 178, 80, 0.16);
+    --watch-fg: #a8cfc7;
+    --watch-bg: rgba(120, 170, 160, 0.16);
+    --ok-fg: #93d4ae;
+    --ok-bg: rgba(100, 190, 140, 0.16);
+    --unknown-fg: #c9cec9;
+    --unknown-bg: rgba(200, 206, 200, 0.12);
+    --pale-green-blue: #1b2823;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
+    --scrim: rgba(4, 8, 6, 0.65);
+    --grid-line: rgba(239, 233, 222, 0.06);
+    --flow-solar: #e0a63a;
+    --flow-grid: #86b1d9;
+    --flow-battery: #62b389;
+    --flow-site: #d9e3dc;
+  }
+}
+
+@media screen and (prefers-color-scheme: dark) and (prefers-contrast: more) {
+  :root {
+    --text: #faf6ee;
+    --muted: rgba(250, 246, 238, 0.95);
+    --faint: rgba(250, 246, 238, 0.9);
+    --line: rgba(250, 246, 238, 0.6);
+    --line-strong: rgba(250, 246, 238, 0.85);
+    --critical-fg: #ffc9c3;
+    --warning-fg: #f5dc9c;
+    --watch-fg: #c4e3dc;
+    --ok-fg: #b0e6c6;
+    --unknown-fg: #e1e5e1;
+  }
+}
+
+/* Forced colours (Windows high contrast): the browser takes the colours and keeps the borders and the words, so what the colour said
+   must also be a line or a mark. */
+@media (forced-colors: active) {
+  .find__result[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .main-nav a[aria-current="page"],
+  .section-tabs a[aria-current="page"] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .status,
+  .main-nav__badge {
+    border: 1px solid CanvasText;
+  }
+}
+
+@media print {
+  .find-button,
+  dialog.find {
+    display: none !important;
+  }
+}
+
+/* An account or a site with nothing in it yet says what happens next (docs/29): a sentence, the steps, and the one thing to do now. */
+.first-run {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 60rem;
+}
+
+.first-run p {
+  margin: 0;
+}
+
+.first-run .getting-started {
+  gap: var(--space-3);
+}
+
+.first-run .getting-started li {
+  gap: var(--space-2);
 }

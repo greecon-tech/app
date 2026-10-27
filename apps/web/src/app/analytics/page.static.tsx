@@ -4,7 +4,7 @@ import { TrendSections } from "../../components/TrendSections";
 import { apiGet } from "../../lib/api";
 import { seriesByKind } from "../../lib/telemetry-history";
 
-export const metadata = { title: "Reports" };
+export const metadata = { title: "Trends" };
 
 interface TelemetryReading {
   timestampUtc: string;
@@ -22,7 +22,7 @@ export default async function AnalyticsPage() {
   const seriesOf = seriesByKind(readings);
 
   return (
-    <Shell title="Reports" subtitle="How things have been over time: energy, water and the land, with their normal band.">
+    <Shell title="Trends" subtitle="How things have been over time: energy, water and the land, with their normal band.">
       <TrendSections seriesOf={seriesOf} rangeNote="last 7 days" />
     </Shell>
   );

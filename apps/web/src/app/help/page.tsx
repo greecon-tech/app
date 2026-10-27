@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { GREECON_COMPANY, GREECON_PUBLIC_EMAILS, HEALTH_LABELS } from "@greecon/shared";
+import { GREECON_COMPANY, GREECON_PUBLIC_EMAILS, HEALTH_LABELS, hasPermission } from "@greecon/shared";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
 import { StatusBadge } from "../../components/StatusBadge";
-import { isStaticExport } from "../../lib/api";
+import { DEMO_ROLE, isStaticExport } from "../../lib/api";
 import { getSession } from "../../lib/session";
 
 export const metadata = { title: "Help" };
@@ -15,9 +15,10 @@ export default async function HelpPage() {
   const session = await getSession();
   const inApp = isStaticExport() || Boolean(session);
   const forTeam = Boolean(session?.user.isPlatformAdmin);
+  const canExport = hasPermission(session?.user.role ?? DEMO_ROLE, "report:export");
   const email = GREECON_PUBLIC_EMAILS[0];
 
-  const content = <HelpContent email={email} forTeam={forTeam} />;
+  const content = <HelpContent email={email} forTeam={forTeam} canExport={canExport} />;
   if (inApp) {
     return (
       <Shell title="Help" subtitle="What things mean, what to do first, and who to call.">
@@ -38,7 +39,7 @@ export default async function HelpPage() {
   );
 }
 
-function HelpContent({ email, forTeam }: { email: string; forTeam: boolean }) {
+function HelpContent({ email, forTeam, canExport }: { email: string; forTeam: boolean; canExport: boolean }) {
   return (
     <>
       <nav className="help-jump" aria-label="On this page">
@@ -46,6 +47,7 @@ function HelpContent({ email, forTeam }: { email: string; forTeam: boolean }) {
         <a href="#alert">An alert arrived</a>
         <a href="#call">Who to call</a>
         <a href="#data">Your data</a>
+        <a href="#keys">Keyboard and display</a>
         <a href="#words">Words Greecon uses</a>
         {forTeam ? <a href="#team">For Greecon&apos;s team</a> : null}
       </nav>
@@ -130,11 +132,32 @@ function HelpContent({ email, forTeam }: { email: string; forTeam: boolean }) {
 
       <Section title="Your data" id="data">
         <p>
-          Your readings, your alerts, your audit log and how your account is set up are yours. Download them whenever you like from <Link href="/reports">Reports</Link>, as a file that opens in a
-          spreadsheet. If you ever stop using Greecon, write to <a href={`mailto:${email}`}>{email}</a> and every reading Greecon holds is sent to you, and deleted if you ask.
+          Your readings, your alerts, your audit log and how your account is set up are yours.{" "}
+          {canExport ? (
+            <>
+              Download them whenever you like from <Link href="/reports">Reports</Link>, as a file that opens in a spreadsheet.
+            </>
+          ) : (
+            "The owner of your account can download them whenever they like, as a file that opens in a spreadsheet."
+          )}{" "}
+          If you ever stop using Greecon, write to <a href={`mailto:${email}`}>{email}</a> and every reading Greecon holds is sent to you, and deleted if you ask.
         </p>
         <p>
           What Greecon keeps and why is in plain words on the <Link href="/privacy">Privacy</Link> page.
+        </p>
+      </Section>
+
+      <Section title="Keyboard and display" id="keys">
+        <p>
+          Press <kbd>Ctrl</kbd> + <kbd>K</kbd> (<kbd>⌘</kbd> + <kbd>K</kbd> on a Mac), or <kbd>/</kbd>, on any page to search for a page, a site or, for Greecon&apos;s team, a client. <kbd>↑</kbd> and{" "}
+          <kbd>↓</kbd> choose, <kbd>Enter</kbd> opens, <kbd>Esc</kbd> closes.
+        </p>
+        <p>
+          <kbd>Tab</kbd> moves from one control to the next, and the first one skips straight to the page. <kbd>Esc</kbd> closes a menu. Everything can be done without a mouse.
+        </p>
+        <p className="muted">
+          Greecon follows what your phone or computer is set to: light or dark, larger text, more contrast, and less motion. There is nothing to switch on inside Greecon, so there is nothing to find or to
+          forget.
         </p>
       </Section>
 

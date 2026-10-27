@@ -28,7 +28,17 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Greecon", statusBarStyle: "default" }
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f7f1e9" };
+// The browser's own bar follows the page: cream in the light, the page's own dark green in the dark (docs/29-apple-notion-standards.md). The
+// page also says at once that it has both, so nothing flashes white before the stylesheet arrives.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f1e9" },
+    { media: "(prefers-color-scheme: dark)", color: "#131916" }
+  ]
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
