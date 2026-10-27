@@ -282,7 +282,7 @@ figure.diagram.tall svg { max-height: 214mm; }
   color: var(--forest);
 }
 .cover-art { position: absolute; right: -16mm; bottom: 22mm; width: 112mm; height: 112mm; opacity: 1; }
-.cover-top { position: absolute; left: 22mm; top: 20mm; display: flex; align-items: center; gap: 4mm; }
+.cover-top { position: absolute; left: 22mm; top: 18mm; display: flex; align-items: center; gap: 4.5mm; }
 .cover-top .wordmark { font: 800 21pt/1 var(--sans); letter-spacing: -0.02em; color: var(--forest); }
 .cover-top .wordmark small { display: block; font: 600 6.6pt/1 var(--sans); letter-spacing: 0.22em; text-transform: uppercase; color: var(--leaf); margin-top: 1.4mm; }
 .cover-body { position: absolute; left: 22mm; right: 22mm; top: 64mm; }

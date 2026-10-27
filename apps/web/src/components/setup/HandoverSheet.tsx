@@ -1,4 +1,4 @@
-import type { HandoverView } from "@greecon/shared";
+import { GREECON_COMPANY, GREECON_DOMAIN, GREECON_PUBLIC_EMAILS, type HandoverView } from "@greecon/shared";
 import { CONTACT_WORDS, STEP_STATUS_WORDS } from "../../lib/setup";
 import { DataTable } from "../DataTable";
 import { StatusBadge } from "../StatusBadge";
@@ -27,6 +27,17 @@ export function HandoverSheet({ view }: { view: HandoverView }) {
   const open = view.steps.filter((step) => step.status !== "done" && !step.optional).length;
   return (
     <article className="handover">
+      {/* What the customer is given on paper says who it is from: the app's own frame, with the logo, is not printed. */}
+      <header className="handover__letterhead">
+        <img src={`${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`} alt="Greecon" width="32" height="45" />
+        <div>
+          <strong>{GREECON_COMPANY}</strong>
+          <span>
+            {GREECON_DOMAIN} · {GREECON_PUBLIC_EMAILS[0]}
+          </span>
+        </div>
+        <p>Handover sheet</p>
+      </header>
       <section>
         <h2>{view.site.name}</h2>
         <dl>
