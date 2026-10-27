@@ -39,6 +39,7 @@ a form with a plain-words check beside it, and so that the platform tells you wh
 |---|---|
 | **Your login** | Your own, from the founder. Sign in at `https://app.greecon.earth/login` and choose **Greecon team**. You are asked for a password of your own the first time. Never share it. |
 | **Today** and **Clients** (the console) | **Today** is where you start: the sites that need a look, the requests waiting and the sites being set up. **Clients** is where you onboard a customer and open their account to set it up. **Requests** lists who has asked for Greecon, and **Team** the people at Greecon who can open a customer's account. |
+| **Search** | **Ctrl+K** (**⌘K** on a Mac), or **/**, or the **Search** button at the top of the left bar (on a phone, the magnifier at the top right) opens one box. Type a few letters of a client's name to open it, of a request to see who asked, or of a page; inside a customer's account, of a site. **Enter** opens the first result, **Esc** closes. |
 | **The setup list** | One page per site (`Set up <site name>`) that shows up to ten steps (a step that does not apply to the site is left out), what is done, what is next, and what to do. Most steps turn **Done** by themselves when the platform sees them work. A few only a person can check. |
 | **The box** | A small computer at the site. It reads the meters and sensors and reports to Greecon. One pasted line installs it. |
 | **The converter** | A small unit that puts the meters' cable (RS-485) on the network so that the box can reach them. |
@@ -326,13 +327,19 @@ when somebody **acknowledges** the alert (who took it), one when the problem has
 the meter's clamps point. A reversed clamp swaps what the site buys with what it sells, and every figure with it.
 **With the sun down or the solar switched off, switch on a known load** (a kettle or a heater). **Grid import must
 go up.** If **Grid export** goes up, the clamps are the wrong way round: the electrician turns them (with the lock-out
-on), you check again. Then press **I checked this**, with a note of what you saw.
+on), you check again. Then press **I checked this**, with a note of what you saw. If a clamp is left reversed, Greecon
+notices on its own at night or in cloud (energy cannot go out of a plant that nothing is producing for): the energy
+picture says so, and after five minutes a **Check today** alert, *The grid meter may be fitted the wrong way round*,
+opens. At midday it cannot tell, which is why this check stays.
 
 **7.9 Alert limits agreed with the customer.** The step lists each reading that has limits, with what applies. The
 standard ones: tank **Critical below 15 percent** (an Act now alert), **Low below 35 percent** (a Check today
 alert); pump **No flow at or below 0.2 litres a minute** (an Act now alert once it has held for 30 seconds, raised
 only when the box reads both a flow and the pump's running state); battery **Low below 25 percent**. Irrigation
-advice and solar surplus have no standard value, and the platform says nothing about them rather than guess.
+advice, **frost** and solar surplus have no standard value, and the platform says nothing about them rather than guess.
+(Frost: an **Act now** alert opens when the air at the field reaches the grower's own **Frost alert at or below** value
+and stays there for two minutes. Ask the grower at what temperature the crop is in danger and in which weeks; enter it
+on the weather sensor's air temperature.)
 **Go through them with the customer.** To change one, open the **Standard** drop-down beside the reading in this
 step (it says **1 set**, **2 set** once changed), type the numbers, press **Save limits**, and when they are agreed
 press **I checked this.** The same drop-down is in the **Limits** column under **Readings** on the site's
@@ -418,6 +425,11 @@ a cellular router if there is no network in the pump house.
 or driest spot). **Greecon gives no irrigation advice until the grower's own "start irrigating below" value is
 entered,** because that number depends on the soil, the crop and the probe's depth and nobody can set it for
 them. After the first week of readings, ask the grower what reading means "time to water" and enter it as the limit.
+**Ask, too, at what air temperature frost damages the crop and in which weeks of the year.** Enter it as the **Frost
+alert at or below** limit on the air temperature (the number depends on the crop and how far on it is, so Greecon has
+none of its own, and says nothing about frost until it is set). A frost alert is an **Act now** message in the night:
+agree who is woken. **Map the air temperature as a signed number** (int16): below zero, an unsigned register reads a
+frosty morning as a hot afternoon.
 
 **Write in the handover:** the probe's depth and where it is. Soil readings are only as good as the contact
 between probe and soil.
@@ -534,7 +546,7 @@ needs no hardware except the box (or a spare computer running Debian, Ubuntu or 
 7. Print the handover sheet. Download the readings from **Reports** (**Downloads**). Open the file in a spreadsheet.
 8. When finished, remove the rehearsal site's equipment and then the site (on the site's **Equipment and readings**
    page: **Remove** beside each piece of equipment, then **The site itself**: a site that still has equipment cannot
-   be deleted), or suspend the client from **Clients** (**More**, then **Suspend this client**), so that it does not
+   be deleted), or suspend the client from **Clients** (**More**, then **Suspend this client**, and confirm), so that it does not
    appear in the morning check. If you will use the Rehearsal client to show **Who is told** and **Reports** in a sales demonstration
    ([04, section 4](04-sales-kit.md#4-the-pitch-five-minutes-and-the-demo-ten)), keep it and its site until then, and
    start the pretend meter before the meeting: with the meter stopped the site shows as out of date.

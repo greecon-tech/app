@@ -47,13 +47,13 @@ never counts silence as good news.
 2. The project manager connects the devices and checks every reading against the real world, and hands
    over a printed sheet saying where everything is (`docs/launch/02-project-manager-manual.md`).
 3. **Say who is told**, in the order they should hear, under **Who is told**, and send each person a test
-   message. Ask each to confirm it arrived. Everyone on the list should also have their own login with the
-   Operator role (the owner adds people under **Admin**): only a person who can sign in can acknowledge an alert,
-   which is what stops the chain of messages, and a person with only a phone number cannot. Nothing is
-   commissioned until the list and a test message are done.
+   message. Ask each to confirm it arrived. A person on the list does not need a login: every alert message
+   carries an **I have seen this** link that works on a phone without signing in, for 72 hours, and pressing
+   its button is what stops the chain of messages. (Opening the link changes nothing; only the button does.)
+   Nothing is commissioned until the list and a test message are done.
 4. Agree the limits that matter for your site (the **Limits** control on each reading point). Greecon
    has a standard for a tank's low and critical level, a battery's low charge and a pump's no-flow level
-   (0.2 litres a minute), and none for irrigation or solar surplus: it says nothing about those until you set them.
+   (0.2 litres a minute), and none for irrigation, frost or solar surplus: it says nothing about those until you set them.
 5. Watch the Overview. Open **Sites** for each site's own page, with its readings, trends and equipment.
 
 ## What each alert means and what to do first
@@ -66,6 +66,8 @@ never counts silence as good news.
 | Battery charge is low | Charge is below the low limit (standard 25%, or your own) | Reduce non-essential load or check that the battery is charging |
 | Readings from this site are out of date | One or more readings are older than their limit | Check the gateway's power and network connection. Until readings resume, the values shown are the last ones received |
 | A sensor is reporting bad data | A reading's quality is marked bad | Inspect the sensor and its wiring. Commands that depend on it stay blocked until it recovers |
+| The grid meter may be fitted the wrong way round | The meter reports energy going out while nothing is producing it (sun down, no battery feeding the grid) and has done so for five minutes. Check today | With the sun down, switch on a known load: Grid import must go up. If Grid export goes up instead, turn the meter's current clamps round. Until then the savings shown are wrong |
+| Frost: the air at the field has fallen to the frost limit | The air temperature has been at or below the frost limit you set for this field for two minutes. Act now. It exists only once you have set the limit | Protect the crop the way you planned for frost: cover it, or start your frost protection |
 
 Alerts are shown by priority: **Act now** (needs a person within minutes), **Check today**, and **For
 your information**. They also reach people, by the rules you can read on **Who is told**:
@@ -73,7 +75,8 @@ your information**. They also reach people, by the rules you can read on **Who i
 - **Act now** is emailed to the first person on your list at once and texted ten minutes later if nobody has
   acknowledged it. Thirty minutes after the alert began it goes to the next person, by email and text, and so
   on down the list. Acknowledging it in Greecon stops the messages that have not gone out yet and tells the others
-  who took it. Only a person who can sign in can acknowledge, so each person on your list needs their own login.
+  who took it. A person acknowledges either in Greecon or with the **I have seen this** link in the message, which
+  needs no login and works for 72 hours.
 - **Check today** is one email to the first person, held until morning if it comes in quiet hours
   (22:00 to 07:00 unless you change them).
 - **For your information** is only shown, never sent.

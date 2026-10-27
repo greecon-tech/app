@@ -39,7 +39,7 @@ Water module unit 3. 9600 baud, 8 data bits, no parity, 1 stop bit. Converter on
 :::::
 
 ::: stop
-**Greecon gives no irrigation advice until the grower's own "start irrigating below" value is entered.** That number depends on the soil, the crop and the probe's depth, and nobody can set it for the grower. After the first week of readings, ask the grower what reading means "time to water", and enter it as the limit (step 9 of the setup list).
+**Greecon gives no irrigation advice until the grower's own "start irrigating below" value is entered.** That number depends on the soil, the crop and the probe's depth, and nobody can set it for the grower. After the first week of readings, ask the grower what reading means "time to water", and enter it as the limit (step 9 of the setup list). **Frost works the same way:** ask at what air temperature frost damages the crop, and in which weeks; enter it as **Frost alert at or below** on the air temperature (step 9). It opens an Act now alert, so agree who is woken. Map the air temperature as a signed number (int16), or a frosty morning reads as a hot afternoon.
 :::
 
 **The order of the work:** survey with the grower, buy, prepare at the office, install day, the platform's setup list, commissioning, handover. Then the morning check, and the day 1, 3 and 7 calls.
@@ -239,6 +239,7 @@ Signed off by: {{line}} Date: {{line:short}}
 - {{cb}} **Show the owner, in ten minutes, in this order:** the **{{ui.overview}}** (is everything all right, in one sentence); the site's own page under **{{ui.sites}}**, with the soil moisture, the air temperature and humidity, the tank level and the pressure; **{{ui.who_is_told}}** (under **{{ui.settings}}**) and a live test message arriving on their phone, and that each message carries an *I have seen this* link, so that nobody needs a login to acknowledge an alert; **{{ui.reports}}**, under **{{ui.downloads}}**.
 - {{cb}} **Write the probe's depth and place** on the handover record, and say that soil readings are only as good as the contact between the probe and the soil.
 - {{cb}} **Say that Greecon gives no irrigation advice yet,** and agree when you will ask what reading means "time to water" (after the first week).
+- {{cb}} **Ask at what air temperature frost damages the crop, and in which weeks.** Enter it as the frost limit; say that the alert is an Act now message, possibly in the night, and agree who is woken.
 {{include:_shared/handover-2.md}}
 
 ## Handover record {.newpage .formtitle #handover-record-f data-kit="Kit F · Farm or greenhouse with irrigation"}
@@ -270,6 +271,7 @@ Signed off by: {{line}} Date: {{line:short}}
 |----------------|--------------------|------------------------------|
 | **A probe or the weather sensor does not answer** | A wrong unit number (many are delivered as unit 1, the same as another device), a speed or parity that does not match the converter, A and B swapped, no power | Check each in that order. Test the register from the box (`greecon-edge modbus-test`) against the maker's table. A device whose number was changed before burying is easy to check; one that was not must be dug up, so set every number before the probe goes in the ground |
 | **The soil reading looks wrong** (constant, or the same in air and in water) | A wrong register, the wrong register kind (Input or Holding), a wrong scale, or poor contact between the probe and the soil | Re-test the register against the maker's table; repeat the air, water and soil check; check the probe's depth and contact |
+| **A frosty morning reads as a hot afternoon** | The air temperature was mapped as an unsigned number | Map it as int16 (signed), with the scale of the sensor's table |
 | **No irrigation advice is shown** | "Start irrigating below" has no standard value | After the first week of readings, ask the grower what reading means "time to water" and enter it as the limit (setup step 9) |
 
 More, by symptom, are in the Appendices of the Complete Deployment Guide (Appendix C) and in the Field Manual. A device that does not answer is, in this order: a wrong unit number (the commonest), a wrong speed or parity at the converter, A and B swapped on the data cable, the converter not in gateway mode, a wrong IP address.

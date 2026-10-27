@@ -34,7 +34,7 @@ setting, the platform says nothing).
 
 1. Your Greecon project manager onboards your account and a site for each physical location.
 2. Add each device and the readings it reports.
-3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each person on the list should also have their own login with the Operator role, so that they can acknowledge an alert: see `00-overview.md`).
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each alert message carries an **I have seen this** link, so a person on the list needs no login to acknowledge it: see `00-overview.md`).
 4. Set the limits that suit your equipment.
 5. Use the Overview as your daily check, and Monitoring (under Sites) when you want every reading.
 

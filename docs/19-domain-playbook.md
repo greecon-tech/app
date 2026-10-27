@@ -127,6 +127,14 @@ Soil moisture is a reading. "Irrigation required" is derived only where the site
 field's own start-at limit; without it the platform says nothing, and the site page explains how to
 set it. The alert engine never raises an alert for needing irrigation: it is ordinary operation.
 
+Air temperature is a reading too, and frost is the one weather event on a farm that is an emergency and
+not a trend. It follows the same rule as irrigation: the platform sets **no number**, because the air that
+is harmless to winter wheat ruins an orchard in flower. Where the grower has set a frost limit ("Frost
+alert at or below", entered with the project manager and agreed on the limits step), an **Act now** alert
+opens when the air at the field reaches it and has stayed there for two minutes, so that one bad sample does
+not wake anyone. Without the limit the platform says nothing about frost, and the limits step says so.
+Greenhouse climate beyond frost (vapour-pressure deficit, ventilation) is still not built.
+
 ### From day one, not built yet
 
 1. **Per-zone configuration**: crop, soil class, root depth, a depth-averaged start-at and stop-at
@@ -150,7 +158,7 @@ set it. The alert engine never raises an alert for needing irrigation: it is ord
 | Rain forecast | A back-test against a rain gauge at pilots; farmers already delaying irrigation for rain. The free weather API used by many examples allows non-commercial use only, so a licence or self-hosting must be decided first |
 | Fertigation (read-only first) | Greenhouse customers with injectors and an agronomist to set limits |
 | Per-zone valves | A pilot with controllable valves and hard interlocks, and high agreement between advice and hand checks over a season |
-| Greenhouse climate (vapour-pressure deficit, ventilation, frost) | Growers asking, with agronomist-set targets |
+| Greenhouse climate beyond frost (vapour-pressure deficit, ventilation) | Growers asking, with agronomist-set targets. (Frost is built, as the grower's own limit.) |
 | Compliance exports (IPARD, GlobalG.A.P.) | The agency or certifier confirms the format it accepts |
 
 ### Never
@@ -184,6 +192,15 @@ Solar power, consumption, battery charge and power, and grid import and export a
 Battery "low" is derived (standard 25%, or the site's own). "Solar surplus" is derived only where
 the site has said what a useful surplus is. Nothing yet computes energy from counters, and there are
 no inverter profiles beyond the generic Modbus driver.
+
+One direction check needs no person: energy cannot leave a site that nothing is producing for. Where
+the grid meter reports energy going out (more than 0.3 kW) while solar production is at zero and no
+battery is measured to be discharging into the grid, the meter is fitted the wrong way round, and every
+saving figure would be wrong. The energy picture says so in its notes at once, and after five minutes a
+**Check today** alert opens. It is not judged where a battery exists whose power nobody reads (it might
+be the source), nor when the readings are out of date. It catches a reversed clamp only at night or in
+cloud; the commissioning check ("a known load on, the sun down: import must rise") stays, because at
+midday a reversed clamp looks like a smaller export.
 
 ### From day one, not built yet
 

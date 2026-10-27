@@ -40,10 +40,13 @@ Monday to Saturday). The platform does the night shift: Act now reaches the *cus
 ## R1. A customer's box is offline
 
 **You see:** **Today**, under *Needs a look*, says *The box has not reported for N: it is offline*; or the customer's morning
-message says readings are out of date. **Or you are told at once:** Greecon's own team gets a message the moment a
-customer's box goes silent (*A customer's box went silent*, also under **Who is told → What was sent**): the client, the
-site, since when, its last reading, and whether any message has gone to the customer (it has not, by this one). If three
-or more boxes go silent within ten minutes it is **one** message that says so: that is Greecon's platform or a provider
+message says readings are out of date. **Or you are told:** Greecon's own team gets a message when a customer's box has been
+silent for a quarter of an hour (*A customer's box went silent*, also under **Who is told → What was sent**): the client, the
+site, since when, its last reading, and whether any message has gone to the customer (it has not, by this one). **By day it
+goes at once; in the team's quiet hours (22:00 to 07:00 unless changed under Who is told) it waits, shown there as *Waiting*
+with the time it is due, and goes when they end, unless the box has reported again by then, in which case it is dropped and
+the log says why:** a box that goes quiet at midnight is on **Today** at once and its message arrives at 07:00; nobody is woken
+for it. If three or more boxes go silent within ten minutes it is **one** message that says so: that is Greecon's platform or a provider
 they share, not that many customers losing power at once: go to R7. If the email service cannot take the message (it is
 down, or the day's allowance is used up) it is tried again every five minutes for six hours; after that, the morning
 message and **Today** are what say it. A box that keeps coming back and going again is told of three times a day at most,
@@ -87,7 +90,7 @@ so a poor connection at one farm cannot fill the inboxes (it stays on **Today** 
 | **Constant** | A frozen device, a wrong register kind (input vs holding) | `modbus-test` twice a minute apart |
 | **x1000 too big** | Watts shown as kilowatts | In the register form: multiply by **0.001** |
 | **Tank above 100 percent** | The reading at the top is wrong for the tank's height | Range ÷ height × 100 ([02](02-project-manager-manual.md), 7.4) |
-| **Import and export swapped** | Clamps the wrong way round | The electrician turns them; repeat the direction check |
+| **Import and export swapped** | Clamps the wrong way round | The electrician turns them; repeat the direction check. Greecon notices on its own at night or in cloud (a Check today alert, *The grid meter may be fitted the wrong way round*, after five minutes of energy going out of a plant that nothing is producing for); at midday it cannot tell |
 | **The pump shows running when stopped** | The contact is inverted | Swap the contact's normally-open and normally-closed wires, or use the opposite contact. Until it is right, and if a flow meter is fitted, the platform sees a running pump with no flow and opens the no-flow alert (an Act now) whenever the pump is stopped; when the pump really runs it shows stopped |
 
 **Tell the customer** when a number they relied on was wrong, and for how long. **Do not edit history:** a wrong
@@ -193,7 +196,7 @@ A failed box, a stolen one, or a customer who moved the equipment.
   ```
 
 - **Sending a file you made by hand:** it holds readings of a named site, and the message file holds the names, email addresses and phone numbers of the people who were told, so **not by plain email**. Put it in a shared-drive folder that only the customer's owner can open (by their email address, not "anyone with the link"), tell them by phone that it is there, and delete it when they confirm in writing that they have it. A download from **Reports** is written in the customer's audit trail; **a file made by hand is written in no audit trail**, so write it in the same sheet as the data-deletion log below: who asked, when, which files, how they were sent, when it was confirmed.
-- **They stop at day 60 or day 90:** take the equipment away within 14 days; give them the files (the downloads from **Reports**, and every reading Greecon holds, made by hand as above); set the client **Suspended** (**Clients → More → Suspend this client**) (it can be turned back on; if you do, read R4, point 8, about alerts that are still open); keep the account until they confirm in writing that they have their data.
+- **They stop at day 60 or day 90:** take the equipment away within 14 days; give them the files (the downloads from **Reports**, and every reading Greecon holds, made by hand as above); set the client **Suspended** (**Clients → More → Suspend this client**, which asks once and says what it will do) (it can be turned back on; if you do, read R4, point 8, about alerts that are still open); keep the account until they confirm in writing that they have their data.
 - **Deletion (they ask in writing, after they have their data):** this is the only time anything is deleted. The founder does it, in a transaction, after the files are with the customer and the request is in writing:
 
   ```
@@ -219,7 +222,7 @@ with thanks; fix it; do not threaten the reporter; say when it is fixed.
 **A suspected incident** (an account used by someone who should not have it; a key leaked; the platform behaving oddly):
 
 1. **Write down the time you found out.** That starts the clocks.
-2. **Contain:** turn off what was misused. A team member's sign-in: **Team → Turn off**. A whole customer: **Clients → More → Suspend this client** (everyone there is turned away at once, even with a sign-in that is still valid; **Reactivate this client** undoes it). One person at a customer: ask that customer's owner to press **Turn off** beside them under **Settings → People** (Greecon's own people see that list but do not change it). Then change `JWT_SECRET` (signs everyone out); rotate any key that may have leaked (Resend, Twilio, the database password).
+2. **Contain:** turn off what was misused. A team member's sign-in: **Team → Turn off**. A whole customer: **Clients → More → Suspend this client** (it asks once; everyone there is turned away at once, even with a sign-in that is still valid, and is told the account is suspended and to write to Greecon, not that their password is wrong; the box is turned away too and keeps what it reads; **Reactivate this client** undoes it, asks nothing, and sessions that were open work again without signing in). One person at a customer: ask that customer's owner to press **Turn off** beside them under **Settings → People** (Greecon's own people see that list but do not change it). Then change `JWT_SECRET` (signs everyone out); rotate any key that may have leaked (Resend, Twilio, the database password).
 3. **Find out what** was seen or changed: the audit trail of the affected customer shows who did what, under whose name.
 4. **Decide who must be told and by when**, with a lawyer where you can: the clocks depend on the customer. A customer classed as critical under Albania's Law 25/2024 needs your facts within **4 hours**; GDPR and Albania's Law 124/2024 want a processor to tell the controller **immediately** and the controller the authority within **72 hours**; the Cyber Resilience Act has 24 hours and 72 hours for actively exploited vulnerabilities. The full table is in [21, section 4](../21-communication-system.md), marked *to be confirmed with counsel*.
 5. **Tell customers** with the template in [21](../21-communication-system.md) ("Security notice"): what is known, what is not, what to do, when the next update is. **Never** say "no evidence data was accessed" while the investigation is open, and never say "fully secure".

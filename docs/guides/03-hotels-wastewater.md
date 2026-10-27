@@ -44,7 +44,7 @@ applies to your site, is for your lawyer and the regulator: this guide is not le
    property).
 2. Add each tank level sensor, flow meter, pressure gauge and pump controller, and the pump's
    running-status signal if you want the no-flow alert.
-3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each person on the list should also have their own login with the Operator role, so that they can acknowledge an alert: see `00-overview.md`).
+3. The project manager installs and connects the box and the meters (`docs/launch/02-project-manager-manual.md`, `docs/launch/03-hardware-and-wiring.md`), then you say **who is told** and test it (each alert message carries an **I have seen this** link, so a person on the list needs no login to acknowledge it: see `00-overview.md`).
 4. Set each tank's low and critical level to what is right for that tank (the standards are 35% and
    15%). The pump's no-flow level has a standard of 0.2 litres a minute; raise it only if the pump
    normally runs at a trickle. If the treated water is stored and collected by vacuum truck, the storage level is your main
