@@ -54,7 +54,7 @@ export async function onboard(adminToken, name, ownerEmail) {
   const ownPassword = `Own-password-${Math.random().toString(36).slice(2, 10)}-1`;
   const changed = await call("POST", "/auth/change-password", { token: first.token, body: { currentPassword: temporary, newPassword: ownPassword } });
   if (changed.status !== 201 && changed.status !== 200) throw new Error(`Could not change password: ${changed.status} ${changed.text}`);
-  return { first, whileTemporary, session: (await login(ownerEmail, ownPassword)).token, tenantId: created.json.tenant.id };
+  return { first, whileTemporary, session: (await login(ownerEmail, ownPassword)).token, tenantId: created.json.tenant.id, ownerEmail, ownPassword };
 }
 
 export async function until(description, probe, { timeoutMs = 60_000, everyMs = 500 } = {}) {

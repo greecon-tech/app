@@ -11,25 +11,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const { mkdirSync, writeFileSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
+const { base, SIZES, PUBLIC_PATHS, PLANS, signIn } = require("./lib/tour.cjs");
 
 const OUT = process.argv[2] ?? join(process.env.E2E_DIR ?? join(tmpdir(), "greecon-e2e"), "tour");
 mkdirSync(OUT, { recursive: true });
-const base = process.env.E2E_WEB_URL ?? "http://localhost:3000";
-const api = process.env.E2E_API_URL ?? "http://localhost:4000";
-const TEAM = { email: process.env.E2E_TEAM_EMAIL ?? "eridon.manuka@greecon.earth", password: process.env.E2E_TEAM_PASSWORD ?? "E2E-Admin-Passw0rd!" };
-const DEMO = { email: "demo@greecon.earth", password: "demo123" };
-const SIZES = { desktop: { width: 1440, height: 900 }, phone: { width: 390, height: 844 } };
 const findings = [];
-
-async function signIn(page, who, team) {
-  await page.goto(base + "/login", { waitUntil: "networkidle" });
-  if (team) await page.getByRole("radio", { name: "Greecon team" }).click();
-  await page.fill('input[type="email"]', who.email);
-  await page.fill('input[type="password"]', who.password);
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20000 });
-  await page.waitForLoadState("networkidle");
-}
 
 async function audit(page, label, size) {
   const result = await page.evaluate(() => {
@@ -91,47 +77,16 @@ async function shoot(browser, name, who, team, paths, after) {
 
 (async () => {
   const browser = await chromium.launch();
-  // 1. The published demo login: an operator in a client account with three simulated sites.
-  const firstSite = async (page) => {
-    await page.goto(base + "/sites", { waitUntil: "networkidle" });
-    const href = await page.locator('a[href^="/sites/"]').first().getAttribute("href").catch(() => null);
-    return href && !href.endsWith("/setup") && !href.endsWith("/new") ? href : null;
-  };
-  // (The demo login is an operator: it has no Reports downloads, People, Who is told or Audit log, and the tour only visits what it may open.)
-  await shoot(browser, "demo", DEMO, false, ["/", "/sites", firstSite, "/alerts", "/maintenance", "/analytics", "/settings", "/help", "/privacy"]);
+  // The demo login, the Greecon team on its own console, and the team inside a client's account (what a client's administrator sees).
+  for (const plan of PLANS) {
+    if (plan.before) await plan.before();
+    await shoot(browser, plan.name, plan.who, plan.team, plan.paths, plan.after);
+  }
 
-  // 2. The Greecon team on its own console. One request is made first (as a visitor would on the Request access page), so Requests and Today show a line.
-  await fetch(api + "/public/access-requests", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "Arben Hoxha", company: "Vila Mare Guesthouse", email: "arben@vila-mare.example", phone: "+355 69 555 0101", siteType: "hotel", message: "A guesthouse with a solar roof and a well pump." })
-  }).catch(() => undefined);
-  await shoot(browser, "team", TEAM, true, ["/today", "/platform", "/platform?onboard=new", "/platform/requests", "/platform/team", "/settings/people", "/audit", "/settings", "/help"]);
-
-  // 3. The team inside a client's account, which is what a client's administrator sees (and a project manager sets up).
-  const intoHotel = async (page) => {
-    await page.goto(base + "/platform", { waitUntil: "networkidle" });
-    const row = page.locator("tr", { hasText: process.env.E2E_CLIENT ?? "Hotel Adriatik" }).first();
-    if (!(await row.count())) throw new Error("No client to open; run scripts/e2e/pm-e2e.cjs first.");
-    await row.getByRole("button", { name: "Open for setup" }).click();
-    await page.waitForURL("**/sites"); // opening an account answers with a redirect to its Sites; leave only once it has landed
-    await page.waitForLoadState("networkidle");
-  };
-  const clientSite = async (page) => {
-    await page.goto(base + "/sites", { waitUntil: "networkidle" });
-    const links = await page.locator('a[href^="/sites/"]').evaluateAll((els) => els.map((el) => el.getAttribute("href")));
-    return links.find((href) => href && !href.endsWith("/setup") && !href.endsWith("/handover") && !href.endsWith("/new")) ?? null;
-  };
-  const siteSub = (suffix) => async (page) => {
-    const site = await clientSite(page);
-    return site ? site + suffix : null;
-  };
-  await shoot(browser, "client", TEAM, true, ["/", "/sites", "/sites/new", clientSite, siteSub("/equipment"), siteSub("/setup"), siteSub("/handover"), "/alerts", "/analytics", "/reports", "/settings", "/settings/people", "/admin", "/audit", "/maintenance", "/help"], intoHotel);
-
-  // 4. The public pages.
+  // The public pages.
   const context = await browser.newContext({ viewport: SIZES.desktop });
   const page = await context.newPage();
-  for (const path of ["/login", "/request-access", "/privacy", "/help"]) {
+  for (const path of PUBLIC_PATHS) {
     await page.goto(base + path, { waitUntil: "networkidle" });
     await page.screenshot({ path: join(OUT, `public-desktop-${path.slice(1)}.png`), fullPage: true });
     await audit(page, `public ${path}`, "desktop");

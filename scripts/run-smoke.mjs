@@ -47,7 +47,11 @@ try {
       BOOTSTRAP_ADMIN_PASSWORD: adminPassword,
       PORT: String(port),
       TRUST_PROXY: "1",
-      PUBLIC_API_URL: `http://127.0.0.1:${port}`
+      PUBLIC_API_URL: `http://127.0.0.1:${port}`,
+      // After its own start the platform will not call a box silent for ten minutes (it cannot yet tell a box that is reconnecting from one
+      // that is quiet). A smoke run is shorter than that and wants to see a silent module reported, so it waits one minute, as the browser
+      // journeys do.
+      RESTART_GRACE_MINUTES: "1"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });

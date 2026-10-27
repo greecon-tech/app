@@ -35,10 +35,29 @@ export function registersFor({ watts, tank, pressure, flow, pump }) {
   return registers;
 }
 
-/** Starts the pretend meter. Resolves with the port it listens on, a count of the requests it has answered, and a way to stop it. */
-export function startMeter({ port = 0, host = "127.0.0.1", units = [1], onRequest, ...values } = {}) {
-  const registers = registersFor({ ...DEFAULT_VALUES, ...values });
-  const answering = new Set(units);
+/** Two 16-bit registers holding a float32, high word first (what an Eastron meter reports). */
+export function float32Words(value) {
+  const view = new DataView(new ArrayBuffer(4));
+  view.setFloat32(0, value);
+  return [view.getUint16(0), view.getUint16(2)];
+}
+
+/** One 16-bit register for a signed whole number (a temperature in tenths of a degree, below zero: 65 as 65, -35 as 65501). */
+export const int16Word = (value) => Math.round(value) & 0xffff;
+
+/**
+ * Starts the pretend meter. Resolves with the port it listens on, a count of the requests it has answered, and a way to stop it.
+ *
+ * By default every unit answers with the same registers, from `watts`, `tank`, `pressure`, `flow` and `pump`. `maps` gives a unit
+ * registers of its own, as separate pieces of equipment on one cable have: { 4: { 0: 243, 1: 118 } } makes unit 4 answer with 243 in
+ * register 0 and 118 in register 1 (and nothing at any other address). `set` and `setFloat` change what a unit holds while it runs,
+ * the way a tank empties or the sun sets.
+ */
+export function startMeter({ port = 0, host = "127.0.0.1", units = [1], maps = {}, onRequest, ...values } = {}) {
+  const shared = registersFor({ ...DEFAULT_VALUES, ...values });
+  const own = new Map(Object.entries(maps).map(([unit, registers]) => [Number(unit), new Map(Object.entries(registers).map(([address, word]) => [Number(address), word]))]));
+  const answering = new Set([...units, ...own.keys()]);
+  const registersOf = (unit) => own.get(unit) ?? shared;
   let requests = 0;
   const server = createServer((socket) => {
     let pending = Buffer.alloc(0);
@@ -61,6 +80,7 @@ export function startMeter({ port = 0, host = "127.0.0.1", units = [1], onReques
         if (code !== 3 && code !== 4) {
           pdu = Buffer.from([code | 0x80, 1]);
         } else {
+          const registers = registersOf(unit);
           const values = Array.from({ length: count }, (_, index) => registers.get(start + index));
           pdu = values.some((value) => value === undefined)
             ? Buffer.from([code | 0x80, 2])
@@ -75,7 +95,32 @@ export function startMeter({ port = 0, host = "127.0.0.1", units = [1], onReques
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, host, () => resolve({ port: server.address().port, requests: () => requests, close: () => server.close() }));
+    server.listen(port, host, () =>
+      resolve({
+        port: server.address().port,
+        requests: () => requests,
+        close: () => server.close(),
+        /** Puts a number in one register of a unit (which then has registers of its own). */
+        set(unit, address, word) {
+          if (!own.has(unit)) own.set(unit, new Map(shared));
+          own.get(unit).set(address, word);
+          answering.add(unit);
+        },
+        /** Puts a float32 in two registers, high word first. */
+        setFloat(unit, address, value) {
+          const [high, low] = float32Words(value);
+          this.set(unit, address, high);
+          this.set(unit, address + 1, low);
+        },
+        /** Makes a unit stop answering, as a meter does when its cable is pulled; `answerAgain` undoes it. */
+        silence(unit) {
+          answering.delete(unit);
+        },
+        answerAgain(unit) {
+          answering.add(unit);
+        }
+      })
+    );
   });
 }
 
