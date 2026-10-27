@@ -1,7 +1,9 @@
 // Markdown to HTML (with pandoc), and the pages around it: the cover, the contents, the part openers, the running header.
 
 import { spawnSync } from "node:child_process";
-import { escapeHtml, stripTags } from "./util.mjs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { REPO, escapeHtml, stripTags } from "./util.mjs";
 import { expand, restoreHtml } from "./macros.mjs";
 import { capitaliseReferences, normalizeHeadings } from "./sources.mjs";
 
@@ -95,8 +97,29 @@ export function collectHeadings(html) {
 // The wordmark and the cover
 // ---------------------------------------------------------------------------------------------------------------------------
 
-export function logoSvg(size = 48) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true"><rect width="48" height="48" rx="11" fill="#2f6b4a"/><path d="M32.8 16.6A11.5 11.5 0 1 0 35.5 24H25" fill="none" stroke="#f7f1e9" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// The mark is the brand's own file (docs/06-frontend-design-system.md, "Assets"): the one the app shows on its sign-in page and in
+// its sidebar. It is read from there and never redrawn, so that a printed guide and the app can not drift apart.
+const LOGO_FILE = join(REPO, "apps", "web", "public", "greecon-logo.svg");
+const LOGO_WIDTH_PER_HEIGHT = 375 / 525;
+let logoText;
+function realLogo() {
+  logoText ??= readFileSync(LOGO_FILE, "utf8");
+  return logoText;
+}
+
+/** The Greecon mark, inline, `height` pixels tall (the mark is taller than it is wide). */
+export function logoSvg(height = 56) {
+  const width = Math.round(height * LOGO_WIDTH_PER_HEIGHT * 100) / 100;
+  return realLogo()
+    .replace(/ width="\d+"/, ` width="${width}"`)
+    .replace(/ height="\d+"/, ` height="${height}"`)
+    .replace(' zoomAndPan="magnify"', "")
+    .replace("<svg ", '<svg aria-hidden="true" ');
+}
+
+/** The same mark as an image address, for the running header's margin box. */
+export function logoDataUri() {
+  return `data:image/svg+xml;base64,${Buffer.from(realLogo()).toString("base64")}`;
 }
 
 function coverArt(letter) {
@@ -126,7 +149,7 @@ export function coverHtml(doc) {
     .join("");
   return `<section class="cover">
 ${coverArt(doc.cover.badge ?? null)}
-<div class="cover-top">${logoSvg(46)}<div class="wordmark">greecon<small>Sh.p.k</small></div></div>
+<div class="cover-top">${logoSvg(58)}<div class="wordmark">Greecon<small>Sh.p.k</small></div></div>
 ${doc.cover.badge ? `<div class="cover-badge" aria-hidden="true">${escapeHtml(doc.cover.badge)}</div>` : ""}
 <div class="cover-body">
 <p class="cover-kicker">${escapeHtml(doc.cover.kicker)}</p>
@@ -180,7 +203,7 @@ export function pageCss(doc, parts) {
     "@page {",
     "  size: A4;",
     "  margin: 24mm 20mm 22mm 20mm;",
-    `  @top-left { content: ${cssString(`GREECON  ·  ${headerLeft}`)}; font: 600 7pt Inter, sans-serif; letter-spacing: .08em; color: #2f3d35; vertical-align: bottom; padding-bottom: 3mm; border-bottom: .5pt solid #b9b2a2; }`,
+    `  @top-left { content: ${cssString(`GREECON  ·  ${headerLeft}`)}; font: 600 7pt Inter, sans-serif; letter-spacing: .08em; color: #2f3d35; vertical-align: bottom; padding-bottom: 3mm; padding-left: 7mm; border-bottom: .5pt solid #b9b2a2; background: url("${logoDataUri()}") no-repeat left bottom 2.4mm / auto 5.2mm; }`,
     `  @top-center { content: ""; vertical-align: bottom; padding-bottom: 3mm; border-bottom: .5pt solid #b9b2a2; }`,
     `  @top-right { content: ""; font: 500 7pt Inter, sans-serif; color: #4a524d; vertical-align: bottom; padding-bottom: 3mm; border-bottom: .5pt solid #b9b2a2; text-align: right; }`,
     `  @bottom-left { content: "Greecon Sh.p.k"; font: 500 7pt Inter, sans-serif; color: #4a524d; vertical-align: top; padding-top: 3mm; border-top: .5pt solid #b9b2a2; }`,
