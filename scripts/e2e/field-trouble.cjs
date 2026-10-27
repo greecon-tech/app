@@ -207,8 +207,10 @@ async function call(method, path, token, body) {
       await clientRow.getByRole("button", { name: "Open for setup" }).click();
       await page.waitForURL("**/sites");
       await page.waitForLoadState("networkidle");
-      const href = await page.locator('a[href^="/sites/"]').evaluateAll((els) => els.map((el) => el.getAttribute("href")).find((h) => h && !/\/(setup|handover|new)$/.test(h)));
-      await page.goto(base + href, { waitUntil: "networkidle" });
+      // The page is drawn after the address changes (a skeleton first), so wait for the site's own link, not for the "Add a site" one.
+      const siteLink = page.locator('a[href^="/sites/"]:not([href$="/new"]):not([href$="/setup"]):not([href$="/handover"])').first();
+      await siteLink.waitFor({ timeout: 20000 });
+      await page.goto(base + (await siteLink.getAttribute("href")), { waitUntil: "networkidle" });
       const site = await words(page.locator("main"));
       ok("the customer's site page says the readings are out of date", /out of date/i.test(site), site.slice(0, 300));
       await page.screenshot({ path: join(OUT, "06-site-box-silent.png"), fullPage: true });

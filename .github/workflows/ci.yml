@@ -67,6 +67,44 @@ jobs:
         env:
           SMOKE_DATABASE_ADMIN_URL: postgres://postgres:greecon@localhost:5432/postgres
 
+  # Each kind of site from zero, as a project manager sets it up: a hotel, a solar plant with a battery, a farm and a water station, with the
+  # real installer and a real box against pretend equipment that holds what real equipment holds, and then what goes wrong in the field (a meter's
+  # clamps the wrong way round, a module that stops answering, a tank that empties, a frost, a customer that Greecon suspends). It takes minutes,
+  # so it runs beside the job above and not in it (docs/09-testing-and-verification.md, section 3).
+  sites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: greecon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # The API, and the software the box is installed with (the API serves it); not the web app.
+      - name: Build what the smoke test runs
+        run: npm run build:packages && npm run build:api && npm run build:edge-bundle
+
+      - name: Four kinds of site from zero
+        run: node scripts/run-smoke.mjs smoke-sites.mjs
+        env:
+          SMOKE_DATABASE_ADMIN_URL: postgres://postgres:greecon@localhost:5432/postgres
+
   # The two images the host builds and runs, built and started the way a deployment does it. A mistake in a
   # Dockerfile (a file missing from the image, a build step that needs something that was not copied in) would
   # otherwise show itself on the first deploy, when nobody can easily fix it.

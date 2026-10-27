@@ -185,6 +185,12 @@ function measureLayout() {
     return false;
   };
   const boxes = [];
+  // A bar that is fixed to the edge of the screen (the destinations at the foot of a phone) lies over the page by design, and the page leaves
+  // room for it at its end (scroll padding, which the keyboard check tests): it is not words landing on words.
+  const inFixed = (el) => {
+    for (let node = el; node && node !== document.body; node = node.parentElement) if (getComputedStyle(node).position === "fixed") return true;
+    return false;
+  };
   for (const el of document.querySelectorAll("body *")) {
     if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName) || el.closest("svg")) continue;
     const style = getComputedStyle(el);
@@ -197,7 +203,7 @@ function measureLayout() {
       out.clipped.push(`${window.__describe(el)} ${el.clientWidth}x${el.clientHeight} of ${el.scrollWidth}x${el.scrollHeight}`);
     }
     if (rect.right > window.innerWidth + 1 && !inScroller(el) && style.position !== "fixed" && !el.closest(".visually-hidden") && !el.classList.contains("visually-hidden") && rect.width > 1) out.wide.push(`${window.__describe(el)} ends at ${Math.round(rect.right)}px`);
-    if (own && rect.width > 4 && rect.height > 4 && style.position !== "absolute" && !el.classList.contains("visually-hidden")) {
+    if (own && rect.width > 4 && rect.height > 4 && style.position !== "absolute" && !el.classList.contains("visually-hidden") && !inFixed(el)) {
       const lines = linesOf(el);
       boxes.push({ el, rect, lines, what: window.__describe(el) });
       // Words that spill out of their own box (an initials circle, a chip, a fixed-width cell) without being cut off: a box that is

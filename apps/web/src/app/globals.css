@@ -1991,9 +1991,11 @@ input[type="checkbox"] {
 
 .setup-step__number {
   display: grid;
+  flex-shrink: 0;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  /* 28 px at the usual size, and larger with the person's text: "10" must fit its circle at 200 %. */
+  width: 1.75rem;
+  height: 1.75rem;
   border: 1px solid var(--line);
   border-radius: 50%;
   font-size: 0.85rem;
@@ -2503,16 +2505,38 @@ main:focus {
     font-size: 0.75rem;
   }
 
+  /* The brand, the search and the person's menu are the first row; the title is the second; the page's main action, if it has one, is the
+     third and gets the whole width it needs. A long action ("Onboard a client") beside the brand left the brand a few pixels wide and the
+     button on top of the mark (found at 320 px by the audit, and visible at 390). */
   .topbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:
-      "brand tools"
-      "title title";
+      "brand find user"
+      "title title title"
+      "action action action";
     align-items: center;
-    gap: 6px 12px;
+    gap: 0 12px;
     padding-top: 12px;
     padding-bottom: 14px;
+  }
+
+  .topbar__tools {
+    display: contents;
+  }
+
+  .topbar__tools > .find-button--bar {
+    grid-area: find;
+  }
+
+  .topbar__tools > .user-menu {
+    grid-area: user;
+  }
+
+  .topbar__action {
+    grid-area: action;
+    justify-self: start;
+    margin-top: 12px;
   }
 
   .topbar__brand {
@@ -2524,12 +2548,9 @@ main:focus {
     font-weight: 600;
   }
 
-  .topbar__tools {
-    grid-area: tools;
-  }
-
   .topbar__title {
     grid-area: title;
+    margin-top: 6px;
   }
 
   .topbar h1 {
