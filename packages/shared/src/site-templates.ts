@@ -144,12 +144,14 @@ export const siteTemplates: readonly SiteTemplate[] = [
         points: [
           { canonicalName: "agri.air.temperature.c", label: "Air temperature", unit: "C" },
           { canonicalName: "agri.humidity.percent", label: "Humidity", unit: "%" }
-        ]
+        ],
+        hint: "Fit it in the shade, a metre or two above the crop, away from walls and the pump house. Below zero a temperature is a signed number: map it as a signed 16-bit value (int16), or a frosty morning reads as a hot afternoon. Ask the grower at what air temperature the crop is in danger of frost and enter it as the frost limit: the platform says nothing about frost until it is set."
       },
       waterModule("water")
     ],
     checklist: [
       "Ask which crop, which soil and how deep the roots are: the irrigation limit depends on them, and the platform gives no irrigation advice until it is set.",
+      "Ask at what air temperature frost damages the crop, and in which weeks that matters: the frost alert uses the grower's own number, and says nothing until it is set.",
       "Walk the field with the grower and choose where the probe goes: representative of the zone, not at the wettest or driest spot.",
       "Find the pump, the tank and where the pressure and level transmitters can be fitted.",
       "Check the signal: a cellular router, or a network cable run to the pump house."

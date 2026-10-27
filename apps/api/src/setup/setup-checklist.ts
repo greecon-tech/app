@@ -303,7 +303,7 @@ export function computeSetup(input: SetupInput): SetupView {
         .map((definition) => {
           const set = point.thresholdConfig?.[definition.key];
           if (set !== undefined) return `${definition.label} ${set} ${definition.unit}`;
-          return definition.fallback !== null ? `${definition.label} ${definition.fallback} ${definition.unit} (standard)` : `${definition.label}: not set, so no advice is given`;
+          return definition.fallback !== null ? `${definition.label} ${definition.fallback} ${definition.unit} (standard)` : `${definition.label}: not set, so the platform says nothing about it`;
         });
       return { label: point.label, status: step.status === "done" ? "done" : "todo", detail: parts.join("; ") };
     });

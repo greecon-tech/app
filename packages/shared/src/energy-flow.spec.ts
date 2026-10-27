@@ -177,4 +177,21 @@ describe("formatKw", () => {
     expect(formatKw(12)).toBe("12.0 kW");
     expect(formatKw(180.4)).toBe("180 kW");
   });
+
+  it("says so when the grid meter reports export while nothing produces: the clamps are probably the wrong way round", () => {
+    const view = deriveEnergyFlow({ solarKw: current(0), consumptionKw: current(0.5), gridImportKw: current(0), gridExportKw: current(0.5) });
+
+    expect(view.headline).toBe("Exporting 0.5 kW to the grid.");
+    expect(view.notes.some((note) => /may be the wrong way round/.test(note))).toBe(true);
+  });
+
+  it("does not say it when the sun is producing, or a battery is feeding the grid, or when it cannot be told", () => {
+    const wrongWay = (extra: Partial<Parameters<typeof deriveEnergyFlow>[0]>) => deriveEnergyFlow({ solarKw: current(0), gridImportKw: current(0), gridExportKw: current(0.5), ...extra }).notes.some((note) => /wrong way round/.test(note));
+
+    expect(wrongWay({ solarKw: current(5) })).toBe(false);
+    expect(wrongWay({ batteryKw: current(-0.6), batterySocPercent: current(80) })).toBe(false); // discharging into the grid
+    expect(wrongWay({ batterySocPercent: current(80) })).toBe(false); // a battery whose power nobody reads: it might be the source
+    expect(wrongWay({ solarKw: undefined })).toBe(false); // nothing says the sun is down
+    expect(wrongWay({ gridExportKw: stale(0.5, 3600) })).toBe(false);
+  });
 });

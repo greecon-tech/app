@@ -13,6 +13,21 @@ import { describeAge } from "./age";
 /** Below this, a flow counts as "not flowing": meters have noise at zero. */
 export const IDLE_BELOW_KW = 0.05;
 
+/** Above this much export, energy really is going out (meters have noise at zero). */
+const GRID_DIRECTION_NOISE_KW = 0.3;
+
+/**
+ * Energy cannot leave a site that nothing is producing for: a grid meter that says it does is fitted the wrong way round. Judged from
+ * what is measured and current, and only when it can be told: not while a battery that could be feeding the grid has no power
+ * reading. Returns undefined when it cannot be told, so "not judged" is never mistaken for "fine".
+ */
+export function gridDirectionSuspect(input: { exportKw?: number; solarKw?: number; batteryKw?: number; hasBattery: boolean }): boolean | undefined {
+  if (input.exportKw === undefined || input.solarKw === undefined) return undefined;
+  if (input.hasBattery && input.batteryKw === undefined) return undefined;
+  const batteryGivingKw = input.batteryKw !== undefined && input.batteryKw < 0 ? -input.batteryKw : 0;
+  return input.solarKw <= IDLE_BELOW_KW && input.exportKw > GRID_DIRECTION_NOISE_KW && batteryGivingKw < input.exportKw * 0.5;
+}
+
 export interface FlowReading {
   /** kW for the power points, percent for state of charge. */
   value: number;
@@ -109,6 +124,13 @@ export function deriveEnergyFlow(input: EnergyFlowInput): EnergyFlowView {
   const siteLink: FlowLink = unitLink("site", input.consumptionKw, site, "from_hub");
   const batteryLink = batterySpoke(input, battery, soc);
   const gridLink = gridSpoke(input, imported, exported, solar, notes);
+
+  const hasBattery = presence(input.batteryKw) !== "not_measured" || presence(input.batterySocPercent) !== "not_measured";
+  if (gridDirectionSuspect({ exportKw: exported, solarKw: solar, batteryKw: battery, hasBattery })) {
+    notes.push(
+      `${formatKw(exported ?? 0)} is reported going out to the grid while nothing here is producing it. The grid meter's clamps may be the wrong way round: see "Grid meter direction checked" on the setup list.`
+    );
+  }
 
   const links: Record<FlowSpoke, FlowLink> = { solar: solarLink, grid: gridLink, battery: batteryLink, site: siteLink };
   const all = Object.values(links);

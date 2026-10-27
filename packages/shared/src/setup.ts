@@ -85,7 +85,7 @@ export interface SetupView {
 }
 
 /** The reading limits whose standard values decide when people are alerted: the ones agreed with the customer. */
-export const ALERT_LIMIT_KEYS: readonly string[] = ["critical_low", "warning_low", "irrigate_below", "dry_run_lpm"];
+export const ALERT_LIMIT_KEYS: readonly string[] = ["critical_low", "warning_low", "irrigate_below", "frost_below", "dry_run_lpm"];
 
 /** The steps a person confirms by hand. */
 export const manualSetupSteps = ["told", "direction", "limits", "commissioned"] as const;
