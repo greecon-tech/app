@@ -49,16 +49,32 @@ export default async function SetupPage({ params }: { params: Promise<{ siteId: 
   ]);
   const template = setup.templateKey ? templateByKey(setup.templateKey) : undefined;
   const next = nextStep(setup.steps);
-  const panels: Record<string, ReactNode> = {
-    prices: <SiteProfileForm siteId={siteId} profile={profile} />,
-    box: <BoxPanel siteId={siteId} gateways={detail.gateways} items={stepOf(setup, "box").items ?? []} />,
-    addresses: <AddressesPanel siteId={siteId} detail={detail} />,
-    mapping: <MappingPanel siteId={siteId} detail={detail} />,
-    answering: <AnsweringHelp />,
-    told: <ToldPanel siteId={siteId} step={stepOf(setup, "told")} />,
-    direction: <ConfirmStepForm siteId={siteId} step={stepOf(setup, "direction")} />,
-    limits: <LimitsPanel siteId={siteId} detail={detail} step={stepOf(setup, "limits")} />,
-    commissioned: <CommissionPanel siteId={siteId} step={stepOf(setup, "commissioned")} />
+  // Which steps a site has depends on what it is: a grid meter's direction is checked only where there is one, alert limits only where a
+  // reading has some, prices only where there is energy or water to value. A panel is made for the steps the list has, never for one it has
+  // not (asking for a step that is not there made the page fail for every farm, water station and blank site).
+  const panelFor = (step: SetupStep): ReactNode => {
+    switch (step.key) {
+      case "prices":
+        return <SiteProfileForm siteId={siteId} profile={profile} />;
+      case "box":
+        return <BoxPanel siteId={siteId} gateways={detail.gateways} items={step.items ?? []} />;
+      case "addresses":
+        return <AddressesPanel siteId={siteId} detail={detail} />;
+      case "mapping":
+        return <MappingPanel siteId={siteId} detail={detail} />;
+      case "answering":
+        return <AnsweringHelp />;
+      case "told":
+        return <ToldPanel siteId={siteId} step={step} />;
+      case "direction":
+        return <ConfirmStepForm siteId={siteId} step={step} />;
+      case "limits":
+        return <LimitsPanel siteId={siteId} detail={detail} step={step} />;
+      case "commissioned":
+        return <CommissionPanel siteId={siteId} step={step} />;
+      default:
+        return null;
+    }
   };
 
   return (
@@ -105,18 +121,12 @@ export default async function SetupPage({ params }: { params: Promise<{ siteId: 
       <ol className="setup-steps">
         {setup.steps.map((step, index) => (
           <SetupStepCard key={step.key} step={step} number={index + 1} open={step.key === next?.key || step.status === "attention"} hideItems={step.key === "box"}>
-            {panels[step.key]}
+            {panelFor(step)}
           </SetupStepCard>
         ))}
       </ol>
     </Shell>
   );
-}
-
-function stepOf(setup: SetupView, key: string): SetupStep {
-  const step = setup.steps.find((candidate) => candidate.key === key);
-  if (!step) throw new Error(`The setup list has no step called ${key}.`);
-  return step;
 }
 
 function BoxPanel({ siteId, gateways, items }: { siteId: string; gateways: EdgeGateway[]; items: SetupStepItem[] }) {
