@@ -635,10 +635,17 @@ main {
   display: grid;
   justify-items: center;
   gap: 5px;
+  /* Devices that are not surveyed sit on a grid, the centres of neighbours one column apart being 1 / (columns + 1) of the map apart: a name is never
+     wider than that, so on a phone two long names do not print over each other (the whole name is in the tooltip and on the cards below). */
+  max-width: calc(100% / (var(--site-map-columns, 2) + 1) - 4px);
   transform: translate(-50%, -50%);
 }
 
 .site-map__label {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border-radius: 4px;
   background: var(--bg-card);
   padding: 1px 6px;
@@ -3706,6 +3713,13 @@ body:has(dialog.find[open]) {
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.copy-text__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .install-card section ul,

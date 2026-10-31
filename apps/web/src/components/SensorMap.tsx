@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { readingStatus } from "../lib/readings";
 import { normalizeStatus, StatusBadge } from "./StatusBadge";
 
@@ -57,7 +58,7 @@ export function SensorMap({
   }
 
   const readingByPoint = new Map(readings.map((reading) => [reading.pointId, reading]));
-  const devicesWithPosition = layoutDevices(devices);
+  const { placed: devicesWithPosition, columns } = layoutDevices(devices);
   const deviceBuckets = new Map(devices.map((device) => [device.id, worstBucket(device, points, readingByPoint)]));
   const presentStatuses = new Set(deviceBuckets.values());
   const hasSurveyedPlacement = devices.some((device) => device.positionX !== undefined && device.positionY !== undefined);
@@ -66,6 +67,7 @@ export function SensorMap({
     <div className="site-map-block">
       <div
         className={`site-map${hasSurveyedPlacement ? " site-map--field" : ""}`}
+        style={{ "--site-map-columns": columns } as CSSProperties}
         role="img"
         aria-label={hasSurveyedPlacement ? "Map of where each sensor is physically placed on site" : "Schematic layout of site devices by status"}
       >
@@ -141,7 +143,7 @@ export function SensorMap({
  * commissioning) so the map shows where the sensor actually sits in the field. Only devices
  * missing that data fall back to a deterministic generated grid, so an unsurveyed device still
  * appears on the map without pretending to know its real location. */
-function layoutDevices(devices: readonly SensorMapDevice[]): Array<{ device: SensorMapDevice; x: number; y: number }> {
+function layoutDevices(devices: readonly SensorMapDevice[]): { placed: Array<{ device: SensorMapDevice; x: number; y: number }>; columns: number } {
   const positioned = devices.filter((device) => device.positionX !== undefined && device.positionY !== undefined);
   const unpositioned = devices.filter((device) => device.positionX === undefined || device.positionY === undefined);
 
@@ -171,7 +173,8 @@ function layoutDevices(devices: readonly SensorMapDevice[]): Array<{ device: Sen
     }
   }
 
-  return placed;
+  // How many devices sit side by side in the widest row: a label is kept shorter than the space between two of them (see .site-map__node).
+  return { placed, columns };
 }
 
 /** A word beside a reading only when it has something to say: nothing is claimed for a reading

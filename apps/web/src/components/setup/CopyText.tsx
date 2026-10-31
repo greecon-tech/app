@@ -12,7 +12,6 @@ export function CopyText({ text, label, name }: { text: string; label: string; n
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 4000);
     } catch {
       const selection = window.getSelection();
       if (ref.current && selection) {
@@ -29,9 +28,17 @@ export function CopyText({ text, label, name }: { text: string; label: string; n
       <pre ref={ref} className="copy-text__body" aria-label={name}>
         {text}
       </pre>
-      <button type="button" className="button-ghost no-print" onClick={copy} aria-label={`${label}: ${name}`}>
-        {copied ? "Copied" : label}
-      </button>
+      <div className="copy-text__actions no-print">
+        <button type="button" className="button-ghost" onClick={copy} aria-label={`${label}: ${name}`}>
+          {label}
+        </button>
+        {/* Said once and left standing: nothing here is closed by a timer. */}
+        {copied ? (
+          <span role="status" className="form-success">
+            Copied.
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
