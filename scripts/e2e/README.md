@@ -48,6 +48,12 @@ node scripts/e2e/first-day.cjs [folder]         # a customer's first day on an E
                                                 # an account with nothing in it, a site before its box has spoken. It checks that every
                                                 # screen says what is here and what comes next, and takes pictures. Needs a fresh database.
 
+node scripts/e2e/guided-setup.cjs               # guided setup with the REAL box: the platform's own installer is run on a pretend box root, the box it installs
+                                                # starts, and a pretend kit (scripts/pretend-meter.mjs, startKit) answers as the real equipment does. The
+                                                # project manager types no address and no register: Find equipment, the ranges on the labels, a reading taken
+                                                # off for a flow meter that is not there, a module that goes silent and is found again, a device the site does
+                                                # not have taken off the list. The page follows the box by itself, with no reload. Any fresh or used database.
+
 node scripts/run-smoke.mjs smoke-sites.mjs      # (separate from the browser journeys, with its own API) four sites from zero with the
                                                 # real installer and box against pretend equipment, and what goes wrong in the field
 

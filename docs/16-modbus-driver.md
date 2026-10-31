@@ -27,7 +27,7 @@ converter share its host and port and differ only by unit ID.
 
 | Field | Meaning |
 |---|---|
-| `registerType` | `input` (a manual's 3xxxx, function code 4) or `holding` (4xxxx, function code 3) |
+| `registerType` | `input` (a manual's 3xxxx, function code 4), `holding` (4xxxx, function code 3) or `discrete` (a digital input, function code 2: one bit for each input, read as 0 or 1, with the data type `uint16`) |
 | `address` | **Zero-based**, as on the wire: a manual's **30053 is address 52**, 40001 is address 0 |
 | `dataType` | `uint16`, `int16`, `uint32`, `int32`, `float32` (the last three take two registers) |
 | `wordOrder` | For two-register values: `big` (the high half first, the usual) or `little` |
@@ -64,17 +64,27 @@ problem is the wiring, the converter's mode, the speed or the unit number, not G
 
 ## Known profiles
 
-`packages/shared/src/device-profiles.ts` holds the registers of the Eastron **SDM630** (three-phase) and **SDM230**
+`packages/shared/src/device-profiles.ts` holds the **approved equipment** ([30](30-guided-setup.md)): the Eastron **SDM630** (three-phase) and **SDM230**
 (single-phase) in three roles each (grid, solar, load): total active power, input register 52 on the SDM630 and 12 on the
-SDM230 (documented 30053 and 30013), 32-bit float, high half first, in watts, shown in kW. Each profile says how it is
-fitted and how to check the direction. Anything else is added by hand from its own datasheet.
+SDM230 (documented 30053 and 30013), 32-bit float, high half first, in watts, shown in kW; the Waveshare **Modbus RTU Analog Input 8CH** (current version),
+whose channels 1 to 8 are input registers 0 to 7 in microamps (a 4 to 20 mA transmitter reads 4000 to 20000), and whose readings are set from the range printed
+on each transmitter's label; and the Waveshare **Modbus RTU IO 8CH**, whose eight digital inputs are read with function 02 at addresses 0 to 7 (the pump's running contact).
+Each profile carries the number it has on the cable in every kit, the serial settings it is delivered with, how it is fitted and how to check it. Anything else is
+added by hand from its own datasheet.
 
-**Not verified against a real meter.** The registers are from the makers' published tables, the protocol is exercised
-against a Modbus TCP server and a pretend meter (`scripts/pretend-meter.mjs`), and a real meter has not been read by this
-software. The SDM230's serial speed differs between versions; read it from the meter's display.
+**Not verified against real equipment.** The registers are from the makers' published tables, the protocol is exercised
+against a Modbus TCP server and a pretend kit (`scripts/pretend-meter.mjs`, with `--kit` for the whole kit), and no real meter or module has been read by this
+software. The SDM230's serial speed differs between versions; Greecon sets it to 9600 at the office from the meter's display.
+
+## Looking for equipment on the network
+
+`apps/edge-agent/src/discovery.ts` is what the box does when a person presses **Find equipment**: it opens a connection to port 502 (or the one asked) on the private
+addresses of its own network, asks each unit 1 to 10 up to six read-only questions (`PROBES` in `packages/shared/src/discovery.ts`: function 02, 03 and 04, never a write),
+and sends what answered to the platform, which recognises it by what each unit positively said. A converter's own exceptions 10 and 11 mean "nothing answered me" and are treated
+as silence; any other exception means a device is there. `greecon-edge find` does it by hand. How it decides, and why it is safe, is in [30](30-guided-setup.md), section 4.
 
 ## What it does not do
 
-- **It never writes.** There is no write path in the reader, so no command can reach a device through a box.
+- **It never writes.** There is no write path in the reader, so no command can reach a device through a box. Looking for equipment asks only reads, too.
 - **No serial port on the box.** Serial meters are reached through a converter in Modbus TCP to RTU gateway mode.
 - **No OPC-UA, no BACnet, no vendor cloud.** Each would be another reader beside this one.

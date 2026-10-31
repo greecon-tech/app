@@ -23,6 +23,9 @@ none of which can stop the others:
 4. **Says how it is:** a heartbeat every 30 seconds (every 10 for the first 15 minutes, when someone is probably
    watching) carrying its version, its clock, the queue, and how each device answered, with a sentence for each
    failure ("no answer from 192.168.1.50:502 (unit 2)").
+   When a person presses **Find equipment** on the setup page, the platform's reply to the next heartbeat asks the box to look at the site's own network (private addresses,
+   port 502, reading only, about a minute) and the box sends what answered to the platform; the heartbeat is every 10 seconds for five minutes after such a request
+   ([30](30-guided-setup.md)).
 5. **Takes fixes:** after a heartbeat that says a newer version exists it fetches it, checks the checksum the
    platform gave, runs it once, switches and restarts. The version before stays on disk. If the new one fails to
    start three times without reporting in, the starting program (`run-edge`, written by the installer and not
@@ -83,8 +86,10 @@ command, `greecon-edge`.
 
 ```
 greecon-edge status        how the box is; exits 1 if the platform has not heard from it in three minutes
-greecon-edge modbus-test --host H --unit N --type input|holding --address A --data-type T [--word-order big|little]
+greecon-edge modbus-test --host H --unit N --type input|holding|discrete --address A --data-type T [--word-order big|little]
                            reads one register and prints the raw numbers and the value (address counted from zero)
+greecon-edge find [--host H] [--port P] [--unit N]
+                           looks at the network for converters and what answers behind them (reads only), as Find equipment does
 greecon-edge enrol --api URL --code C    (the installer runs this)
 greecon-edge version
 journalctl -u greecon-edge -n 50 --no-pager     what it has been saying

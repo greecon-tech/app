@@ -8,6 +8,7 @@ Where to start depends on the question.
 | What is true of the platform today, and what is not | [18 Reality audit](18-reality-audit.md) |
 | What every screen is for, for Greecon's team and for clients | [28 The experience, defined](28-ux-definition.md) |
 | How the platform meets Apple's and Notion's standards, and how that is measured | [29 Apple and Notion standards](29-apple-notion-standards.md) |
+| How a site is set up by someone with no engineering skills (what is fixed, what the box finds, what is asked) | [30 Guided setup](30-guided-setup.md) |
 | How to use it, by kind of site | [guides](guides/00-overview.md) |
 | What to build next, and what would prove it | [25 Roadmap and proof gates](25-roadmap-and-proof-gates.md) |
 | **How to put Greecon on the market with a project manager** | [launch/](launch/README.md): go-live, the project manager's manual, hardware, the sales kit, runbooks |
@@ -35,6 +36,7 @@ rests on and what a person still has to check. Document 27 records the decisions
 | [25 Roadmap and proof gates](25-roadmap-and-proof-gates.md) | The beachhead and its disproof, the sequence, the metrics, what is not being built |
 | [26 Research register](26-research-register.md) | The nine reports, what each changed, how far to trust it |
 | [27 Launch decisions](27-launch-decisions.md) | The decisions made to launch (first customers, the pilot and its price, who does what, what waits), with what would change each |
+| [30 Guided setup](30-guided-setup.md) | Approved equipment set at the office, "Find equipment", the range on a label, the papers and the electrician, the install card: what is fixed, what is found, what is asked, why it is safe for the box to look, and what is not yet known |
 
 Supporting material:
 

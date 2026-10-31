@@ -1,7 +1,8 @@
 # 18. Reality audit: what we found, what we fixed, what is still open
 
 Status: first written 2026-10-18 for the work from 2026-10-10 to 2026-10-18; extended 2026-10-19 with
-the work that made the platform something a project manager can install and run (findings 29 to 42).
+the work that made the platform something a project manager can install and run (findings 29 to 42), and 2026-10-31 with
+guided setup, which lets a project manager with no engineering skills set a site up (findings 97 to 104).
 This is the honest ledger. It exists so that nobody has to guess whether a screen, a guide or a
 sentence in a sales conversation matches the running platform. Where the platform fell short of what
 it showed, it says so plainly.
@@ -12,8 +13,8 @@ the platform does updates this page in the same commit.
 
 ## 1. How things were checked
 
-- `npm run typecheck` and `npm test` for every package. At the time of writing: API 900 tests,
-  edge agent 123, edge simulator 1, GAIA core 117, shared 97, all passing. (The separate Modbus
+- `npm run typecheck` and `npm test` for every package. At the time of writing: API 930 tests (91 of
+  them need a database), edge agent 162, edge simulator 1, GAIA core 117, shared 163, all passing. (The separate Modbus
   driver service of the first pass is gone: its job is done inside the edge agent.)
 - A real PostgreSQL 16, not a fake, for the parts where a fake would hide the bug: the migration
   ledger and account safeguards, requests for access, sign-in, the messages outbox, chart history,
@@ -235,6 +236,22 @@ platform's own hygiene. Each was checked in a real browser or against a real Pos
 | 96 | Trouble done to the platform in a real browser, as it happens to a customer (`scripts/e2e/field-trouble.cjs`, and a customer suspended in `scripts/smoke-sites.mjs`), found five things the screens got wrong. (a) A person at a client that Greecon had suspended was told "Invalid email or password." at sign-in, though the API had said why; a person already signed in was shown "This page could not be loaded"; and a platform that was down, or a sign-in tried too often, read the same way, so people reset passwords that were right. (b) **Suspend this client** asked nothing, though it signs everyone out, turns the box away and stops every alert message for the account. (c) A control that cannot be used (a suspended client's "Open for setup", a button that is working) looked like one that can: the stylesheet had no disabled state at all. (d) The "More" menu on the last row of the Clients table opened inside the table's own scrolling box, so the words that say what suspending does were cut off and the table scrolled inside itself. (e) **Who is told** and the runbook said the team is told "at once" when a box goes silent; the message waits through the team's quiet hours (22:00 to 07:00 unless changed), and its log line showed the hour it is due in UTC. | Medium | Fixed. A suspended client's sign-in says so, with who to write to, and a wrong password, an unknown address, too many attempts ("Wait a minute") and a platform that did not answer each have their own sentence; a person already signed in is taken to the sign-in page with the same sentence (`lib/refusals.ts`, `lib/api.ts`). Suspending asks once and names what will happen; turning it back on asks nothing and the sessions that were open work again. Disabled controls are dimmed. The menu opens in its row. The text and the runbook say what the box message does at night, and the log shows the due time on the viewer's own clock. Checked in a browser (29 steps) and on a real box: the box is turned away with its own log line, and is heard again when the customer is turned back on. |
 
 
+### Guided setup (added 2026-10-31)
+
+A project manager with no engineering skills was asked to know a register, a speed and a unit number. The reasoning, the decisions (L20 to L23) and what is still not
+known are in `docs/30-guided-setup.md`; these are the findings, each checked against the real box, the real wire protocol and a browser.
+
+| # | Finding | Severity | Status and evidence |
+|---|---|---|---|
+| 97 | The setup list failed ("This page could not be loaded") for every farm, water station and blank site: the page looked up the panel of every step by name, and a step that a site does not have (the grid meter's direction, alert limits, prices) was not there to find. The first journeys only ever made a hotel. Found by the founder on the live platform. | High | Fixed (`ccc3e31`). A panel is made only for the steps the list has. `scripts/e2e/site-kinds.cjs` opens every page of every kind of site, on a desk and on a phone (46 checks). **Not live until the branch is merged.** |
+| 98 | A project manager had to type, for each device, an IP address, a port and a unit number, and for the water module a register kind, an address, a kind of number and a 4 to 20 mA conversion from a datasheet. Every one is a place to be wrong, and a wrong one reads as a faulty device. | High | Fixed. Approved equipment with its numbers and settings fixed in `device-profiles.ts`; **Find equipment**: the box looks at its own private network and the platform fills in the addresses of what it finds, as the person who asked; the range on a transmitter's label is the only thing typed for the 4 to 20 mA module. `discovery.spec` (shared and box), `setup.service.spec`, the real box and a pretend kit for all four kinds of site (`smoke-sites.mjs`), `pm-e2e.cjs` and `guided-setup.cjs` in a browser. **No real module has been read** (open 32). |
+| 99 | A flaw in the first design, found by the first test of the box's search: a unit that said nothing to a register it does not have was taken for a unit that is not there, so equipment that ignores unknown registers could never have been found; and recognising a meter by "its power register answers" would take a device that answers every register with zeros for a meter. | High | Fixed before anything depended on it. The first three questions are one register that every kind of unit has, and any answer, a refusal included, counts as present; what a unit is is decided by what it positively says (a module's own address, a meter's mains voltage), never by what it fails to say. `discovery.spec`: zeros, nonsense, an address that is not the unit's, a meter at 12 V. |
+| 100 | Two meters of one kind at one number on two converters, or two of a kind at numbers that are not the kit's, could have been matched in the order they were found, swapping the grid meter and the solar meter: every figure of the site wrong and looking right. | High | Fixed. The platform says "Not sure which", says what to do and changes nothing for them. `discovery.spec`, `setup.service.spec`. |
+| 101 | A single-phase meter fitted where the template planned a three-phase one, the commonest slip on a small site, could never answer the register the profile read, so the site would read "not answering" for ever, to someone who cannot tell why. | Medium | Fixed. When the planned model's own register is refused and the other model's answers, the device is read as the model that is there, its registers change with it and the page says so. Where both answer, the planned model is kept (open 34). `smoke-sites.mjs` (the solar site) with the real box. |
+| 102 | A site could be commissioned with no signed order form and no record of who did the electrical work, and the note on a step was optional. | Medium | Fixed. The papers are the first step and the electrician the last before commissioning; each must say who and when (refused by the page and by the platform) and both are on the handover sheet. `setup-checklist.spec`, `setup.service.spec`, `pm-e2e.cjs`. The privacy page says the setup record keeps those names. |
+| 103 | A tank reading a little over 100 at a full tank was called impossible and held up commissioning, and a level transmitter whose wire had come off was not called out at all (in the module's own 4 to 20 mA mode it can read as an empty tank). | Low | Fixed. A tank level may read five points either side of its range; the module is left in its default 0 to 20 mA mode, so a wire that has come off reads below an empty tank and the platform says "cannot be a tank level". `edge-catalog.spec`, `smoke-sites.mjs` (a broken wire). |
+| 104 | The notes for the Waveshare modules and the SDM230 told the person on site to set addresses and speeds, and said the module's supply powers a two-wire loop, which the maker's page does not say. | Low | Fixed. The notes say what Greecon sets at the office, and that the loop's 24 V supply is wired as the module's manual draws it. `edge-catalog.spec`. |
+
 ## 3. Mistakes in our own first pass, caught by testing
 
 A short list, because they are the kind a reader should expect more of:
@@ -412,3 +429,16 @@ of this list, so that an earlier reference still points at the same thing.
     rely on the host putting the visitor's address last in `X-Forwarded-For` (Railway does, and the web app reads
     the last entry). Check it on the first deploy: wrong passwords from your phone, on its mobile network, must not
     stop a sign-in from a laptop on another network.
+
+32. **No real Waveshare module has been read.** The channel registers (input 0 to 7), the address register (holding 0x4000) and the digital inputs (function 02, 0 to 7) are from the
+    maker's pages (read again on 31 October 2026; the page for the IO module warns that its example frames do not always match their labels). Everything is tested against a pretend kit that
+    answers as the pages say, and the real box on a real socket. The first real kit is rehearsed on a desk before any site (`docs/launch/02`, section 13).
+33. **No real converter has been looked at.** Some answer a request for an absent unit with an exception and some say nothing (the box handles both); a converter that accepts only one connection
+    may drop the box's reading connection for a moment while it looks. Looking is manual, so this costs one round of readings at most.
+34. **An SDM630 fitted where an SDM230 was planned** reads phase one's power until the commissioning comparison with the meter's own display finds it: where both power registers answer, the
+    planned model is kept. The install card lists the model to fit.
+35. **A search and its answer are kept in the platform's memory**, not in the database: a restart in the minute between loses them and the person presses the button again.
+36. **The Albanian drafts of the three messages to the customer have not been read by a native speaker** (decision L12).
+37. **The box's operating system and the one pasted install line are still a terminal step.** There is no zero-touch first boot.
+38. **Equipment Greecon does not know** (a soil probe, a weather sensor, a battery) is still typed by hand from the maker's table; none is approved. A converter whose address changes under the box is found
+    again only when someone presses Find equipment.
