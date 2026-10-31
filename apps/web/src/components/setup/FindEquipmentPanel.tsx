@@ -69,7 +69,7 @@ export function FindEquipmentPanel({ siteId, view, boxOnline, hasDevices }: { si
       ) : null}
       {view.state === "expired" ? (
         <p role="alert" className="rule-actions__error">
-          The box did not pick this up. Check that it shows as online in the step above, then press Find equipment again.
+          The box did not pick this up. Check that it shows as online in the step above (a box with older software updates itself within about ten minutes), then press Find equipment again.
         </p>
       ) : null}
 

@@ -385,7 +385,8 @@ export function validateDiscoveryResult(body: unknown): string[] {
 
 /** A private address (one a site's own network uses) or this machine: the only places the box is asked to look. */
 export function isPrivateAddress(host: string): boolean {
-  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  // Plain decimal octets only, with no leading zero: "010.1.1.1" is 10.1.1.1 to this check, and to the system's resolver it is octal, 8.1.1.1, a public address.
+  const match = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})$/.exec(host);
   if (!match) return false;
   const [a, b, c, d] = match.slice(1).map(Number) as [number, number, number, number];
   if ([a, b, c, d].some((part) => part > 255)) return false;

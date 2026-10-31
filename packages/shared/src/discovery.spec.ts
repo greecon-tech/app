@@ -319,4 +319,11 @@ describe("where the box is allowed to look", () => {
     for (const host of ["10.0.0.1", "10.255.255.255", "172.16.0.1", "172.31.255.1", "192.168.0.1", "192.168.1.50", "169.254.1.1", "127.0.0.1"]) expect(isPrivateAddress(host), host).toBe(true);
     for (const host of ["8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "11.0.0.1", "greecon.earth", "192.168.1", "192.168.1.256", "", "1.1.1.1/24"]) expect(isPrivateAddress(host), host).toBe(false);
   });
+
+  it("is not fooled by a spelling the system's resolver reads differently: a leading zero makes an octal number, a different address", () => {
+    // "010.1.1.1" would read as 10.1.1.1, a private address, here, and as 8.1.1.1, a public one, to getaddrinfo.
+    for (const host of ["010.1.1.1", "192.168.001.001", "192.168.01.1", "00.1.1.1", "0x0a.1.1.1", "10.0.0.1 ", " 10.0.0.1", "10.0.0.1\n", "10.0.0.1.5", "+10.0.0.1", "10.0.0.-1"]) expect(isPrivateAddress(host), JSON.stringify(host)).toBe(false);
+    expect(isPrivateAddress("10.0.0.1")).toBe(true);
+    expect(isPrivateAddress("192.168.0.10")).toBe(true);
+  });
 });
