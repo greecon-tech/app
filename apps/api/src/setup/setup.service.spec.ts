@@ -843,6 +843,17 @@ describe("setting a site up", () => {
       expect(setup.discoveryView(site.id, owner, Date.now() + 11 * 60_000).state).toBe("expired");
     });
 
+    it("forgets what a box found on a customer's network after a day, whether or not anyone asks again", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, fullKit()));
+      expect(setup.discoveryView(site.id, owner).boxes).toHaveLength(1);
+      // A heartbeat a day and an hour later, nobody having pressed the button again, and what was found is gone.
+      await setup.heartbeat(box, heartbeat(), Date.now() + 25 * 3_600_000);
+      const view = setup.discoveryView(site.id, owner);
+      expect(view).toMatchObject({ state: "idle", boxes: [], proposals: [], unclaimed: [] });
+    });
+
     it("stops telling the box to look once nobody has been waiting for ten minutes", async () => {
       const { site, box } = await onlineBox();
       await setup.requestDiscovery(site.id, {}, owner);

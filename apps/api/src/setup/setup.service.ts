@@ -281,6 +281,7 @@ export class SetupService {
 
     const gateway = await this.platform.recordGatewayHeartbeat(gatewayId, principal.tenantId, heartbeat, nowMs);
     const latest = this.bundle.manifest()?.version;
+    this.forgetOldSearches(nowMs);
     const search = this.searches.get(gatewayId);
     const asked = search && !search.result && nowMs - search.requestedAtMs < SEARCH_WAITS_FOR_MS ? search.request : undefined;
     return {
@@ -382,7 +383,7 @@ export class SetupService {
     // Asked about a particular address or port, a new search always replaces the one that is under way.
     const particular = host !== undefined || port !== undefined;
 
-    for (const [key, search] of this.searches) if (nowMs - search.requestedAtMs > SEARCH_KEPT_FOR_MS) this.searches.delete(key);
+    this.forgetOldSearches(nowMs);
     for (const box of reachable) {
       const existing = this.searches.get(box.id);
       if (!particular && existing && !existing.result && nowMs - existing.requestedAtMs < SEARCH_REPEAT_AFTER_MS) continue;
@@ -391,8 +392,14 @@ export class SetupService {
     return this.discoveryView(siteId, principal, nowMs);
   }
 
+  /** What a box found on a customer's network is not kept longer than a day, whether or not anyone asks again (the privacy page says so). */
+  private forgetOldSearches(nowMs: number): void {
+    for (const [key, search] of this.searches) if (nowMs - search.requestedAtMs > SEARCH_KEPT_FOR_MS) this.searches.delete(key);
+  }
+
   /** What the box found, and what that means for each device of the site. */
   discoveryView(siteId: string, principal: Principal, nowMs: number = Date.now()): DiscoveryView {
+    this.forgetOldSearches(nowMs);
     const detail = this.platform.siteDetail(siteId, principal, nowMs);
     const record = this.platform.siteSetupRecord(siteId, principal);
     const searches = detail.gateways.flatMap((gateway) => {
