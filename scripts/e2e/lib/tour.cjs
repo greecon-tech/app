@@ -70,7 +70,7 @@ const PLANS = [
     who: TEAM,
     team: true,
     after: intoClient(CLIENT),
-    paths: ["/", "/sites", "/sites/new", clientSite, siteSub("/equipment"), siteSub("/setup"), siteSub("/handover"), "/alerts", "/analytics", "/reports", "/settings", "/settings/people", "/admin", "/audit", "/maintenance", "/help"]
+    paths: ["/", "/sites", "/sites/new", clientSite, siteSub("/equipment"), siteSub("/setup"), siteSub("/install-card"), siteSub("/handover"), "/alerts", "/analytics", "/reports", "/settings", "/settings/people", "/admin", "/audit", "/maintenance", "/help"]
   }
 ];
 

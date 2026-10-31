@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Four sites from zero, as a project manager sets each one up: a hotel, a solar plant, a farm and a water station. For each, a customer
 // is onboarded, a site is made from its template, the box is installed with the installer the platform serves and left running, and the
-// equipment it talks to is a pretend one that holds the registers a real one would (a signed temperature, a 4 to 20 mA tank level, a
-// meter's float). Then the things that go wrong in the field are done to it, one by one: a reversed clamp, a pump contact that is
-// inverted, a probe in the air, a tank that empties, a meter that stops answering.
+// equipment it talks to is a pretend kit that answers the way the real equipment does. The project manager presses Find equipment, and the
+// addresses of the equipment Greecon knows are filled in by the box; gives the range printed on each transmitter's label; and types an address
+// and a register only for the equipment Greecon does not know (a battery, a soil probe, a weather sensor). Then the things that go wrong in the
+// field are done to it, one by one: a reversed clamp, a pump contact that is inverted, a probe in the air, a tank that empties, a meter that
+// stops answering.
 //
 //   API_URL=http://127.0.0.1:4010 ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/smoke-sites.mjs
 //
@@ -14,7 +16,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { API, call, check, failed, login, onboard, step, until } from "./lib/smoke-helpers.mjs";
-import { float32Words, int16Word, startMeter } from "./pretend-meter.mjs";
+import { int16Word, microampsFor, startKit } from "./pretend-meter.mjs";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
@@ -26,22 +28,16 @@ const VERBOSE = process.env.SMOKE_SHOW === "1";
 const run = (command, args, options = {}) => spawnSync(command, args, { encoding: "utf8", ...options });
 
 // ---- What the equipment holds -----------------------------------------------------------------------------------------------
-// An Eastron meter: total active power in watts, float32, high word first, at the SDM630's address 52 and the SDM230's 12.
-const meter = (watts) => {
-  const [high, low] = float32Words(watts);
-  return { 52: high, 53: low, 12: high, 13: low };
-};
-// A 4 to 20 mA input module reports the current in microamps: a tank at 62 % of 0 to 100 is 4 + 0.62 x 16 mA.
-const milliamps = (fraction) => Math.round((4 + fraction * 16) * 1000);
-const waterModule = ({ tank = 62, pressure = 3.1, flow = 14, running = 1 } = {}) => ({ 0: milliamps(tank / 100), 1: milliamps(pressure / 10), 2: milliamps(flow / 100), 3: running });
-
-// How a project manager maps what the datasheets say (docs/launch/02, section 7.4). These are the same for any module of this kind.
-const WATER_MAP = {
-  "Tank level": { kind: "modbus", registerType: "holding", address: 0, dataType: "uint16", linear: { rawLow: 4000, rawHigh: 20000, engLow: 0, engHigh: 100 } },
-  "Line pressure": { kind: "modbus", registerType: "holding", address: 1, dataType: "uint16", linear: { rawLow: 4000, rawHigh: 20000, engLow: 0, engHigh: 10 } },
-  "Pump flow": { kind: "modbus", registerType: "holding", address: 2, dataType: "uint16", linear: { rawLow: 4000, rawHigh: 20000, engLow: 0, engHigh: 100 } },
-  "Pump running": { kind: "modbus", registerType: "holding", address: 3, dataType: "uint16" }
-};
+// The transmitters, as their labels read at every one of these sites: the level transmitter 0 to 5 m in a tank 4 m tall, the pressure
+// transmitter 0 to 10 bar, the flow meter 0 to 200 litres a minute. A 4 to 20 mA module reports each as a current in microamps.
+const LABEL = { levelRange: 5, tankHeight: 4, pressureRange: 10, flowRange: 200 };
+const level = (percent) => microampsFor(LABEL.levelRange, (percent / 100) * LABEL.tankHeight);
+const waterChannels = ({ tank = 62, pressure = 3.1, flow = 14 } = {}) => [level(tank), microampsFor(LABEL.pressureRange, pressure), microampsFor(LABEL.flowRange, flow)];
+const RANGES = [
+  { canonicalName: "water.tank.level.percent", range: LABEL.levelRange, tankHeight: LABEL.tankHeight },
+  { canonicalName: "water.pressure.bar", range: LABEL.pressureRange },
+  { canonicalName: "water.flow.lpm", range: LABEL.flowRange }
+];
 
 const KINDS = [
   {
@@ -50,10 +46,13 @@ const KINDS = [
     customer: "Hotel Adriatik",
     siteName: "Hotel Adriatik",
     place: "Durrës",
-    // device name -> Modbus unit
-    units: { "Grid meter": 1, "Solar meter": 2, "Water I/O module": 3 },
-    maps: () => ({ 1: meter(4200), 2: meter(6800), 3: waterModule() }),
-    mapping: { "Water I/O module": WATER_MAP },
+    // Equipment Greecon knows: found by the box, at the number each has in every kit.
+    found: { "Grid meter": 1, "Solar meter": 2, "Water I/O module": 3, "Pump contact module (optional)": 5 },
+    // Equipment it does not know: its address is typed.
+    typed: {},
+    kit: () => ({ meters: { 1: { watts: 4200 }, 2: { watts: 6800 } }, analog: { 3: { channels: waterChannels() } }, digital: { 5: { inputs: [1] } } }),
+    ranges: "Water I/O module",
+    mapping: {},
     expect: { "energy.grid.import.kw": 4.2, "energy.grid.export.kw": 0, "energy.solar.power.kw": 6.8, "water.tank.level.percent": 62, "water.pressure.bar": 3.1, "water.flow.lpm": 14, "water.pump.status": 1 }
   },
   {
@@ -62,9 +61,16 @@ const KINDS = [
     customer: "Vila Mare Energji",
     siteName: "Vila Mare solar plant",
     place: "Vlorë",
-    units: { "Grid meter": 1, "Solar meter": 2, "Load meter (optional)": 3, "Battery system (optional)": 4 },
+    found: { "Grid meter": 1, "Solar meter": 2, "Load meter (optional)": 4 },
+    typed: { "Battery system (optional)": 8 },
     // The plant is sending 3 kW to the grid (negative power at the grid meter) while it makes 7.2 and the site uses 4.2; a battery at 55 % charging at 1.5 kW.
-    maps: () => ({ 1: meter(-3000), 2: meter(7200), 3: meter(4200), 4: { 0: 550, 1: int16Word(1500) } }),
+    // It is a single-phase plant: the grid meter is an SDM230, not the SDM630 the template plans, and the box finds that out.
+    kit: () => ({
+      meters: { 1: { watts: -3000, model: "SDM230" }, 2: { watts: 7200 }, 4: { watts: 4200 } },
+      analog: {},
+      digital: {},
+      others: { 8: { holding: { 0: 550, 1: int16Word(1500) } } }
+    }),
     mapping: {
       "Battery system (optional)": {
         "Battery charge": { kind: "modbus", registerType: "holding", address: 0, dataType: "uint16", scale: 0.1 },
@@ -79,18 +85,24 @@ const KINDS = [
     customer: "Ferma Hoxha",
     siteName: "Ferma Hoxha, Lushnjë",
     place: "Lushnjë",
-    units: { "Soil probe": 4, "Weather sensor": 5, "Water I/O module": 3 },
+    found: { "Water I/O module": 3, "Pump contact module (optional)": 5 },
+    typed: { "Soil probe": 6, "Weather sensor": 7 },
     // Soil at 24.3 %, a frosty morning: -3.5 C and 88 % humidity. Air temperature is a signed number of tenths of a degree.
-    maps: () => ({ 4: { 0: 243 }, 5: { 0: int16Word(-35), 1: 880 }, 3: waterModule({ tank: 80, pressure: 2.4, flow: 22 }) }),
+    kit: () => ({
+      meters: {},
+      analog: { 3: { channels: waterChannels({ tank: 80, pressure: 2.4, flow: 22 }) } },
+      digital: { 5: { inputs: [1] } },
+      others: { 6: { holding: { 0: 243 } }, 7: { holding: { 0: int16Word(-35), 1: 880 } } }
+    }),
+    ranges: "Water I/O module",
     mapping: {
       "Soil probe": { "Soil moisture": { kind: "modbus", registerType: "holding", address: 0, dataType: "uint16", scale: 0.1 } },
       "Weather sensor": {
         "Air temperature": { kind: "modbus", registerType: "holding", address: 0, dataType: "int16", scale: 0.1 },
         Humidity: { kind: "modbus", registerType: "holding", address: 1, dataType: "uint16", scale: 0.1 }
-      },
-      "Water I/O module": WATER_MAP
+      }
     },
-    expect: { "agri.soil.moisture.percent": 24.3, "agri.air.temperature.c": -3.5, "agri.humidity.percent": 88, "water.tank.level.percent": 80, "water.pressure.bar": 2.4, "water.flow.lpm": 22 }
+    expect: { "agri.soil.moisture.percent": 24.3, "agri.air.temperature.c": -3.5, "agri.humidity.percent": 88, "water.tank.level.percent": 80, "water.pressure.bar": 2.4, "water.flow.lpm": 22, "water.pump.status": 1 }
   },
   {
     key: "water",
@@ -98,9 +110,11 @@ const KINDS = [
     customer: "Ujësjellësi Fshati",
     siteName: "Pump station Fshati",
     place: "Berat",
-    units: { "Water I/O module": 3, "Pump meter (optional)": 6 },
-    maps: () => ({ 3: waterModule({ tank: 45, pressure: 4.2, flow: 31 }), 6: meter(2300) }),
-    mapping: { "Water I/O module": WATER_MAP },
+    found: { "Water I/O module": 3, "Pump contact module (optional)": 5, "Pump meter (optional)": 4 },
+    typed: {},
+    kit: () => ({ meters: { 4: { watts: 2300, model: "SDM230" } }, analog: { 3: { channels: waterChannels({ tank: 45, pressure: 4.2, flow: 31 }) } }, digital: { 5: { inputs: [1] } } }),
+    ranges: "Water I/O module",
+    mapping: {},
     expect: { "water.tank.level.percent": 45, "water.pressure.bar": 4.2, "water.flow.lpm": 31, "water.pump.status": 1, "energy.consumption.kw": 2.3 }
   }
 ];
@@ -122,7 +136,7 @@ async function site(kind, admin, workDir) {
     ok(created.status === 201, `the site is made from the ${kind.template} template`);
     const siteId = created.json.site.id;
     const devices = (await call("GET", `/devices?siteId=${siteId}`, { token: owner })).json;
-    ok(Object.keys(kind.units).every((name) => devices.some((device) => device.name === name)), `the template brought ${devices.map((device) => device.name).join(", ")}`);
+    ok([...Object.keys(kind.found), ...Object.keys(kind.typed)].every((name) => devices.some((device) => device.name === name)), `the template brought ${devices.map((device) => device.name).join(", ")}`);
     const firstSetup = (await call("GET", `/sites/${siteId}/setup`, { token: owner })).json;
     show("first checklist", firstSetup.steps.map((entry) => `${entry.key}:${entry.status}`));
     const startingHealth = (await call("GET", "/sites", { token: owner })).json.find((entry) => entry.id === siteId);
@@ -139,7 +153,7 @@ async function site(kind, admin, workDir) {
     const install = run("bash", ["-s", "--", code], { input: served.text, env });
     ok(install.status === 0, "the installer finishes");
     if (install.status !== 0) say(install.stdout + install.stderr);
-    equipment = await startMeter({ maps: kind.maps(), units: Object.values(kind.units) });
+    equipment = await startKit(kind.kit());
     box = spawn(join(root, "usr/local/bin/greecon-edge"), ["run"], { env: { ...env, STATE_DIRECTORY: stateDir }, stdio: ["ignore", "pipe", "pipe"] });
     let boxLog = "";
     box.stdout.on("data", (chunk) => (boxLog += chunk));
@@ -147,12 +161,50 @@ async function site(kind, admin, workDir) {
     const online = await until("the box to be heard from", async () => (await call("GET", `/gateways?siteId=${siteId}`, { token: owner })).json?.[0]?.contact === "online", { timeoutMs: 60_000 }).catch(() => false);
     ok(online === true, "the platform hears the box");
 
-    // 3. Each device is given its address, and what has no known registers is mapped from the datasheet.
-    for (const device of devices) {
-      const unitId = kind.units[device.name];
-      if (unitId === undefined) continue;
+    // 3. The project manager presses Find equipment. The box looks at the converter and says what answers; the addresses of the equipment Greecon
+    //    knows are filled in. (The pretend kit is on this machine and not on a network the box would look over, so the project manager gives its address.)
+    const asked = await call("POST", `/sites/${siteId}/discovery`, { token: owner, body: { host: "127.0.0.1", port: equipment.port } });
+    ok(asked.status === 201 || asked.status === 200, `Find equipment is pressed (${asked.status} ${asked.text.slice(0, 100)})`);
+    const discovery = await until(
+      "the box to say what it found",
+      async () => {
+        const view = (await call("GET", `/sites/${siteId}/discovery`, { token: owner })).json;
+        return view?.state === "done" ? view : undefined;
+      },
+      { timeoutMs: 90_000, everyMs: 1000 }
+    ).catch(() => undefined);
+    ok(discovery !== undefined, "the box looks at the converter and says what it found");
+    if (discovery) {
+      show("discovery", discovery.proposals.map((proposal) => `${proposal.name}:${proposal.status}`));
+      for (const [name, unit] of Object.entries(kind.found)) {
+        const proposal = discovery.proposals.find((entry) => entry.name === name);
+        ok(proposal?.status === "already" && proposal.match?.unit === unit, `${name} was found at unit ${unit} and its address filled in (${proposal?.status}: ${proposal?.message})`);
+      }
+      for (const name of Object.keys(kind.typed)) {
+        ok(discovery.proposals.find((entry) => entry.name === name)?.status === "by-hand", `${name}, which Greecon does not know, is left to be addressed by hand`);
+      }
+    }
+    const filledIn = (await call("GET", `/devices?siteId=${siteId}`, { token: owner })).json;
+    for (const [name, unit] of Object.entries(kind.found)) {
+      const device = filledIn.find((entry) => entry.name === name);
+      ok(device?.connection?.port === equipment.port && device.connection.unitId === unit, `${name} reads from unit ${unit} of the converter (${JSON.stringify(device?.connection)})`);
+    }
+    if (kind.key === "solar") {
+      const grid = filledIn.find((entry) => entry.name === "Grid meter");
+      ok(grid?.profileKey === "eastron-sdm230-grid", `the grid meter, a single-phase SDM230 where the template planned a three-phase one, is read as one (${grid?.profileKey})`);
+    }
+
+    // 3b. What Greecon does not know is addressed from the datasheet, and its registers are mapped.
+    for (const [name, unitId] of Object.entries(kind.typed)) {
+      const device = filledIn.find((entry) => entry.name === name);
       const set = await call("PATCH", `/devices/${device.id}`, { token: owner, body: { connection: { kind: "modbus_tcp", host: "127.0.0.1", port: equipment.port, unitId } } });
-      if (set.status !== 200) ok(false, `${device.name} takes its address (${set.status} ${set.text.slice(0, 120)})`);
+      if (set.status !== 200) ok(false, `${name} takes its address (${set.status} ${set.text.slice(0, 120)})`);
+    }
+    // 3c. The range on each transmitter's label is the only thing the module is asked for.
+    if (kind.ranges) {
+      const module = filledIn.find((entry) => entry.name === kind.ranges);
+      const given = await call("PUT", `/devices/${module.id}/ranges`, { token: owner, body: { ranges: RANGES } });
+      ok(given.status === 200, `the ranges on the transmitters' labels are given (${given.status} ${given.text.slice(0, 160)})`);
     }
     const points = (await call("GET", "/points", { token: owner })).json.filter((point) => point.siteId === siteId);
     for (const [deviceName, readings] of Object.entries(kind.mapping)) {
@@ -197,6 +249,10 @@ async function site(kind, admin, workDir) {
     show("derived states", (states ?? []).map((state) => `${state.stateKey}=${state.stateValue}`));
     const alerts = (await call("GET", `/alerts?siteId=${siteId}`, { token: owner })).json;
     show("alerts", (alerts ?? []).map((alert) => `${alert.severity}:${alert.title}`));
+    const afterAll = (await call("GET", `/sites/${siteId}/setup`, { token: owner })).json;
+    for (const key of ["addresses", "mapping", "answering", "readings"]) {
+      ok(afterAll.steps.find((entry) => entry.key === key)?.status === "done", `the setup list says ${key} is done (${afterAll.steps.find((entry) => entry.key === key)?.detail})`);
+    }
     const context = { say, ok, show, owner, siteId, equipment, devices, points, kind, boxLog: () => boxLog, admin, customer };
     await scenarios[kind.key]?.(context);
     return context;
@@ -252,23 +308,33 @@ async function waterTrouble(context, moduleUnit = 3) {
   await call("PATCH", `/points/${tank.id}`, { token: context.owner, body: { thresholdConfig: { max_age_seconds: 900 } } });
 
   // A tank that empties.
-  equipment.set(moduleUnit, 0, milliamps(0.08));
+  equipment.setChannel(moduleUnit, 1, level(8));
   const critical = await waitFor("an alert for the nearly empty tank", async () => (await alertsOf(context)).find((alert) => alert.category === "water_tank_critical" && alert.status !== "resolved"));
   ok(critical !== undefined && critical.severity === "critical", "a tank at 8 % opens an Act now alert, with what to do first");
   ok(Boolean(critical?.suggestedAction), `and says what to do first: ${critical?.suggestedAction}`);
-  equipment.set(moduleUnit, 0, milliamps(0.7));
+  equipment.setChannel(moduleUnit, 1, level(70));
 
   // A pump that runs against nothing.
-  equipment.set(moduleUnit, 2, milliamps(0));
+  equipment.setChannel(moduleUnit, 3, microampsFor(LABEL.flowRange, 0));
   const dry = await waitFor("a no-flow alert", async () => (await alertsOf(context)).find((alert) => alert.category === "pump_dry_run_risk" && alert.status !== "resolved"), 120_000);
   ok(dry !== undefined && dry.severity === "critical", "a pump that runs with no flow for 30 seconds opens an Act now alert");
-  equipment.set(moduleUnit, 2, milliamps(0.14));
+  equipment.setChannel(moduleUnit, 3, microampsFor(LABEL.flowRange, 14));
 
-  // A reading that cannot be real: a level transmitter above its range (a broken loop reads over 20 mA).
-  equipment.set(moduleUnit, 0, Math.round(24 * 1000));
+  // A reading that cannot be real: a level transmitter whose wire has come off reads no current at all, which is below the 4 mA of an empty tank.
+  equipment.setChannel(moduleUnit, 1, 0);
   const bad = await waitFor("the reading that cannot be real to be named", async () => (await setupOf(context)).steps.find((entry) => entry.key === "readings")?.items?.find((item) => item.status === "attention"), 60_000);
-  ok(bad !== undefined, `a tank level above 100 % is called out as one that cannot be real (${bad?.label}: ${bad?.detail ?? ""})`.slice(0, 220));
-  equipment.set(moduleUnit, 0, milliamps(0.62));
+  ok(bad !== undefined && /cannot be a tank level/.test(bad.detail ?? ""), `a tank level below 0 % (a broken wire) is called out as one that cannot be real (${bad?.label}: ${bad?.detail ?? ""})`.slice(0, 240));
+  equipment.setChannel(moduleUnit, 1, level(62));
+
+  // A pump contact that is wired the wrong way round reads stopped while the pump runs: the person checks it by eye (the profile says so), and the
+  // platform shows what the contact says, which is the thing to compare.
+  equipment.setContact(5, 1, false);
+  const stopped = await waitFor("the pump to read stopped", async () => {
+    const rows = (await call("GET", `/telemetry/latest?siteId=${context.siteId}`, { token: context.owner })).json ?? [];
+    return rows.find((row) => row.canonicalName === "water.pump.status" && row.value === 0);
+  }, 60_000);
+  ok(stopped !== undefined, "an open pump contact reads as the pump stopped");
+  equipment.setContact(5, 1, true);
 }
 
 /** A customer that Greecon suspends (it has stopped paying, or has left): nobody in it gets in, with or without a session, and says why; the
@@ -285,7 +351,7 @@ async function suspension(context) {
   const wrong = await call("POST", "/auth/login", { body: { email: customer.ownerEmail, password: "not-the-password-1" } });
   ok(wrong.status === 401 && /Invalid email or password/.test(wrong.text) && !/suspended/i.test(wrong.text), "while a wrong password is still only a wrong password");
 
-  equipment.set(3, 0, milliamps(0.33));
+  equipment.setChannel(3, 1, level(33));
   const refused = await waitFor("the box to be turned away", async () => (/the platform answered 403/.test(boxLog()) ? true : undefined), 60_000);
   ok(refused !== undefined, "the box is turned away, and says so in its own log");
 
@@ -297,7 +363,7 @@ async function suspension(context) {
     return tank && Math.abs(tank.value - 33) < 0.5 ? tank : undefined;
   });
   ok(heard !== undefined, "and the platform has what the box reads again");
-  equipment.set(3, 0, milliamps(0.62));
+  equipment.setChannel(3, 1, level(62));
 }
 
 const scenarios = {
@@ -317,26 +383,26 @@ const scenarios = {
     ok(flow?.links?.battery?.socPercent === 55, "and shows the battery at 55 %");
 
     // The grid meter's clamps are on the wrong way round: at night the site "exports" what it uses.
-    equipment.setFloat(2, 52, 0);
-    equipment.setFloat(3, 52, 500);
-    equipment.setFloat(1, 52, -500);
-    equipment.set(4, 1, int16Word(0));
+    equipment.setWatts(2, 0);
+    equipment.setWatts(4, 500);
+    equipment.setWatts(1, -500);
+    equipment.setHolding(8, 1, int16Word(0));
     const suspect = await waitForState(context, "energy.grid.direction_suspect", true);
     ok(suspect !== undefined, "energy that goes out at night is called out as a meter fitted the wrong way round");
     const reversed = (await siteView(context)).energyFlow;
     show("energy flow with the clamps reversed at night", reversed?.headline);
     // Turned the right way again: the suspicion goes.
-    equipment.setFloat(1, 52, 500);
+    equipment.setWatts(1, 500);
     const sane = await waitForState(context, "energy.grid.direction_suspect", false);
     ok(sane !== undefined, "and goes again when the clamps are turned round");
 
     // A battery that runs low overnight, discharging.
-    equipment.set(4, 0, 120);
-    equipment.set(4, 1, int16Word(-800));
+    equipment.setHolding(8, 0, 120);
+    equipment.setHolding(8, 1, int16Word(-800));
     const constrained = await waitForState(context, "energy.battery.constrained", true);
     ok(constrained !== undefined, "a battery at 12 % is called out as constrained");
-    equipment.set(4, 0, 550);
-    equipment.set(4, 1, int16Word(1500));
+    equipment.setHolding(8, 0, 550);
+    equipment.setHolding(8, 1, int16Word(1500));
 
     // No battery after all, and no load meter: the plant is set up without them and nothing about them stays on the list.
     const battery = devices.find((device) => device.name === "Battery system (optional)");
@@ -369,9 +435,9 @@ const scenarios = {
     const set = await call("PATCH", `/points/${air.id}`, { token: owner, body: { thresholdConfig: { frost_below: 1 } } });
     ok(set.status === 200, `the grower's frost limit is entered (${set.status})`);
     ok((await waitForState(context, "agri.frost_risk", true, 60_000)) !== undefined, "an air temperature of -3.5 C, below the grower's 1 C, is frost");
-    equipment.set(5, 0, int16Word(62));
+    equipment.setHolding(7, 0, int16Word(62));
     ok((await waitForState(context, "agri.frost_risk", false, 60_000)) !== undefined, "and is not frost at 6.2 C");
-    equipment.set(5, 0, int16Word(-35));
+    equipment.setHolding(7, 0, int16Word(-35));
     const bad = await call("PATCH", `/points/${air.id}`, { token: owner, body: { thresholdConfig: { frost_below: 99 } } });
     ok(bad.status === 400, "a frost limit that cannot be right (99 C) is refused");
     show("health at the end", await healthOf(context));

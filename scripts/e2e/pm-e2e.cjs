@@ -20,6 +20,30 @@ async function recorded() {
   return (await fetch(`http://127.0.0.1:${process.env.FAKE_PROVIDER_PORT ?? 4100}/recorded`)).json();
 }
 
+// What the box says it found when it looks at the site's network: the kit of a hotel on one converter, as each piece answers its six questions.
+const floatWords = (value) => {
+  const bytes = Buffer.alloc(4);
+  bytes.writeFloatBE(value);
+  return [bytes.readUInt16BE(0), bytes.readUInt16BE(2)];
+};
+const probeSet = (given) =>
+  ["eastron-voltage", "analog-channels", "digital-inputs", "eastron-630", "eastron-230", "module-address"].map((key) => {
+    const answer = given[key] ?? "silent";
+    return answer === "silent" || answer === "refused" ? { key, outcome: answer } : { key, outcome: "ok", words: answer };
+  });
+const meterProbes = (watts) =>
+  probeSet({ "eastron-voltage": floatWords(231), "analog-channels": [...floatWords(231), 0], "digital-inputs": "refused", "eastron-630": floatWords(watts), "eastron-230": floatWords(watts / 3), "module-address": "refused" });
+const analogProbes = () => probeSet({ "eastron-voltage": [12000, 8000], "analog-channels": [12000, 8000, 4000], "digital-inputs": "refused", "eastron-630": "refused", "eastron-230": "refused", "module-address": [3] });
+const digitalProbes = () => probeSet({ "eastron-voltage": "refused", "analog-channels": "refused", "digital-inputs": [1, 0, 0, 0, 0, 0, 0, 0], "eastron-630": "refused", "eastron-230": "refused", "module-address": [5] });
+const hotelKit = (requestId) => ({
+  requestId,
+  startedAtUtc: new Date(Date.now() - 20_000).toISOString(),
+  finishedAtUtc: new Date().toISOString(),
+  scanned: { subnets: ["192.168.1.0/24"], hostsTried: 253, ports: [502], units: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+  hosts: [{ host: "192.168.1.50", port: 502, units: [{ unit: 1, probes: meterProbes(1800) }, { unit: 2, probes: meterProbes(5200) }, { unit: 3, probes: analogProbes() }, { unit: 5, probes: digitalProbes() }] }],
+  notes: []
+});
+
 async function boxCall(secret, method, path, body) {
   const response = await fetch(api + path, { method, headers: { "content-type": "application/json", "x-edge-device-token": secret }, body: body ? JSON.stringify(body) : undefined });
   const text = await response.text();
@@ -84,8 +108,21 @@ async function boxCall(secret, method, path, body) {
   ok("creating the site lands on its setup list", (await page.getByRole("heading", { name: "Set up Hotel Adriatik" }).count()) === 1);
   const words = await page.locator(".setup-progress__words").innerText();
   ok("nothing is marked done yet", /^0 of \d+ steps done/.test(words), words);
-  ok("the next thing to do is the box", (await page.locator(".setup-next").innerText()).includes("Install the box"));
+  ok("the first thing to do is the papers, before anything goes into the customer's building", (await page.locator(".setup-next").innerText()).includes("Order form signed and data terms agreed"));
   await page.screenshot({ path: SP + "/pm-3-setup-start.png", fullPage: true });
+
+  // 3b. The papers: confirmed by a person, who must say who signed and when, because the paper itself is somewhere else.
+  const paperwork = page.locator("#step-paperwork");
+  if (!(await paperwork.evaluate((el) => el.open))) await paperwork.locator("summary").first().click();
+  ok("the papers step says what the two papers are", (await paperwork.innerText()).includes("signed order form") && (await paperwork.innerText()).includes("agreed data terms"));
+  await paperwork.getByRole("button", { name: "The papers are signed" }).click();
+  await page.waitForTimeout(500);
+  ok("it cannot be confirmed without saying who signed and when", (await paperwork.getByText("Confirmed by").count()) === 0);
+  await paperwork.getByLabel("Who signed for the customer, and on what date").fill("Signed for the hotel by Besa Krasniqi on 19 October");
+  await paperwork.getByRole("button", { name: "The papers are signed" }).click();
+  await paperwork.getByText("Confirmed by").waitFor();
+  ok("with who and when written, the papers are done", (await paperwork.innerText()).includes("Besa Krasniqi on 19 October"));
+  ok("and the next thing to do is the box", (await page.locator(".setup-next").innerText()).includes("Install the box"));
 
   // 4. The box: one command, shown once.
   await page.getByRole("button", { name: "Add the box and get its install command" }).click();
@@ -111,45 +148,63 @@ async function boxCall(secret, method, path, body) {
   ok("the box step becomes Done by itself once the box reports", (await boxStep.locator("summary").first().innerText()).includes("Done"), (await boxStep.locator("summary").first().innerText()).replace(/\n/g, " | "));
   ok("the next thing is each device's address", (await page.locator(".setup-next").innerText()).includes("Where each device is on the network"));
 
-  // 5. Addresses.
+  // 5. Addresses: nobody types one. The project manager presses Find equipment; the box looks at the network and says what answers.
   const addresses = page.locator("#step-addresses");
-  const units = { "Grid meter": 1, "Solar meter": 2, "Water I/O module": 3 };
-  for (const [name, unit] of Object.entries(units)) {
-    const addressForm = addresses.getByRole("form", { name: `Address of ${name}` });
-    await addressForm.getByLabel("IP address").fill("192.168.1.50");
-    await addressForm.getByLabel("Unit number").fill(String(unit));
-    await addressForm.getByRole("button", { name: "Save" }).click();
-    await addressForm.getByText("Saved.").waitFor();
-  }
-  ok("all three devices have addresses", true);
+  const findButton = addresses.getByRole("button", { name: "Find equipment" });
+  ok("the addresses step offers Find equipment, enabled now that the box is online", await findButton.isEnabled());
+  await findButton.click();
+  await addresses.getByText("The box is looking at the network now.").waitFor();
+  ok("pressing it says the box is looking, and that the page updates by itself", (await addresses.innerText()).includes("updates by itself"));
+  const asked = await heartbeat([]);
+  const request = asked.json?.discovery;
+  ok("the box is asked to look in its next heartbeat", Boolean(request?.id), JSON.stringify(request));
+  const found = await boxCall(secret, "POST", "/edge/discovery", hotelKit(request.id));
+  ok("the box says what it found", found.status === 201 && found.json?.recorded === true, JSON.stringify(found.json));
+  await page.reload({ waitUntil: "networkidle" });
+  // A step that is done is shut when the page is opened afresh (it stays open for someone who is watching it finish); open it to read it.
+  if (!(await page.locator("#step-addresses").evaluate((el) => el.open))) await page.locator("#step-addresses summary").first().click();
+  const foundText = await page.locator("#step-addresses").innerText();
+  ok("each device is listed, found at the number the kit gives it, in words", /Grid meter[\s\S]*unit 1: an Eastron meter, reading 1.80 kW at 231 V/.test(foundText) && /Water I\/O module[\s\S]*a 4 to 20 mA input module/.test(foundText) && /Pump contact module[\s\S]*a digital input module/.test(foundText), foundText.replace(/\s+/g, " ").slice(0, 300));
+  ok("the page says every device has the address it was found at", foundText.includes("Every device has the address it was found at"));
+  ok("and what the box looked at", foundText.includes("looked at 253 addresses on 192.168.1.0/24, unit numbers 1 to 10"));
+  await page.screenshot({ path: SP + "/pm-4b-find-equipment.png", fullPage: true });
+  const stepWords = await page.locator("#step-addresses summary").first().innerText();
+  ok("the addresses step is Done without a single address typed", stepWords.includes("Done"), stepWords.replace(/\n/g, " | "));
 
-  // A finished step stays open until the reader closes it, so the last "Saved." is still there to be seen.
-  ok("a finished step stays open, so its confirmation stays on screen", await addresses.evaluate((el) => el.open));
-
-  // A wrong address is refused in words.
+  // Equipment can still be addressed by hand: a wrong address is refused in words.
   const wrong = addresses.getByRole("form", { name: "Address of Grid meter" });
+  if (!(await wrong.isVisible())) await addresses.locator(".setup-device", { hasText: "Grid meter" }).locator("summary", { hasText: "address by hand" }).click();
   await wrong.getByLabel("IP address").fill("not an address");
   await wrong.getByRole("button", { name: "Change" }).click();
   const refusal = await wrong.getByRole("alert").innerText();
-  ok("a wrong address is refused with a sentence that says what to do", /IP address/i.test(refusal), refusal);
+  ok("a wrong address typed by hand is refused with a sentence that says what to do", /IP address/i.test(refusal), refusal);
   await wrong.getByLabel("IP address").fill("192.168.1.50");
   await wrong.getByRole("button", { name: "Change" }).click();
   await wrong.getByText("Saved.").waitFor();
 
-  // 6. Registers for the water module (the meters are known, the module is not).
+  // A device the site does not have is taken off the list in one press, and nothing waits for it.
+  ok("the optional pump contact module can be taken off for a site without one", (await addresses.getByRole("button", { name: "The site does not have this: remove it" }).count()) >= 1);
+
+  // 6. The water module is asked one thing: the range printed on each transmitter's label. Nobody types a register.
   await page.reload({ waitUntil: "networkidle" });
   const mapping = page.locator("#step-mapping");
   ok("the mapping step is the next to do", (await page.locator(".setup-next").innerText()).includes("Which register holds which reading"));
-  const readings = ["Tank level", "Line pressure", "Pump flow", "Pump running"];
-  for (const [index, label] of readings.entries()) {
-    const registerForm = mapping.getByRole("form", { name: `Register for ${label}` });
-    if (!(await registerForm.isVisible())) await mapping.locator(".setup-point", { hasText: label }).locator("summary").click();
-    await registerForm.getByLabel("Address").fill(String(index));
-    await registerForm.getByRole("button", { name: "Save the register" }).click();
-    await registerForm.getByText("Saved.").waitFor();
-  }
+  const ranges = mapping.getByRole("form", { name: "Transmitter ranges for Water I/O module" });
+  ok("it asks for the range on each transmitter's label, in the label's words", (await ranges.innerText()).includes("Level transmitter") && (await ranges.innerText()).includes("Pressure transmitter") && (await ranges.innerText()).includes("Flow meter"));
+  ok("and the meters and the pump contact, which Greecon knows, say so and ask for nothing", (await mapping.innerText()).includes("Greecon knows this equipment"));
+  await ranges.getByLabel("Range on the label (m)").fill("3");
+  await ranges.getByLabel("How tall the tank is inside (m)").fill("4");
+  await ranges.getByRole("button", { name: "Save the ranges" }).click();
+  const tooShort = await ranges.getByRole("alert").innerText();
+  ok("a transmitter shorter than the tank is refused in words", tooShort.includes("cannot see the top of the water"), tooShort);
+  await ranges.getByLabel("Range on the label (m)").fill("5");
+  await ranges.getByLabel("Top of the range (bar)").fill("10");
+  await ranges.getByLabel("Top of the range (lpm)").fill("200");
+  await ranges.getByRole("button", { name: "Save the ranges" }).click();
+  await ranges.getByText("Saved.").waitFor();
   await page.waitForFunction(() => document.querySelector("#step-mapping summary")?.textContent?.includes("Done"), null, { timeout: 15000 });
-  ok("all four water readings are tied to registers, and the step is Done", true);
+  ok("with the three ranges given, every reading is tied to a register and the step is Done", true);
+  await page.screenshot({ path: SP + "/pm-4c-ranges.png", fullPage: true });
 
   // 7. The box now reads: its configuration changed, and it reports each device answering.
   config = (await boxCall(secret, "GET", "/edge/config")).json;
@@ -245,6 +300,15 @@ async function boxCall(secret, method, path, body) {
   if (!(await limits.evaluate((el) => el.open))) await limits.locator("summary").first().click();
   await limits.getByRole("button", { name: "I checked this" }).click();
   await limits.getByText("Confirmed by").waitFor();
+
+  // The electrician: who did the electrical work, written down. Commissioning waits for it.
+  const electrician = page.locator("#step-electrician");
+  if (!(await electrician.evaluate((el) => el.open))) await electrician.locator("summary").first().click();
+  ok("the electrician step says whose work it is", (await electrician.innerText()).includes("licensed electrician"));
+  await electrician.getByLabel("The electrician's name and licence number").fill("Arben Hoxha, licence E-1234");
+  await electrician.getByRole("button", { name: "The electrical work is done" }).click();
+  await electrician.getByText("Confirmed by").waitFor();
+  ok("the electrician's name and licence number are written down", (await electrician.innerText()).includes("Arben Hoxha, licence E-1234"));
 
   const commissioning = page.locator("#step-commissioned");
   if (!(await commissioning.evaluate((el) => el.open))) await commissioning.locator("summary").first().click();
@@ -353,11 +417,28 @@ async function boxCall(secret, method, path, body) {
   ok("the sheet has the register of the grid meter", sheet.includes("input register 52, float32"));
   ok("the sheet says who commissioned it", /Commissioned by .+ on \d{4}-\d\d-\d\d/.test(sheet));
   ok("the sheet tells the customer how to reach Greecon", sheet.includes("info@greecon.earth"));
+  ok("the sheet records who signed the papers and who the electrician was", sheet.includes("Besa Krasniqi on 19 October") && sheet.includes("Arben Hoxha, licence E-1234"), sheet.slice(0, 80));
   ok("the sheet says who is told, in order, with how to reach them", sheet.includes("Who is told when something needs attention") && sheet.includes("arben@hotel-adriatik.example") && sheet.includes("+355691234567"));
   await page.screenshot({ path: SP + "/pm-7-handover.png", fullPage: true });
   await page.emulateMedia({ media: "print" });
   ok("printing hides the console around the sheet", !(await page.locator(".sidebar").isVisible()) && (await page.locator(".handover").isVisible()));
   await page.screenshot({ path: SP + "/pm-8-handover-print.png", fullPage: true });
+  await page.emulateMedia({ media: "screen" });
+
+  // 9b. The install card: what to bring, what each device is set to, and the messages for the customer.
+  await page.goto(`${base}/sites/${siteId}/setup`, { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "The install card" }).first().click();
+  await page.waitForURL("**/install-card");
+  const card = await page.locator(".install-card").innerText();
+  ok("the install card names the site and the kind of site", card.includes("Hotel Adriatik") && card.includes("Hotel or guesthouse"));
+  ok("it lists each device with the number to set on it", /Grid meter[\s\S]*Number on the cable: 1/.test(card) && /Solar meter[\s\S]*Number on the cable: 2/.test(card) && /Water I\/O module[\s\S]*Number on the cable: 3/.test(card) && /Pump contact module[\s\S]*Number on the cable: 5/.test(card));
+  ok("it says one speed for the whole cable, and the converter's mode", card.includes("9600 baud, 8 data bits, no parity, 1 stop bit") && card.includes("Modbus TCP to RTU (gateway)"));
+  ok("it says what the customer's network is asked for, and that nothing is opened inward", card.includes("Nothing is opened inward"));
+  ok("it has the three messages for the customer, in English with an Albanian draft each", (await page.getByRole("button", { name: /^Copy the English/ }).count()) === 3 && (await page.locator("summary", { hasText: "Albanian draft" }).count()) === 3);
+  ok("the messages name the site and leave in brackets what the sender fills in", (await page.locator(".copy-text__body").first().innerText()).includes("Greecon installation at Hotel Adriatik on [date]"));
+  await page.screenshot({ path: SP + "/pm-14-install-card.png", fullPage: true });
+  await page.emulateMedia({ media: "print" });
+  ok("printed, the card is only the card: the messages stay on the screen", !(await page.locator(".install-card__messages").isVisible()) && (await page.locator(".install-card").isVisible()));
   await page.emulateMedia({ media: "screen" });
 
   // 10. The audit trail shows who did this.
