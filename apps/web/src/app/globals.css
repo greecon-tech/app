@@ -3616,3 +3616,111 @@ body:has(dialog.find[open]) {
 .first-run .getting-started li {
   gap: var(--space-2);
 }
+
+/* Guided setup (docs/30): one button finds the equipment, the range on a transmitter's label sets its scale, and the card for the site visit
+   is one printable page. */
+.setup-find {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.setup-find__ask {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.setup-find__ask p,
+.setup-find__result p {
+  margin: 0;
+}
+
+.setup-find__status {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--watch-fg);
+  background: var(--watch-bg);
+  border-radius: var(--radius-sm);
+}
+
+.setup-find__result {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.setup-ranges {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.setup-ranges__field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.setup-ranges__field legend {
+  padding: 0 var(--space-2);
+  font-weight: 600;
+}
+
+.setup-ranges__field p {
+  margin: 0;
+}
+
+.setup-inline-form label.setup-ranges__skip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.setup-ranges__skip input {
+  width: auto;
+  min-width: 0;
+}
+
+.copy-text {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.copy-text__body {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.install-card section ul,
+.install-card section ol {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: 1.3rem;
+}
+
+.install-card__row {
+  display: contents;
+}
+
+.install-card__messages {
+  display: grid;
+  gap: var(--space-3);
+}

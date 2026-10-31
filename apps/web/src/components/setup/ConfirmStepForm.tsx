@@ -4,10 +4,21 @@ import { FormEvent, useState, useTransition } from "react";
 import type { SetupStep } from "@greecon/shared";
 import { confirmSetupStepAction, reopenSetupStepAction } from "../../app/sites/[siteId]/setup/actions";
 
+/** What each step asks of the person, in its own words. The papers and the electrician must say who and when: the paper behind them is
+ * somewhere else, and what is written here is the only record of it. */
+const WORDS: Record<string, { label: string; placeholder: string; button: string; required: boolean }> = {
+  paperwork: { label: "Who signed for the customer, and on what date", placeholder: "e.g. Signed for the hotel by Besa Krasniqi on 19 October", button: "The papers are signed", required: true },
+  electrician: { label: "The electrician's name and licence number, or that no electrical work was needed", placeholder: "e.g. Arben Hoxha, licence E-1234", button: "The electrical work is done", required: true },
+  commissioned: { label: "What you saw (optional)", placeholder: "e.g. Meter display and Greecon agree within 2%", button: "Commission this site", required: false },
+  told: { label: "What you saw (optional)", placeholder: "e.g. Besa read the test message on her phone", button: "I checked this", required: false }
+};
+const DEFAULT_WORDS = { label: "What you saw (optional)", placeholder: "e.g. Import rose with the kettle on", button: "I checked this", required: false };
+
 /** A step only a person can see: which way the clamps point, whether the customer agreed the limits, whether
  * the numbers match the real world. Confirming records who and when; the last one is held back until the rest
  * are done. */
 export function ConfirmStepForm({ siteId, step }: { siteId: string; step: SetupStep }) {
+  const words = WORDS[step.key] ?? DEFAULT_WORDS;
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -54,11 +65,11 @@ export function ConfirmStepForm({ siteId, step }: { siteId: string; step: SetupS
   return (
     <form onSubmit={confirm} className="setup-inline-form">
       <label className="setup-inline-form__wide">
-        What you saw (optional)
-        <input value={note} onChange={(event) => setNote(event.target.value)} placeholder={commissioning ? "e.g. Meter display and Greecon agree within 2%" : step.key === "told" ? "e.g. Besa read the test message on her phone" : "e.g. Import rose with the kettle on"} maxLength={300} />
+        {words.label}
+        <input value={note} onChange={(event) => setNote(event.target.value)} placeholder={words.placeholder} maxLength={300} required={words.required} />
       </label>
       <button type="submit" disabled={isPending || step.canConfirm === false}>
-        {isPending ? "Saving…" : commissioning ? "Commission this site" : "I checked this"}
+        {isPending ? "Saving…" : words.button}
       </button>
       {error ? (
         <span className="rule-actions__error" role="alert">

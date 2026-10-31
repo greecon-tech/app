@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { EnrolmentIssued, ModbusConnection, PointSource } from "@greecon/shared";
+import type { DiscoveryView, EnrolmentIssued, ModbusConnection, PointSource } from "@greecon/shared";
 import { apiErrorMessage, apiMutate } from "../../../../lib/api";
 
 // What the project manager does on a site's setup page. Every one of these goes to the API, which checks
@@ -70,6 +70,46 @@ export async function createDeviceFromProfileAction(siteId: string, input: Known
     return {};
   } catch (error) {
     return { error: apiErrorMessage(error, "Could not add the equipment.") };
+  }
+}
+
+/** "Find equipment": the box looks at the site's network, and fills in the addresses of what it finds. Asking changes nothing by itself. */
+export async function findEquipmentAction(siteId: string, host?: string, port?: number): Promise<{ error?: string }> {
+  try {
+    await apiMutate(`/sites/${siteId}/discovery`, "POST", { ...(host?.trim() ? { host: host.trim() } : {}), ...(port !== undefined && Number.isFinite(port) ? { port } : {}) });
+    refresh(siteId);
+    return {};
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Could not ask the box to look.") };
+  }
+}
+
+/** "Use these addresses": every device that was found somewhere other than where it is set is set to where it was found. */
+export async function useFoundAddressesAction(siteId: string): Promise<{ error?: string; applied?: string[] }> {
+  try {
+    const result = await apiMutate<{ applied: string[]; discovery: DiscoveryView }>(`/sites/${siteId}/discovery/apply`, "POST");
+    refresh(siteId);
+    return { applied: result.applied };
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Could not use the addresses.") };
+  }
+}
+
+export interface RangeAnswer {
+  canonicalName: string;
+  range?: number;
+  tankHeight?: number;
+  notFitted?: boolean;
+}
+
+/** The range printed on each transmitter's label: Greecon works out the register and the scale from it. */
+export async function setRangesAction(siteId: string, deviceId: string, ranges: RangeAnswer[]): Promise<{ error?: string }> {
+  try {
+    await apiMutate(`/devices/${deviceId}/ranges`, "PUT", { ranges });
+    refresh(siteId);
+    return {};
+  } catch (error) {
+    return { error: apiErrorMessage(error, "Could not save the ranges.") };
   }
 }
 
