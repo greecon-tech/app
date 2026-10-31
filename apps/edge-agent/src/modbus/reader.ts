@@ -24,7 +24,9 @@ export class ModbusReadError extends Error {
     /** The converter itself could not be reached: the connection did not open. Nothing behind it can be
      * read this round, so there is no point trying each device in turn. (A device that does not answer its
      * converter is different: the converter is up and the others behind it may be fine.) */
-    readonly converterUnreachable: boolean = false
+    readonly converterUnreachable: boolean = false,
+    /** For a refusal: the Modbus exception code. 10 and 11 are the converter's own ("nothing answered me"), not a device's. */
+    readonly modbusCode?: number
   ) {
     super(message);
     this.name = "ModbusReadError";
@@ -83,6 +85,11 @@ export class ModbusTcpReader implements RegisterReader {
           connecting = false;
         }
         entry.client.setID(connection.unitId);
+        if (registerType === "discrete") {
+          // Function 02: one bit for each input, as 0 or 1, so that it reads like any other register. The library pads the answer to whole bytes.
+          const bits = await entry.client.readDiscreteInputs(address, count);
+          return bits.data.slice(0, count).map((bit) => (bit ? 1 : 0));
+        }
         const result = registerType === "holding" ? await entry.client.readHoldingRegisters(address, count) : await entry.client.readInputRegisters(address, count);
         return result.data;
       } catch (error) {
@@ -156,7 +163,8 @@ export class ModbusTcpReader implements RegisterReader {
     if (typeof failure.modbusCode === "number") {
       const meaning = EXCEPTIONS[failure.modbusCode] ?? `answered with Modbus exception ${failure.modbusCode}`;
       const hint = failure.modbusCode === 2 ? ` Check the address: a manual that says ${registerType === "input" ? "3" : "4"}${String(address + 1).padStart(4, "0")} means address ${address}.` : "";
-      return new ModbusReadError(`${where} ${meaning} for ${registerType} register ${address}.${hint}`, "refused");
+      const what = registerType === "discrete" ? `digital input ${address}` : `${registerType} register ${address}`;
+      return new ModbusReadError(`${where} ${meaning} for ${what}.${registerType === "discrete" ? "" : hint}`, "refused", false, failure.modbusCode);
     }
 
     // Any other failure leaves the connection in an unknown state: start again on the next request.

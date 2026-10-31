@@ -112,6 +112,35 @@ describe("reading registers over the network", () => {
     expect(error.message).toContain("no answer from");
   });
 
+  it("reads digital inputs, function 02, as 0 or 1 for each, and no more of them than were asked for", async () => {
+    server.setDiscrete(1, 0, 1);
+    server.setDiscrete(1, 1, 0);
+    server.setDiscrete(1, 2, 1);
+    for (let address = 3; address < 8; address += 1) server.setDiscrete(1, address, 0);
+    expect(await reader.read(at(1), "discrete", 0, 1)).toEqual([1]);
+    expect(await reader.read(at(1), "discrete", 0, 8)).toEqual([1, 0, 1, 0, 0, 0, 0, 0]);
+    expect(await reader.read(at(1), "discrete", 2, 3)).toEqual([1, 0, 0]);
+  });
+
+  it("says a digital input does not exist in the words of a digital input, and gives no hint about 3xxxx numbers", async () => {
+    server.setDiscrete(1, 0, 1);
+    const error = (await reader.read(at(1), "discrete", 20, 1).catch((caught: unknown) => caught)) as ModbusReadError;
+    expect(error.kind).toBe("refused");
+    expect(error.message).toContain("digital input 20");
+    expect(error.message).not.toContain("means address");
+  });
+
+  it("tells a device's refusal from a converter saying nothing answered it, by the exception code", async () => {
+    server.refuseFunction(1, 4);
+    const device = (await reader.read(at(1), "input", 0, 1).catch((caught: unknown) => caught)) as ModbusReadError;
+    expect(device).toMatchObject({ kind: "refused", modbusCode: 1 });
+
+    server.setAbsentUnits("exception");
+    const converter = (await reader.read(at(9), "input", 0, 1).catch((caught: unknown) => caught)) as ModbusReadError;
+    expect(converter).toMatchObject({ kind: "refused", modbusCode: 11 });
+    expect(converter.message).toContain("did not answer its converter");
+  });
+
   it("closes the connections to addresses nobody reads any more", async () => {
     server.setRegister(1, "input", 0, 1);
     await reader.read(at(1), "input", 0, 1);

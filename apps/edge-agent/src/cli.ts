@@ -1,8 +1,9 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
-import { describeAge, modbusDataTypes, modbusRegisterTypes, modbusWordOrders, readModbusValue, registersFor, validateConnection, validatePointSource } from "@greecon/shared";
+import { describeAge, describeIdentity, identifyUnit, modbusDataTypes, modbusRegisterTypes, modbusWordOrders, readModbusValue, registersFor, validateConnection, validatePointSource } from "@greecon/shared";
 import type { ModbusDataType, ModbusRegisterType, ModbusWordOrder, PointSource } from "@greecon/shared";
+import { realTools, runDiscovery } from "./discovery";
 import { DEFAULT_IDENTITY_FILE, IdentityError, loadIdentity } from "./identity";
 import { startMqttBridge } from "./mqtt-bridge";
 import { ModbusReadError, ModbusTcpReader } from "./modbus/reader";
@@ -19,8 +20,10 @@ const HELP = `Greecon edge ${AGENT_VERSION}
   greecon-edge run                        Read the site's devices and report to Greecon (what the service runs)
   greecon-edge enrol --api URL --code C   Get this box's credential with the code from the site's setup page
   greecon-edge status                     Say how this box is doing; exits 1 if it is not reporting
-  greecon-edge modbus-test --host H --unit N --type input|holding --address A --data-type T
+  greecon-edge modbus-test --host H --unit N --type input|holding|discrete --address A --data-type T
                                           Read one register from a device, to check wiring and settings
+  greecon-edge find [--host H] [--port P] [--unit N]
+                                          Look at the network for converters and what answers behind them (reads only)
   greecon-edge version
 `;
 
@@ -42,6 +45,8 @@ export async function main(argv: string[], env: Record<string, string | undefine
       return statusCommand(env);
     case "modbus-test":
       return modbusTest(rest);
+    case "find":
+      return findCommand(rest);
     case "version":
     case "--version":
       out(AGENT_VERSION);
@@ -164,8 +169,8 @@ async function modbusTest(args: string[]): Promise<number> {
     fail(
       [
         ...problems,
-        `Usage: greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input|holding --address 52 --data-type ${modbusDataTypes.join("|")} [--port 502] [--word-order ${modbusWordOrders.join("|")}] [--scale 0.001] [--offset 0]`,
-        `(--type is ${modbusRegisterTypes.join(" or ")}; the address counts from zero, so a manual's 30053 is address 52)`
+        `Usage: greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input|holding|discrete --address 52 --data-type ${modbusDataTypes.join("|")} [--port 502] [--word-order ${modbusWordOrders.join("|")}] [--scale 0.001] [--offset 0]`,
+        `(--type is ${modbusRegisterTypes.join(", ")}; the address counts from zero, so a manual's 30053 is address 52; a digital input is read with --type discrete)`
       ].join("\n")
     );
     return 2;
@@ -183,5 +188,29 @@ async function modbusTest(args: string[]): Promise<number> {
     return 1;
   } finally {
     await reader.close();
+  }
+}
+
+/** What "Find equipment" does on the platform, run by hand at the box: look, and say what answers. For checking a converter at a desk, and for support. */
+async function findCommand(args: string[]): Promise<number> {
+  const { values } = parseArgs({ args, options: { host: { type: "string", multiple: true }, port: { type: "string", multiple: true }, unit: { type: "string", multiple: true } } });
+  const tools = realTools();
+  try {
+    const result = await runDiscovery(
+      { id: "by-hand", ...(values.host ? { hosts: values.host } : {}), ...(values.port ? { ports: values.port.map(Number) } : {}), ...(values.unit ? { units: values.unit.map(Number) } : {}) },
+      tools,
+      { log }
+    );
+    out(`Looked at ${result.scanned.hostsTried} address(es)${result.scanned.subnets.length > 0 ? ` on ${result.scanned.subnets.join(", ")}` : ""}, unit(s) ${result.scanned.units.join(", ")}.`);
+    if (result.hosts.length === 0) out("No Modbus converter answered.");
+    for (const host of result.hosts) {
+      out(`${host.host}:${host.port}`);
+      if (host.units.length === 0) out("  nothing answers behind it");
+      for (const unit of host.units) out(`  unit ${unit.unit}: ${describeIdentity(identifyUnit(unit.probes, unit.unit))}`);
+    }
+    for (const note of result.notes) out(note);
+    return result.hosts.length > 0 ? 0 : 1;
+  } finally {
+    await tools.close();
   }
 }

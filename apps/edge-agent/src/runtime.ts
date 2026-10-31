@@ -1,6 +1,7 @@
 import { join } from "node:path";
-import { DriverDeviceStatus, EdgeConfig, GatewayHeartbeat, HEARTBEAT_INTERVAL_SECONDS } from "@greecon/shared";
+import { DiscoveryRequest, DiscoveryResult, DriverDeviceStatus, EdgeConfig, GatewayHeartbeat, HEARTBEAT_INTERVAL_SECONDS } from "@greecon/shared";
 import type { TelemetryMessage } from "@greecon/shared";
+import { DiscoveryTools, realTools, runDiscovery } from "./discovery";
 import { EdgeIdentity } from "./identity";
 import { DevicePoller } from "./modbus/poller";
 import { ModbusTcpReader, RegisterReader } from "./modbus/reader";
@@ -43,6 +44,8 @@ export interface RuntimeOptions {
   restart?: () => void;
   /** The clock the updater uses; replaced in tests to get past the time a new box waits before updating. */
   updateClock?: () => number;
+  /** How the box looks at the network when asked to; replaced in tests, where a real search would look at the machine's own network. */
+  discovery?: () => DiscoveryTools;
 }
 
 /** What `greecon-edge status` shows, and what the installer waits on. */
@@ -63,6 +66,8 @@ const MAX_POLL_MS = 300_000;
 /** For a while after the box starts, someone is probably watching it come up: report in more often. */
 const WATCHED_FOR_MS = 15 * 60_000;
 const WATCHED_HEARTBEAT_MS = 10_000;
+/** Someone who has just asked the box to look at the network is watching it too: report in often for a few minutes after. */
+const WATCHED_AFTER_REQUEST_MS = 5 * 60_000;
 
 /** How long to wait before the next run of a loop that wants one every `delayMs`, when the last began at
  * `startedAtMs` and it is `nowMs` now. The clock can be set while the work runs (the installer tells whoever sets
@@ -93,6 +98,12 @@ export class EdgeRuntime {
   private running = false;
   private cycling: Promise<void> | undefined;
   private beating: Promise<void> | undefined;
+  /** The search for equipment that is running now, the result of the last one that has not reached the platform yet, and the last one that has. */
+  private discovering: Promise<void> | undefined;
+  private discoveryResult: DiscoveryResult | undefined;
+  private lastDeliveredId: string | undefined;
+  private lastDeliveryProblem = "";
+  private watchedUntilMs = 0;
 
   constructor(private readonly options: RuntimeOptions) {
     this.now = options.now ?? Date.now;
@@ -153,7 +164,7 @@ export class EdgeRuntime {
     this.running = false;
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
-    await Promise.allSettled([this.cycling, this.beating, this.outbox.drain()]);
+    await Promise.allSettled([this.cycling, this.beating, this.discovering, this.outbox.drain()]);
     await this.reader.close();
     this.writeStatus();
     this.options.log.info("Greecon edge stopped.");
@@ -181,7 +192,8 @@ export class EdgeRuntime {
   }
 
   private heartbeatDelayMs(): number {
-    return this.now() - this.startedMs < WATCHED_FOR_MS ? WATCHED_HEARTBEAT_MS : HEARTBEAT_INTERVAL_SECONDS * 1000;
+    const nowMs = this.now();
+    return nowMs - this.startedMs < WATCHED_FOR_MS || nowMs < this.watchedUntilMs ? WATCHED_HEARTBEAT_MS : HEARTBEAT_INTERVAL_SECONDS * 1000;
   }
 
   // ---- One round of reading ---------------------------------------------------------------------------
@@ -250,6 +262,7 @@ export class EdgeRuntime {
           await this.beatOnce();
         }
       }
+      if (reply.discovery) this.consider(reply.discovery);
       if (reply.updateAvailable) await this.updater.consider(reply);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -260,6 +273,54 @@ export class EdgeRuntime {
       }
       this.writeStatus();
     }
+  }
+
+  // ---- Looking at the site's network when a person asks ------------------------------------------------
+
+  /** A person pressed "Find equipment". The platform says so in every answer until it has the result, so this is called again and again
+   * for one request: it is started once, and a result that did not get through is sent again. */
+  private consider(request: DiscoveryRequest): void {
+    this.watchedUntilMs = this.now() + WATCHED_AFTER_REQUEST_MS;
+    if (request.id === this.lastDeliveredId || this.discovering) return;
+    // Finished, and the platform did not get it: send it again, without looking again.
+    const work = this.discoveryResult?.requestId === request.id ? this.deliver() : this.discover(request);
+    this.discovering = work.finally(() => {
+      this.discovering = undefined;
+    });
+  }
+
+  private async discover(request: DiscoveryRequest): Promise<void> {
+    const tools = (this.options.discovery ?? (() => realTools(this.now)))();
+    try {
+      this.discoveryResult = await runDiscovery(request, tools, { log: this.options.log });
+      await this.deliver();
+    } catch (error) {
+      this.options.log.warn(`Looking at the network failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await tools.close().catch(() => undefined);
+    }
+  }
+
+  private async deliver(): Promise<void> {
+    const result = this.discoveryResult;
+    if (!result) return;
+    try {
+      await this.platform.postDiscovery(result);
+      this.lastDeliveredId = result.requestId;
+      this.discoveryResult = undefined;
+      this.lastDeliveryProblem = "";
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (reason !== this.lastDeliveryProblem) {
+        this.lastDeliveryProblem = reason;
+        this.options.log.warn(`Could not tell the platform what was found on the network: ${reason}. It will be sent again.`);
+      }
+    }
+  }
+
+  /** Resolves when the search for equipment that is running has finished and its result has been sent, or at once if none is. */
+  async whenSearched(): Promise<void> {
+    await this.discovering;
   }
 
   /** One more heartbeat, without checking the configuration again. */

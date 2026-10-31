@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GatewayHeartbeat, Point, TelemetryMessage } from "@greecon/shared";
+import { DiscoveryResult, GatewayHeartbeat, PROBES, Point, ProbeResult, TelemetryMessage, convertRaw, readModbusValue } from "@greecon/shared";
 import { Principal, edgeDeviceIngestPrincipal } from "../common/principal";
 import { DatabaseService } from "../database/database.service";
 import { PlatformService } from "../platform/platform.service";
@@ -39,14 +39,16 @@ describe("setting a site up", () => {
 
       expect(platform.listAssets(owner, site.id).map((asset) => asset.name).sort()).toEqual(["Grid connection", "Solar plant", "Water supply"]);
       const devices = platform.listDevices(owner, site.id);
-      expect(devices.map((device) => device.name).sort()).toEqual(["Grid meter", "Solar meter", "Water I/O module"]);
+      expect(devices.map((device) => device.name).sort()).toEqual(["Grid meter", "Pump contact module (optional)", "Solar meter", "Water I/O module"]);
       expect(devices.every((device) => device.protocol === "modbus" && device.connection === undefined && device.gatewayId === undefined)).toBe(true);
 
       const points = platform.listPoints(owner).filter((point) => point.siteId === site.id);
       expect(points).toHaveLength(7);
-      // A known meter arrives with its registers; the water module's readings wait for a datasheet.
-      expect(points.filter((point) => point.source).map((point) => point.canonicalName).sort()).toEqual(["energy.grid.export.kw", "energy.grid.import.kw", "energy.solar.power.kw"]);
-      expect(points.filter((point) => !point.source)).toHaveLength(4);
+      // Known equipment arrives with its registers. The 4 to 20 mA module's three readings wait for one thing only: the range on each transmitter's label.
+      expect(points.filter((point) => point.source).map((point) => point.canonicalName).sort()).toEqual(["energy.grid.export.kw", "energy.grid.import.kw", "energy.solar.power.kw", "water.pump.status"]);
+      expect(points.filter((point) => !point.source).map((point) => point.canonicalName).sort()).toEqual(["water.flow.lpm", "water.pressure.bar", "water.tank.level.percent"]);
+      // Each device remembers which approved model it is, so the platform knows what to ask for and what to look for.
+      expect(devices.map((device) => device.profileKey).sort()).toEqual(["eastron-sdm630-grid", "eastron-sdm630-solar", "waveshare-ai8-water", "waveshare-io8-pump"]);
 
       expect(view.templateKey).toBe("hotel");
       expect(view.steps.find((step) => step.key === "box")?.status).toBe("todo");
@@ -68,7 +70,7 @@ describe("setting a site up", () => {
     it("makes an empty site from the empty template, with the box and the equipment still to add", async () => {
       const { site, setup: view } = await setup.createSiteFromTemplate({ templateKey: "blank", name: "Blank", locationName: "x" }, owner);
       expect(platform.listDevices(owner, site.id)).toEqual([]);
-      expect(view.steps.map((step) => step.key)).toEqual(["box", "addresses", "commissioned"]);
+      expect(view.steps.map((step) => step.key)).toEqual(["paperwork", "box", "addresses", "electrician", "commissioned"]);
     });
 
     it("refuses a template that does not exist, and creates nothing", async () => {
@@ -102,8 +104,8 @@ describe("setting a site up", () => {
       const first = await hotel();
       const second = await hotel({ name: "Hotel Two" });
       expect(first.site.id).not.toBe(second.site.id);
-      expect(platform.listDevices(owner, first.site.id)).toHaveLength(3);
-      expect(platform.listDevices(owner, second.site.id)).toHaveLength(3);
+      expect(platform.listDevices(owner, first.site.id)).toHaveLength(4);
+      expect(platform.listDevices(owner, second.site.id)).toHaveLength(4);
     });
   });
 
@@ -113,7 +115,7 @@ describe("setting a site up", () => {
       const { deviceId, setup: view } = await setup.createDeviceFromProfile({ siteId: site.id, profileKey: "eastron-sdm230-load", host: "192.168.1.60" }, owner);
 
       const device = platform.listDevices(owner, site.id).find((candidate) => candidate.id === deviceId);
-      expect(device).toMatchObject({ name: "Eastron SDM230 on the site's own consumption", deviceType: "load_meter", protocol: "modbus", connection: { host: "192.168.1.60", port: 502, unitId: 1 } });
+      expect(device).toMatchObject({ name: "Eastron SDM230 on the site's own consumption", deviceType: "load_meter", protocol: "modbus", connection: { host: "192.168.1.60", port: 502, unitId: 4 }, profileKey: "eastron-sdm230-load" });
       expect(platform.listPoints(owner, deviceId).map((point) => [point.canonicalName, point.source?.address])).toEqual([["energy.consumption.kw", 12]]);
       expect(view.steps.find((step) => step.key === "addresses")?.status).toBe("done");
     });
@@ -479,8 +481,10 @@ describe("setting a site up", () => {
         { messageType: "telemetry", tenantId: owner.tenantId, siteId, deviceId: devices[0]?.id as string, publishedAtUtc: now, correlationId: "c", readings: points.map((point) => reading(point, valueFor(point), now, owner.tenantId)) },
         box
       );
+      await setup.confirmStep(siteId, "paperwork", "Signed for the hotel by Besa Krasniqi on 19 October", owner);
       await setup.confirmStep(siteId, "direction", undefined, owner);
       await setup.confirmStep(siteId, "limits", undefined, owner);
+      await setup.confirmStep(siteId, "electrician", "Arben Hoxha, licence E-1234", owner);
       return setup.confirmStep(siteId, "commissioned", "Numbers match the meter's display", owner);
     }
 
@@ -509,7 +513,7 @@ describe("setting a site up", () => {
     it("adds the step to a site's list, between the readings and the checks a person makes", async () => {
       const { site } = await told.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
       const keys = told.setupView(site.id, owner).steps.map((step) => step.key);
-      expect(keys).toEqual(["prices", "box", "addresses", "mapping", "answering", "readings", "told", "direction", "limits", "commissioned"]);
+      expect(keys).toEqual(["paperwork", "prices", "box", "addresses", "mapping", "answering", "readings", "told", "direction", "limits", "electrician", "commissioned"]);
     });
 
     it("refuses to confirm it before a test message has been sent, and says what to do", async () => {
@@ -595,6 +599,338 @@ describe("setting a site up", () => {
     });
   });
 
+  describe("finding the equipment on the site's network", () => {
+    const heartbeat = (): GatewayHeartbeat => ({ agentVersion: "0.2.0+new", uptimeSeconds: 100, sentAtUtc: new Date().toISOString(), bufferDepth: 0, devices: [] });
+
+    /** A hotel with a box that is online, as a project manager has it after the box step. */
+    async function onlineBox() {
+      const { site } = await hotel();
+      const { gatewayId, enrolment } = await setup.provisionBox({ siteId: site.id, name: "Plant room" }, owner, API);
+      await setup.enrol(enrolment.code, API);
+      const box = edgeDeviceIngestPrincipal(owner.tenantId, gatewayId);
+      await setup.heartbeat(box, heartbeat());
+      return { site, gatewayId, box };
+    }
+
+    const floatWords = (value: number): number[] => {
+      const view = new DataView(new ArrayBuffer(4));
+      view.setFloat32(0, value);
+      return [view.getUint16(0), view.getUint16(2)];
+    };
+    const answers = (given: Record<string, "refused" | number[]>): ProbeResult[] =>
+      PROBES.map((probe) => {
+        const answer = given[probe.key] ?? "silent";
+        return answer === "silent" || answer === "refused" ? { key: probe.key, outcome: answer } : { key: probe.key, outcome: "ok", words: answer };
+      });
+    const meter630 = (watts: number): ProbeResult[] =>
+      answers({ "eastron-voltage": floatWords(231), "analog-channels": [...floatWords(231), 0], "digital-inputs": "refused", "eastron-630": floatWords(watts), "eastron-230": floatWords(watts / 3), "module-address": "refused" });
+    const meter230 = (watts: number): ProbeResult[] => answers({ "eastron-voltage": floatWords(229), "analog-channels": "refused", "digital-inputs": "refused", "eastron-630": "refused", "eastron-230": floatWords(watts), "module-address": "refused" });
+    const analogModule = answers({ "eastron-voltage": [12000, 8000], "analog-channels": [12000, 8000, 4000], "digital-inputs": "refused", "eastron-630": "refused", "eastron-230": "refused", "module-address": [3] });
+    const digitalModule = answers({ "eastron-voltage": "refused", "analog-channels": "refused", "digital-inputs": [1, 0, 0, 0, 0, 0, 0, 0], "eastron-630": "refused", "eastron-230": "refused", "module-address": [5] });
+
+    const kitOn = (host: string, units: Array<[number, ProbeResult[]]>): DiscoveryResult["hosts"] => [{ host, port: 502, units: units.map(([unit, probes]) => ({ unit, probes })) }];
+    const resultFor = (requestId: string, hosts: DiscoveryResult["hosts"], notes: string[] = []): DiscoveryResult => ({
+      requestId,
+      startedAtUtc: new Date(Date.now() - 20_000).toISOString(),
+      finishedAtUtc: new Date().toISOString(),
+      scanned: { subnets: ["192.168.1.0/24"], hostsTried: 253, ports: [502], units: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+      hosts,
+      notes
+    });
+    const fullKit = () => kitOn("192.168.1.50", [[1, meter630(1800)], [2, meter630(5200)], [3, analogModule], [5, digitalModule]]);
+
+    /** The request the platform has put to the box, as the box hears it in its next heartbeat. */
+    async function askedOf(box: Principal) {
+      const reply = await setup.heartbeat(box, heartbeat());
+      return reply.discovery;
+    }
+
+    it("asks the box to look when a person presses the button, and the box hears of it at its next heartbeat", async () => {
+      const { site, box } = await onlineBox();
+      expect(await askedOf(box)).toBeUndefined();
+
+      const view = await setup.requestDiscovery(site.id, {}, owner);
+      expect(view).toMatchObject({ state: "waiting", proposals: [], boxes: [] });
+      const asked = await askedOf(box);
+      expect(asked?.id).toMatch(/[0-9a-f-]{36}/);
+      expect(asked?.hosts).toBeUndefined();
+    });
+
+    it("shows the person who asks again soon the search that is under way, not a second one", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const first = await askedOf(box);
+      await setup.requestDiscovery(site.id, {}, owner, Date.now() + 30_000);
+      expect((await askedOf(box))?.id).toBe(first?.id);
+      await setup.requestDiscovery(site.id, {}, owner, Date.now() + 5 * 60_000);
+      expect((await askedOf(box))?.id).not.toBe(first?.id);
+    });
+
+    it("fills in the address of everything the box found, as the person who asked, the moment the box says", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const asked = await askedOf(box);
+      const outcome = await setup.recordDiscovery(box, resultFor(asked?.id as string, fullKit()));
+      expect(outcome).toEqual({ recorded: true });
+
+      const devices = platform.listDevices(owner, site.id);
+      const at = (name: string) => devices.find((device) => device.name === name)?.connection;
+      expect(at("Grid meter")).toEqual({ kind: "modbus_tcp", host: "192.168.1.50", port: 502, unitId: 1 });
+      expect(at("Solar meter")).toMatchObject({ unitId: 2 });
+      expect(at("Water I/O module")).toMatchObject({ unitId: 3 });
+      expect(at("Pump contact module (optional)")).toMatchObject({ unitId: 5 });
+
+      const view = setup.discoveryView(site.id, owner);
+      expect(view).toMatchObject({ state: "done", toApply: 0, allSet: true, unclaimed: [], notes: [] });
+      expect(view.proposals.map((proposal) => proposal.status)).toEqual(["already", "already", "already", "already"]);
+      expect(view.boxes[0]).toMatchObject({ name: "Plant room", looked: "253 addresses on 192.168.1.0/24, unit numbers 1 to 10" });
+      expect(setup.setupView(site.id, owner).steps.find((step) => step.key === "addresses")).toMatchObject({ status: "done" });
+      // The audit trail names the person who pressed the button, not the box, and says what address each device was given.
+      const changes = platform.listAudit(owner, site.id).filter((entry) => entry.eventType === "device.updated" && String(entry.reason).includes("Address of device"));
+      expect(changes).toHaveLength(4);
+      expect(changes.every((entry) => entry.userId === owner.userId)).toBe(true);
+      expect(changes.map((entry) => entry.afterMetadata?.address).sort()).toEqual(["192.168.1.50:502, unit 1", "192.168.1.50:502, unit 2", "192.168.1.50:502, unit 3", "192.168.1.50:502, unit 5"]);
+    });
+
+    it("tells the box to stop asking once it has said", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const asked = await askedOf(box);
+      await setup.recordDiscovery(box, resultFor(asked?.id as string, fullKit()));
+      expect(await askedOf(box)).toBeUndefined();
+    });
+
+    it("puts the readings of what it found into the box's configuration on the next heartbeat", async () => {
+      const { site, box } = await onlineBox();
+      expect(setup.edgeConfig(box).devices).toEqual([]);
+      await setup.requestDiscovery(site.id, {}, owner);
+      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, fullKit()));
+      // The meters and the pump contact have their registers; the 4 to 20 mA module's readings wait for the range on each transmitter's label.
+      expect(setup.edgeConfig(box).devices.map((device) => device.name).sort()).toEqual(["Grid meter", "Pump contact module (optional)", "Solar meter"]);
+    });
+
+    it("looks at the address it is given instead of the network, when a person gives one", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, { host: " 192.168.1.60 " }, owner);
+      expect((await askedOf(box))?.hosts).toEqual(["192.168.1.60"]);
+    });
+
+    it("looks at another port when the converter does not use the usual one", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, { host: "192.168.1.60", port: 4001 }, owner);
+      const asked = await askedOf(box);
+      expect(asked).toMatchObject({ hosts: ["192.168.1.60"], ports: [4001] });
+      // Asked for again, it is a new search, because it is a different question.
+      await setup.requestDiscovery(site.id, { port: 8899 }, owner, Date.now() + 1000);
+      expect(await askedOf(box)).toMatchObject({ ports: [8899] });
+    });
+
+    it("refuses an address that is not on a private network, a site with no box and a box that is not online", async () => {
+      const { site } = await onlineBox();
+      await expect(setup.requestDiscovery(site.id, { host: "8.8.8.8" }, owner)).rejects.toThrow(/not on a private network/);
+      const bare = await hotel({ name: "No box here" });
+      await expect(setup.requestDiscovery(bare.site.id, {}, owner)).rejects.toThrow(/no box yet/);
+      const waiting = await hotel({ name: "Box not installed" });
+      await setup.provisionBox({ siteId: waiting.site.id, name: "Plant room" }, owner, API);
+      await expect(setup.requestDiscovery(waiting.site.id, {}, owner)).rejects.toThrow(/not online yet/);
+    });
+
+    it("is for people who manage devices, and for their own account's site only", async () => {
+      const { site } = await onlineBox();
+      await expect(setup.requestDiscovery(site.id, {}, { ...owner, role: "viewer" })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(setup.applyDiscovery(site.id, { ...owner, role: "operator" })).rejects.toBeInstanceOf(ForbiddenException);
+      const intruder: Principal = { ...owner, tenantId: "11111111-1111-4111-8111-111111111111", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1" };
+      for (const attempt of [() => setup.requestDiscovery(site.id, {}, intruder), () => setup.discoveryView(site.id, intruder), () => setup.applyDiscovery(site.id, intruder)]) {
+        const error = await Promise.resolve().then(attempt).then(() => undefined, (caught: unknown) => caught);
+        expect(error instanceof ForbiddenException || error instanceof NotFoundException, String(error)).toBe(true);
+      }
+    });
+
+    it("puts aside a result for a search that has been replaced, one it did not ask for, and one already recorded", async () => {
+      const { site, box } = await onlineBox();
+      expect(await setup.recordDiscovery(box, resultFor("never-asked", fullKit()))).toEqual({ recorded: false });
+      await setup.requestDiscovery(site.id, {}, owner);
+      const first = (await askedOf(box))?.id as string;
+      await setup.requestDiscovery(site.id, {}, owner, Date.now() + 5 * 60_000);
+      expect(await setup.recordDiscovery(box, resultFor(first, fullKit()))).toEqual({ recorded: false });
+      const second = (await askedOf(box))?.id as string;
+      expect(await setup.recordDiscovery(box, resultFor(second, fullKit()))).toEqual({ recorded: true });
+      expect(await setup.recordDiscovery(box, resultFor(second, kitOn("192.168.1.99", [])))).toEqual({ recorded: false });
+      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.connection?.host).toBe("192.168.1.50");
+    });
+
+    it("refuses a result that is not one, in words, and a person's session that is not a box", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      await expect(setup.recordDiscovery(box, { hello: "there" })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(setup.recordDiscovery(box, null)).rejects.toThrow(/The result is missing/);
+      await expect(setup.recordDiscovery(owner, resultFor("x", []))).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("leaves a device that already has an address alone until the person says to use the new one", async () => {
+      const { site, box } = await onlineBox();
+      const grid = platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter");
+      await platform.updateDevice(grid?.id as string, { connection: { kind: "modbus_tcp", host: "192.168.1.70", port: 502, unitId: 9 } }, owner);
+
+      await setup.requestDiscovery(site.id, {}, owner);
+      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, fullKit()));
+      const kept = platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter");
+      expect(kept?.connection).toMatchObject({ host: "192.168.1.70", unitId: 9 });
+      const view = setup.discoveryView(site.id, owner);
+      expect(view.toApply).toBe(1);
+      expect(view.proposals[0]).toMatchObject({ name: "Grid meter", status: "found" });
+
+      const used = await setup.applyDiscovery(site.id, owner);
+      expect(used.applied).toEqual(["Grid meter"]);
+      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.connection).toMatchObject({ host: "192.168.1.50", unitId: 1 });
+      expect(used.discovery).toMatchObject({ toApply: 0, allSet: true });
+      expect(used.setup.steps.find((step) => step.key === "addresses")?.status).toBe("done");
+    });
+
+    it("reads a meter as the model that is there when it is not the one planned, by that model's registers", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const hosts = kitOn("192.168.1.50", [[1, meter230(900)], [2, meter630(5200)], [3, analogModule], [5, digitalModule]]);
+      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, hosts));
+
+      const grid = platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter");
+      expect(grid?.profileKey).toBe("eastron-sdm230-grid");
+      const points = platform.listPoints(owner, grid?.id as string);
+      // Total power sits at register 12 on the SDM230, not 52.
+      expect(points.map((point) => point.source?.address)).toEqual([12, 12]);
+      const solar = platform.listDevices(owner, site.id).find((device) => device.name === "Solar meter");
+      expect(solar?.profileKey).toBe("eastron-sdm630-solar");
+      expect(platform.listPoints(owner, solar?.id as string)[0]?.source?.address).toBe(52);
+    });
+
+    it("does not guess between two meters it cannot tell apart, and says what to do", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const hosts = [...kitOn("192.168.1.50", [[1, meter630(1800)]]), ...kitOn("192.168.1.51", [[1, meter630(5200)]])];
+      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, hosts));
+      const devices = platform.listDevices(owner, site.id);
+      expect(devices.find((device) => device.name === "Grid meter")?.connection).toBeUndefined();
+      expect(devices.find((device) => device.name === "Solar meter")?.connection).toBeUndefined();
+      const view = setup.discoveryView(site.id, owner);
+      expect(view.proposals.find((proposal) => proposal.name === "Grid meter")).toMatchObject({ status: "unsure" });
+      expect(view.proposals.find((proposal) => proposal.name === "Grid meter")?.message).toContain("cannot tell which is this one");
+      expect(view.allSet).toBe(false);
+    });
+
+    it("says what is missing and what the network looked like, and finds a module that was left at another unit number when it is the only one of its kind", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const hosts = kitOn("192.168.1.50", [[1, meter630(1800)], [8, digitalModule.map((probe) => (probe.key === "module-address" ? { ...probe, words: [8] } : probe))]]);
+      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, hosts, ["The converter at 192.168.1.50 stopped answering part way through."]));
+      const view = setup.discoveryView(site.id, owner);
+      expect(view.proposals.map((proposal) => [proposal.name, proposal.status])).toEqual([
+        ["Grid meter", "already"],
+        ["Solar meter", "missing"],
+        ["Water I/O module", "missing"],
+        // It was found at unit 8, not 5, and it is the only digital module and the only device that wants one: it works, and it was filled in.
+        ["Pump contact module (optional)", "already"]
+      ]);
+      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Pump contact module (optional)")?.connection).toMatchObject({ host: "192.168.1.50", unitId: 8 });
+      expect(view.notes).toEqual(["The converter at 192.168.1.50 stopped answering part way through."]);
+      expect(setup.setupView(site.id, owner).steps.find((step) => step.key === "addresses")).toMatchObject({ status: "todo" });
+    });
+
+    it("says nothing was asked, and that a request the box never picked up has gone unanswered", async () => {
+      const { site } = await onlineBox();
+      expect(setup.discoveryView(site.id, owner)).toMatchObject({ state: "idle", proposals: [], boxes: [] });
+      await setup.requestDiscovery(site.id, {}, owner);
+      expect(setup.discoveryView(site.id, owner, Date.now() + 60_000).state).toBe("waiting");
+      expect(setup.discoveryView(site.id, owner, Date.now() + 11 * 60_000).state).toBe("expired");
+    });
+
+    it("stops telling the box to look once nobody has been waiting for ten minutes", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const later = await setup.heartbeat(box, heartbeat(), Date.now() + 11 * 60_000);
+      expect(later.discovery).toBeUndefined();
+    });
+  });
+
+  describe("the range on a transmitter's label", () => {
+    async function hotelWithModule() {
+      const { site } = await hotel();
+      const module = platform.listDevices(owner, site.id).find((device) => device.name === "Water I/O module");
+      return { site, moduleId: module?.id as string };
+    }
+    const pointsOf = (moduleId: string) => platform.listPoints(owner, moduleId);
+
+    it("becomes the register and the scale of each reading, and the setup list stops asking for them", async () => {
+      const { site, moduleId } = await hotelWithModule();
+      expect(setup.setupView(site.id, owner).steps.find((step) => step.key === "mapping")?.items?.filter((item) => item.status === "todo")).toHaveLength(3);
+
+      const { setup: view } = await setup.setRanges(
+        moduleId,
+        { ranges: [{ canonicalName: "water.tank.level.percent", range: 5, tankHeight: 4 }, { canonicalName: "water.pressure.bar", range: 10 }, { canonicalName: "water.flow.lpm", range: 200 }] },
+        owner
+      );
+      expect(view.steps.find((step) => step.key === "mapping")?.status).toBe("done");
+
+      const byName = new Map(pointsOf(moduleId).map((point) => [point.canonicalName, point]));
+      const tank = byName.get("water.tank.level.percent")?.source;
+      expect(tank).toMatchObject({ registerType: "input", address: 0, dataType: "uint16", linear: { rawLow: 4000, rawHigh: 20000, engLow: 0, engHigh: 125 } });
+      expect(byName.get("water.pressure.bar")?.source).toMatchObject({ address: 1, linear: { engHigh: 10 } });
+      expect(byName.get("water.flow.lpm")?.source).toMatchObject({ address: 2, linear: { engHigh: 200 } });
+      // A full tank of 4 m in a 0 to 5 m transmitter's range is 16.8 mA, and reads 100 %.
+      expect(readModbusValue([16800], tank!)).toBeCloseTo(100, 6);
+      expect(convertRaw(12000, byName.get("water.pressure.bar")!.source!)).toBe(5);
+    });
+
+    it("takes a reading away when there is no such transmitter, so that nothing waits for it for ever", async () => {
+      const { site, moduleId } = await hotelWithModule();
+      const { setup: view } = await setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.tank.level.percent", range: 5, tankHeight: 4 }, { canonicalName: "water.pressure.bar", range: 10 }, { canonicalName: "water.flow.lpm", notFitted: true }] }, owner);
+      expect(pointsOf(moduleId).map((point) => point.canonicalName).sort()).toEqual(["water.pressure.bar", "water.tank.level.percent"]);
+      expect(view.steps.find((step) => step.key === "mapping")?.status).toBe("done");
+      expect(site.id).toBeTruthy();
+    });
+
+    it("checks every answer before using any, and says in words what is wrong with the one that is", async () => {
+      const { moduleId } = await hotelWithModule();
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.pressure.bar", range: 10 }, { canonicalName: "water.tank.level.percent", range: 3, tankHeight: 4 }] }, owner)).rejects.toThrow(/Tank level: .*cannot see the top of the water/);
+      // Nothing was changed: the first answer was fine and was not used.
+      expect(pointsOf(moduleId).every((point) => point.source === undefined)).toBe(true);
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.pressure.bar" }] }, owner)).rejects.toThrow(/Line pressure: Give the top of the range/);
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.tank.level.percent", range: 5 }] }, owner)).rejects.toThrow(/how tall the tank is/);
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "energy.grid.import.kw", range: 5 }] }, owner)).rejects.toThrow(/has no reading called/);
+      await expect(setup.setRanges(moduleId, { ranges: [] }, owner)).rejects.toThrow(/at least one transmitter/);
+      await expect(setup.setRanges(moduleId, undefined, owner)).rejects.toThrow(/at least one transmitter/);
+    });
+
+    it("is not offered for equipment Greecon does not know, nor to people who may not manage devices, nor for another account's device", async () => {
+      const { site, moduleId } = await hotelWithModule();
+      const stranger = await platform.createDevice({ siteId: site.id, name: "Pressure logger", deviceType: "analog_io_module", protocol: "modbus", driverType: "modbus-tcp" }, owner);
+      await expect(setup.setRanges(stranger.id, { ranges: [{ canonicalName: "water.pressure.bar", range: 10 }] }, owner)).rejects.toThrow(/does not know this equipment's transmitters/);
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.pressure.bar", range: 10 }] }, { ...owner, role: "viewer" })).rejects.toBeInstanceOf(ForbiddenException);
+      const intruder: Principal = { ...owner, tenantId: "11111111-1111-4111-8111-111111111111", userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1" };
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.pressure.bar", range: 10 }] }, intruder)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("the papers and the electrician", () => {
+    it("must say who and when, because the paper is somewhere else and this is the only record of it", async () => {
+      const { site } = await hotel();
+      await expect(setup.confirmStep(site.id, "paperwork", undefined, owner)).rejects.toThrow(/Write who signed for the customer/);
+      await expect(setup.confirmStep(site.id, "paperwork", "  ok ", owner)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(setup.confirmStep(site.id, "electrician", "", owner)).rejects.toThrow(/electrician's name and licence number/);
+
+      const view = await setup.confirmStep(site.id, "paperwork", "Signed for the hotel by Besa Krasniqi on 19 October", owner);
+      expect(view.steps.find((step) => step.key === "paperwork")).toMatchObject({ status: "done", note: "Signed for the hotel by Besa Krasniqi on 19 October", confirmedBy: owner.email });
+      const again = await setup.confirmStep(site.id, "electrician", "Arben Hoxha, licence E-1234", owner);
+      expect(again.steps.find((step) => step.key === "electrician")?.status).toBe("done");
+    });
+
+    it("can be taken back, like any other step", async () => {
+      const { site } = await hotel();
+      await setup.confirmStep(site.id, "paperwork", "Signed by Besa on 19 October", owner);
+      const view = await setup.reopenStep(site.id, "paperwork", owner);
+      expect(view.steps.find((step) => step.key === "paperwork")?.status).toBe("todo");
+    });
+  });
+
   describe("one account and another", () => {
     it("never shows, changes or makes codes for another account's site", async () => {
       const { site } = await hotel();
@@ -614,7 +950,7 @@ describe("setting a site up", () => {
         const error = await Promise.resolve().then(attempt).then(() => undefined, (caught: unknown) => caught);
         expect(error instanceof ForbiddenException || error instanceof NotFoundException, String(error)).toBe(true);
       }
-      expect(platform.listDevices(owner, site.id)).toHaveLength(3);
+      expect(platform.listDevices(owner, site.id)).toHaveLength(4);
       expect(platform.siteSetupRecord(site.id, owner).confirmations).toEqual({});
     });
   });

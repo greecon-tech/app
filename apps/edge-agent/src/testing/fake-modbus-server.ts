@@ -10,6 +10,8 @@ type RegisterTable = Map<number, number>;
 interface Unit {
   holding: RegisterTable;
   input: RegisterTable;
+  /** Digital inputs, read with function 02: 0 or 1 for each. */
+  discrete: RegisterTable;
 }
 
 export interface FakeModbusServer {
@@ -18,6 +20,12 @@ export interface FakeModbusServer {
   /** Requests answered or refused so far, including those for a unit that does not exist. */
   requests: number;
   setRegister(unit: number, type: "holding" | "input", address: number, value: number): void;
+  /** A digital input: a contact that is closed (1) or open (0). */
+  setDiscrete(unit: number, address: number, value: 0 | 1): void;
+  /** What a converter does for a unit that is not there: wait for nothing (the request times out), or say so at once (Modbus exception 11). */
+  setAbsentUnits(behaviour: "silent" | "exception"): void;
+  /** Make a unit refuse one kind of read, as a device that does not have such a register does: Modbus exception 1 (illegal function). */
+  refuseFunction(unit: number, functionCode: number): void;
   setFloat32(unit: number, type: "holding" | "input", address: number, value: number, wordOrder?: "big" | "little"): void;
   setUint32(unit: number, type: "holding" | "input", address: number, value: number, wordOrder?: "big" | "little"): void;
   /** Remove a unit: the converter forwards the request and nothing answers, so the request times out. */
@@ -32,7 +40,9 @@ export interface FakeModbusServer {
 
 export async function startFakeModbusServer(units: number[] = [1]): Promise<FakeModbusServer> {
   const table = new Map<number, Unit>();
-  for (const unit of units) table.set(unit, { holding: new Map(), input: new Map() });
+  for (const unit of units) table.set(unit, { holding: new Map(), input: new Map(), discrete: new Map() });
+  const refused = new Map<number, Set<number>>();
+  let absent: "silent" | "exception" = "silent";
   const sockets = new Set<Socket>();
   let delayMs = 0;
   const state = { requests: 0 };
@@ -51,7 +61,6 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
     const unitId = request.readUInt8(6);
     const functionCode = request.readUInt8(7);
     const unit = table.get(unitId);
-    if (!unit) return; // Nothing answers for a unit that is not there.
 
     const frame = (pdu: Buffer): Buffer => {
       const header = Buffer.alloc(7);
@@ -63,9 +72,23 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
     };
     const exception = (code: number) => respond(socket, frame(Buffer.from([functionCode | 0x80, code])));
 
-    if (functionCode !== 3 && functionCode !== 4) return exception(1);
+    // Nothing answers for a unit that is not there, or the converter says so, depending on the converter.
+    if (!unit) return absent === "exception" ? exception(11) : undefined;
+    if (refused.get(unitId)?.has(functionCode)) return exception(1);
+    if (functionCode !== 2 && functionCode !== 3 && functionCode !== 4) return exception(1);
     const start = request.readUInt16BE(8);
     const quantity = request.readUInt16BE(10);
+
+    if (functionCode === 2) {
+      // Read discrete inputs: one bit each, the first in the lowest bit of the first byte.
+      const bytes = Buffer.alloc(Math.ceil(quantity / 8));
+      for (let index = 0; index < quantity; index += 1) {
+        const bit = unit.discrete.get(start + index);
+        if (bit === undefined) return exception(2);
+        if (bit) bytes[Math.floor(index / 8)] = (bytes[Math.floor(index / 8)] as number) | (1 << index % 8);
+      }
+      return respond(socket, frame(Buffer.concat([Buffer.from([functionCode, bytes.length]), bytes])));
+    }
     const registers = functionCode === 3 ? unit.holding : unit.input;
 
     const data = Buffer.alloc(quantity * 2);
@@ -98,7 +121,7 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
   const unitOf = (unit: number): Unit => {
     let found = table.get(unit);
     if (!found) {
-      found = { holding: new Map(), input: new Map() };
+      found = { holding: new Map(), input: new Map(), discrete: new Map() };
       table.set(unit, found);
     }
     return found;
@@ -119,6 +142,14 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
       return state.requests;
     },
     setRegister: (unit, type, address, value) => void registersOf(unit, type).set(address, value & 0xffff),
+    setDiscrete: (unit, address, value) => void unitOf(unit).discrete.set(address, value),
+    setAbsentUnits: (behaviour) => {
+      absent = behaviour;
+    },
+    refuseFunction: (unit, functionCode) => {
+      unitOf(unit);
+      refused.set(unit, new Set([...(refused.get(unit) ?? []), functionCode]));
+    },
     setFloat32: (unit, type, address, value, wordOrder = "big") => {
       const view = new DataView(new ArrayBuffer(4));
       view.setFloat32(0, value);

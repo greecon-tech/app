@@ -43,6 +43,7 @@ describe("PrincipalGuard and the box at a site", () => {
     { method: "POST", path: "/telemetry/ingest-batch" },
     { method: "GET", path: "/edge/config" },
     { method: "POST", path: "/edge/heartbeat" },
+    { method: "POST", path: "/edge/discovery" },
     { method: "GET", path: "/edge/bundle" },
     { method: "GET", path: "/edge/bundle.json" }
   ];
@@ -114,7 +115,8 @@ describe("PrincipalGuard and the box at a site", () => {
     it("cannot ask for a configuration or report health", async () => {
       for (const route of [
         { method: "GET", path: "/edge/config" },
-        { method: "POST", path: "/edge/heartbeat" }
+        { method: "POST", path: "/edge/heartbeat" },
+        { method: "POST", path: "/edge/discovery" }
       ]) {
         await expect(new PrincipalGuard(database([])).canActivate(contextFor({ "x-enrolment-code": "GRC-AAAA-BBBB-CCCC" }, route)), `${route.method} ${route.path}`).rejects.toThrow(UnauthorizedException);
       }

@@ -245,6 +245,8 @@ export interface CreateDeviceInput {
   placementNote?: string;
   /** Where the box reaches the device on the site's network. Modbus devices only. */
   connection?: ModbusConnection;
+  /** The equipment profile it is made from, if any. */
+  profileKey?: string;
 }
 
 export interface CreateGatewayInput {
@@ -2458,7 +2460,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       positionX: input.positionX,
       positionY: input.positionY,
       placementNote: input.placementNote,
-      ...(input.connection ? { connection: tidyConnection(input.connection) } : {})
+      ...(input.connection ? { connection: tidyConnection(input.connection) } : {}),
+      ...(input.profileKey ? { profileKey: input.profileKey } : {})
     };
 
     if (this.db.isConfigured()) {
@@ -4208,6 +4211,7 @@ function devicePlacementMetadata(device: Device): Record<string, unknown> {
   if (device.positionX !== undefined) metadata.positionX = device.positionX;
   if (device.positionY !== undefined) metadata.positionY = device.positionY;
   if (device.placementNote !== undefined) metadata.placementNote = device.placementNote;
+  if (device.profileKey !== undefined) metadata.profileKey = device.profileKey;
   return metadata;
 }
 
@@ -4310,7 +4314,7 @@ interface DeviceRow {
   last_seen_utc: string | null;
   firmware_version: string | null;
   secure_identity_status: string;
-  metadata: { positionX?: number; positionY?: number; placementNote?: string } | null;
+  metadata: { positionX?: number; positionY?: number; placementNote?: string; profileKey?: string } | null;
   connection: ModbusConnection | null;
 }
 
@@ -4332,7 +4336,8 @@ function mapDeviceRow(row: DeviceRow): Device {
     positionX: row.metadata?.positionX,
     positionY: row.metadata?.positionY,
     placementNote: row.metadata?.placementNote,
-    ...(row.connection ? { connection: row.connection } : {})
+    ...(row.connection ? { connection: row.connection } : {}),
+    ...(row.metadata?.profileKey ? { profileKey: row.metadata.profileKey } : {})
   };
 }
 

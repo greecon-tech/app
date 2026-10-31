@@ -1,9 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import {
   CurrencyCode,
+  DeviceProposal,
+  DiscoveryRequest,
+  DiscoveryResult,
+  DiscoveryView,
   EdgeConfig,
+  EdgeGateway,
   EnrolResponse,
   EnrolmentIssued,
+  ExpectedDevice,
   GREECON_PUBLIC_EMAILS,
   GatewayHeartbeat,
   HandoverDevice,
@@ -18,13 +25,23 @@ import {
   SiteTemplate,
   TemplateDevice,
   describeConnection,
+  describeIdentity,
+  describeScan,
   describeSource,
+  expectationOf,
   hasPermission,
   isManualSetupStep,
+  isPrivateAddress,
   limitsFor,
   manualSetupSteps,
   profileByKey,
+  profileForModel,
+  proposeAssignments,
+  rangeProblem,
+  sourceFromRange,
   templateByKey,
+  unitsFound,
+  validateDiscoveryResult,
   validateHeartbeat
 } from "@greecon/shared";
 import { Principal } from "../common/principal";
@@ -65,12 +82,46 @@ export interface CreateDeviceFromProfileInput {
 
 const ENROL_REFUSED = "That code has already been used, has expired, or is not one of ours. Make a new one on the site's setup page.";
 
+/** A search the box has not answered in this long is shown as one it never picked up, and is no longer sent to it. */
+const SEARCH_WAITS_FOR_MS = 10 * 60_000;
+/** Asked for again within this long while the box is still looking, the person is shown the search that is under way, not a second one. */
+const SEARCH_REPEAT_AFTER_MS = 2 * 60_000;
+const SEARCH_KEPT_FOR_MS = 24 * 3_600_000;
+
+/** A search for equipment on one box's network: what was asked, who asked, and what the box said. Kept in memory: a result is only
+ * useful for the minutes it takes to act on it, and a platform that restarts in between just asks again. */
+interface Search {
+  request: DiscoveryRequest;
+  requestedAtMs: number;
+  /** The person who pressed the button: the addresses that are filled in are filled in as them, and the audit trail says so. */
+  requestedBy: Principal;
+  result?: DiscoveryResult;
+}
+
+/** The steps whose confirmation must say who and when, because the paper behind them is somewhere else and this is the only record. */
+const NOTE_REQUIRED: Readonly<Record<string, string>> = {
+  paperwork: "Write who signed for the customer and on what date, so it is written down here.",
+  electrician: "Write the electrician's name and licence number, or that no electrical work was needed, so it is written down here."
+};
+
+export interface RangeEntry {
+  canonicalName: string;
+  /** The top of the range printed on the transmitter's label. */
+  range?: number;
+  /** For a level: how tall the tank is inside, in the same unit. */
+  tankHeight?: number;
+  /** There is no such transmitter at this site: take the reading away. */
+  notFitted?: boolean;
+}
+
 /** Setting a site up: starting from a template, adding known equipment, getting a box on the network,
  * and the checklist that says how far it has got. Everything that changes the platform goes through
  * PlatformService, which keeps each account's data apart and writes the audit trail; this class
  * decides the order and, when a step fails, puts back what the earlier ones made. */
 @Injectable()
 export class SetupService {
+  private readonly searches = new Map<string, Search>();
+
   constructor(
     private readonly platform: PlatformService,
     @Inject(ENROLMENT_STORE) private readonly enrolments: EnrolmentStore,
@@ -119,7 +170,7 @@ export class SetupService {
     if (entry.profile && !profile) throw new BadRequestException(`There is no equipment profile called "${entry.profile}".`);
 
     const device = await this.platform.createDevice(
-      { siteId, assetId, name: entry.name, deviceType: entry.deviceType, protocol: entry.protocol, driverType: entry.driverType, ...(connection ? { connection } : {}) },
+      { siteId, assetId, name: entry.name, deviceType: entry.deviceType, protocol: entry.protocol, driverType: entry.driverType, ...(connection ? { connection } : {}), ...(profile ? { profileKey: profile.key } : {}) },
       principal
     );
     const points = profile
@@ -230,13 +281,16 @@ export class SetupService {
 
     const gateway = await this.platform.recordGatewayHeartbeat(gatewayId, principal.tenantId, heartbeat, nowMs);
     const latest = this.bundle.manifest()?.version;
+    const search = this.searches.get(gatewayId);
+    const asked = search && !search.result && nowMs - search.requestedAtMs < SEARCH_WAITS_FOR_MS ? search.request : undefined;
     return {
       serverTimeUtc: new Date(nowMs).toISOString(),
       configVersion: this.platform.edgeConfigFor(gatewayId, principal.tenantId).version,
       clockSkewSeconds: gateway.clockSkewSeconds ?? 0,
       latestAgentVersion: latest ?? heartbeat.agentVersion,
       // EDGE_AUTO_UPDATE=false holds every box at the version it has, for when an update must wait.
-      updateAvailable: latest !== undefined && latest !== heartbeat.agentVersion && process.env.EDGE_AUTO_UPDATE?.trim().toLowerCase() !== "false"
+      updateAvailable: latest !== undefined && latest !== heartbeat.agentVersion && process.env.EDGE_AUTO_UPDATE?.trim().toLowerCase() !== "false",
+      ...(asked ? { discovery: asked } : {})
     };
   }
 
@@ -294,6 +348,7 @@ export class SetupService {
     }
     if (step.canConfirm === false) throw new ConflictException(`This cannot be confirmed yet. ${step.nextAction ?? step.detail}`);
     const tidy = note?.replace(/\s+/g, " ").trim().slice(0, 300);
+    if (NOTE_REQUIRED[key] && (tidy?.length ?? 0) < 3) throw new BadRequestException(NOTE_REQUIRED[key]);
     await this.platform.setSetupConfirmation(siteId, key, { atUtc: new Date(nowMs).toISOString(), by: principal.support ? `${principal.email} (Greecon staff)` : principal.email, ...(tidy ? { note: tidy } : {}) }, principal);
     return this.setupView(siteId, principal, nowMs);
   }
@@ -307,6 +362,166 @@ export class SetupService {
       await this.platform.setSetupConfirmation(siteId, "commissioned", null, principal);
     }
     return this.setupView(siteId, principal, nowMs);
+  }
+
+  // ---- Finding the equipment on the site's network ----------------------------------------------------
+
+  /** A person pressed "Find equipment": every box of the site that is reachable is asked to look at its network. The box picks the request up at its
+   * next heartbeat, looks (a minute at most), and says what answered; the addresses of what is found are filled in when it does. */
+  async requestDiscovery(siteId: string, input: { host?: string; port?: number }, principal: Principal, nowMs: number = Date.now()): Promise<DiscoveryView> {
+    if (!hasPermission(principal.role, "device:manage")) throw new ForbiddenException("Action blocked by access policy.");
+    const detail = this.platform.siteDetail(siteId, principal, nowMs);
+    if (detail.gateways.length === 0) throw new ConflictException("This site has no box yet. Add the box first: Greecon looks at the network through it.");
+    const reachable = detail.gateways.filter((gateway) => gateway.contact === "online" || gateway.contact === "late");
+    if (reachable.length === 0) throw new ConflictException("The box is not online yet, so it cannot look at the network. Wait until the box shows as online, then try again.");
+    const host = input.host?.trim() || undefined;
+    if (host && !isPrivateAddress(host)) {
+      throw new BadRequestException("That address is not on a private network. Give the address the converter has on the site's own network, for example 192.168.1.50.");
+    }
+    const port = input.port !== undefined && Number.isInteger(input.port) && input.port >= 1 && input.port <= 65535 ? input.port : undefined;
+    // Asked about a particular address or port, a new search always replaces the one that is under way.
+    const particular = host !== undefined || port !== undefined;
+
+    for (const [key, search] of this.searches) if (nowMs - search.requestedAtMs > SEARCH_KEPT_FOR_MS) this.searches.delete(key);
+    for (const box of reachable) {
+      const existing = this.searches.get(box.id);
+      if (!particular && existing && !existing.result && nowMs - existing.requestedAtMs < SEARCH_REPEAT_AFTER_MS) continue;
+      this.searches.set(box.id, { request: { id: randomUUID(), ...(host ? { hosts: [host] } : {}), ...(port !== undefined ? { ports: [port] } : {}) }, requestedAtMs: nowMs, requestedBy: principal });
+    }
+    return this.discoveryView(siteId, principal, nowMs);
+  }
+
+  /** What the box found, and what that means for each device of the site. */
+  discoveryView(siteId: string, principal: Principal, nowMs: number = Date.now()): DiscoveryView {
+    const detail = this.platform.siteDetail(siteId, principal, nowMs);
+    const record = this.platform.siteSetupRecord(siteId, principal);
+    const searches = detail.gateways.flatMap((gateway) => {
+      const search = this.searches.get(gateway.id);
+      return search ? [{ gateway, search }] : [];
+    });
+    const done = searches.filter((entry) => entry.search.result);
+    const waiting = searches.filter((entry) => !entry.search.result && nowMs - entry.search.requestedAtMs < SEARCH_WAITS_FOR_MS);
+    const state = waiting.length > 0 ? "waiting" : done.length > 0 ? "done" : searches.length > 0 ? "expired" : "idle";
+
+    const proposals: DeviceProposal[] = [];
+    const unclaimed: DiscoveryView["unclaimed"] = [];
+    const notes: string[] = [];
+    for (const { gateway, search } of done) {
+      const result = search.result as DiscoveryResult;
+      const expected = detail.devices
+        .filter((device) => device.protocol === "modbus" && device.gatewayId === gateway.id)
+        .map((device): ExpectedDevice & ReturnType<typeof expectationOf> => ({
+          id: device.id,
+          name: device.name,
+          deviceType: device.deviceType,
+          ...(device.connection ? { connection: { host: device.connection.host, port: device.connection.port, unitId: device.connection.unitId } } : {}),
+          ...expectationOf(device, record.templateKey)
+        }));
+      const proposed = proposeAssignments(result.hosts, expected);
+      proposals.push(...proposed.proposals);
+      unclaimed.push(...proposed.unclaimed.map((found) => ({ host: found.host, port: found.port, unit: found.unit, seen: describeIdentity(found.identity) })));
+      notes.push(...result.notes, ...proposed.notes);
+    }
+
+    const requested = searches.map((entry) => entry.search.requestedAtMs);
+    const finished = done.map((entry) => Date.parse((entry.search.result as DiscoveryResult).finishedAtUtc));
+    return {
+      state,
+      ...(requested.length > 0 ? { requestedAtUtc: new Date(Math.max(...requested)).toISOString() } : {}),
+      ...(finished.length > 0 ? { finishedAtUtc: new Date(Math.max(...finished)).toISOString() } : {}),
+      boxes: done.map((entry) => ({ name: entry.gateway.name, finishedAtUtc: (entry.search.result as DiscoveryResult).finishedAtUtc, looked: describeScan((entry.search.result as DiscoveryResult).scanned) })),
+      proposals,
+      unclaimed,
+      notes: [...new Set(notes)],
+      toApply: proposals.filter((proposal) => proposal.status === "found").length,
+      allSet: proposals.length > 0 && proposals.every((proposal) => proposal.status === "already")
+    };
+  }
+
+  /** What the box found, arriving. Filled in at once for the devices that have no address yet, as the person who asked: that is what they
+   * pressed the button for. A device that already has an address is left alone until the person says to use the new one. */
+  async recordDiscovery(principal: Principal, body: unknown, nowMs: number = Date.now()): Promise<{ recorded: boolean }> {
+    const gatewayId = this.gatewayOf(principal);
+    const problems = validateDiscoveryResult(body);
+    if (problems.length > 0) throw new BadRequestException(problems.join(" "));
+    const result = body as DiscoveryResult;
+    const search = this.searches.get(gatewayId);
+    // A result for a search that has been replaced, or one already recorded, is thanked and put aside: the box need not send it again.
+    if (!search || search.request.id !== result.requestId || search.result) return { recorded: false };
+    search.result = result;
+    const gateway = this.platform.findGateway(gatewayId, principal.tenantId, nowMs);
+    if (gateway) await this.applyFound(gateway.siteId, search.requestedBy, "new", nowMs).catch(() => undefined);
+    return { recorded: true };
+  }
+
+  /** "Use these addresses": every device that was found at an address other than the one it has is set to the one it was found at. */
+  async applyDiscovery(siteId: string, principal: Principal, nowMs: number = Date.now()): Promise<{ applied: string[]; discovery: DiscoveryView; setup: SetupView }> {
+    if (!hasPermission(principal.role, "device:manage")) throw new ForbiddenException("Action blocked by access policy.");
+    const { applied } = await this.applyFound(siteId, principal, "all", nowMs);
+    return { applied, discovery: this.discoveryView(siteId, principal, nowMs), setup: this.setupView(siteId, principal, nowMs) };
+  }
+
+  /** Sets each device the box found to where it found it. `new` leaves a device that already has an address alone. */
+  private async applyFound(siteId: string, principal: Principal, mode: "new" | "all", nowMs: number): Promise<{ applied: string[] }> {
+    const view = this.discoveryView(siteId, principal, nowMs);
+    const record = this.platform.siteSetupRecord(siteId, principal);
+    const devices = new Map(this.platform.listDevices(principal, siteId).map((device) => [device.id, device]));
+    const applied: string[] = [];
+    for (const proposal of view.proposals) {
+      const device = devices.get(proposal.deviceId);
+      if (proposal.status !== "found" || !proposal.match || !device) continue;
+      if (mode === "new" && device.connection) continue;
+      await this.platform.updateDevice(device.id, { connection: { kind: "modbus_tcp", host: proposal.match.host, port: proposal.match.port, unitId: proposal.match.unit } }, principal);
+      if (proposal.useModel) await this.readAsModel(device.id, proposal.useModel, record.templateKey, principal);
+      applied.push(device.name);
+    }
+    return { applied };
+  }
+
+  /** A meter of the other model is there than the one planned: the device is read as the one that is there, by the other model's registers. */
+  private async readAsModel(deviceId: string, model: "SDM230" | "SDM630", templateKey: string | undefined, principal: Principal): Promise<void> {
+    const device = this.platform.listDevices(principal).find((candidate) => candidate.id === deviceId);
+    if (!device) return;
+    const current = device.profileKey ?? expectationOf(device, templateKey).profileKey;
+    const profile = current ? profileByKey(profileForModel(current, model) ?? "") : undefined;
+    if (!profile) return;
+    await this.platform.updateDevice(device.id, { profileKey: profile.key }, principal);
+    for (const point of this.platform.listPoints(principal, device.id)) {
+      const known = profile.points.find((candidate) => candidate.canonicalName === point.canonicalName);
+      if (known?.source) await this.platform.updatePoint(point.id, { source: known.source }, principal);
+    }
+  }
+
+  // ---- The ranges on the transmitters' labels --------------------------------------------------------
+
+  /** For a 4 to 20 mA module: the range printed on each transmitter's label. Greecon works out the register and the scale from it, so that
+   * nobody types either. All of the answers are checked before any is used. */
+  async setRanges(deviceId: string, body: unknown, principal: Principal, nowMs: number = Date.now()): Promise<{ setup: SetupView }> {
+    if (!hasPermission(principal.role, "device:manage")) throw new ForbiddenException("Action blocked by access policy.");
+    const device = this.platform.listDevices(principal).find((candidate) => candidate.id === deviceId);
+    if (!device) throw new NotFoundException("Device not found.");
+    const profile = device.profileKey ? profileByKey(device.profileKey) : undefined;
+    if (!profile) throw new BadRequestException("Greecon does not know this equipment's transmitters, so it cannot work from a range. Enter each reading's register from the datasheet instead.");
+
+    const entries = (body as { ranges?: unknown } | null)?.ranges;
+    if (!Array.isArray(entries) || entries.length === 0 || entries.length > 8) throw new BadRequestException("Give the range of at least one transmitter.");
+    const points = this.platform.listPoints(principal, device.id);
+    const plan = entries.map((entry: unknown) => {
+      const asked = (typeof entry === "object" && entry !== null ? entry : {}) as Partial<RangeEntry>;
+      const known = profile.points.find((candidate) => candidate.canonicalName === asked.canonicalName && candidate.range !== undefined);
+      if (!known?.range) throw new BadRequestException(`This equipment has no reading called "${String(asked.canonicalName)}" that is set from a range.`);
+      const point = points.find((candidate) => candidate.canonicalName === asked.canonicalName);
+      if (!point) throw new BadRequestException(`${known.label} has been taken off this device.`);
+      if (asked.notFitted === true) return { point, remove: true as const };
+      const problem = rangeProblem(known.range, asked);
+      if (problem) throw new BadRequestException(`${known.label}: ${problem}`);
+      return { point, remove: false as const, source: sourceFromRange(known.range, { range: asked.range as number, ...(asked.tankHeight !== undefined ? { tankHeight: asked.tankHeight } : {}) }) };
+    });
+    for (const step of plan) {
+      if (step.remove) await this.platform.deletePoint(step.point.id, principal);
+      else await this.platform.updatePoint(step.point.id, { source: step.source }, principal);
+    }
+    return { setup: this.setupView(device.siteId, principal, nowMs) };
   }
 
   // ---- The handover sheet -------------------------------------------------------------------------

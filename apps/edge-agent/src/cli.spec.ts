@@ -175,5 +175,51 @@ describe("the commands a person uses at the box", () => {
       expect(complained()).toContain("register address must be a whole number from 0 to 65535");
       expect(complained()).toContain("a manual's 30053 is address 52");
     });
+
+    it("reads a digital input, as 0 or 1", async () => {
+      server.setDiscrete(3, 0, 1);
+      expect(await test("--type", "discrete", "--address", "0", "--data-type", "uint16")).toBe(0);
+      expect(said()).toContain("Value: 1");
+    });
+
+    it("refuses a digital input that is asked for as anything but one bit", async () => {
+      expect(await test("--type", "discrete", "--address", "0", "--data-type", "float32")).toBe(2);
+      expect(complained()).toContain("A digital input is one bit");
+    });
+  });
+
+  describe("find", () => {
+    let server: FakeModbusServer;
+    beforeEach(async () => {
+      server = await startFakeModbusServer([1]);
+      server.setAbsentUnits("exception");
+      server.setFloat32(1, "input", 0, 231);
+      server.setRegister(1, "input", 2, 0);
+      server.setFloat32(1, "input", 52, 2500);
+      server.setFloat32(1, "input", 12, 800);
+    });
+    afterEach(async () => {
+      await server.close();
+    });
+
+    it("says what answers at the address it is given, in the words the platform would use", async () => {
+      expect(await main(["find", "--host", server.host, "--port", String(server.port), "--unit", "1", "--unit", "2"])).toBe(0);
+      expect(said()).toContain(`${server.host}:${server.port}`);
+      expect(said()).toContain("unit 1: an Eastron meter, reading 2.50 kW at 231 V");
+      expect(said()).not.toContain("unit 2");
+    });
+
+    it("exits with 1 and says so when nothing answers", async () => {
+      await server.close();
+      expect(await main(["find", "--host", server.host, "--port", String(server.port), "--unit", "1"])).toBe(1);
+      expect(said()).toContain("No Modbus converter answered.");
+      expect(said()).toContain("accepts a connection");
+      server = await startFakeModbusServer([1]);
+    });
+
+    it("looks only at private addresses", async () => {
+      expect(await main(["find", "--host", "8.8.8.8"])).toBe(1);
+      expect(said()).toContain("8.8.8.8 is not on a private network");
+    });
   });
 });

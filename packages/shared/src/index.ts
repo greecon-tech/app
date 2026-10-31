@@ -55,6 +55,8 @@ export * from "./modbus";
 export * from "./edge";
 export * from "./device-profiles";
 export * from "./site-templates";
+export * from "./discovery";
+export * from "./install-card";
 export * from "./setup";
 export * from "./notifications";
 export * from "./acknowledge-link";
@@ -526,6 +528,8 @@ export interface Device {
   /** Where the box at the site reaches this device on the site's network. Absent until someone
    * has entered it: a device without a connection is listed but never read. */
   connection?: ModbusConnection;
+  /** The equipment profile the device was made from, when it was made from one (kept so that the platform knows what to expect of it). */
+  profileKey?: string;
 }
 
 /** How recently a box has been heard from, in words that need no explaining. */

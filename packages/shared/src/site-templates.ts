@@ -1,4 +1,5 @@
 import type { AssetType, CanonicalPointName, DeviceProtocol, PointCapability, SiteType } from "./index";
+import { KIT_UNITS } from "./device-profiles";
 import type { PointSource } from "./modbus";
 
 // The shapes of site Greecon is sold for, so a project manager starts from "a hotel with solar and a
@@ -25,6 +26,8 @@ export interface TemplateDevice {
   assetRef?: string;
   /** A device profile whose readings replace `points`, with their registers filled in. */
   profile?: string;
+  /** The address this equipment has in every kit, for equipment that has no profile. A profile carries its own. */
+  defaultUnitId?: number;
   points: TemplatePoint[];
   /** Said to the person setting up, next to this device. */
   hint?: string;
@@ -54,8 +57,20 @@ const waterModule = (assetRef: string): TemplateDevice => ({
   deviceType: "analog_io_module",
   ...modbus,
   assetRef,
-  points: [tank, pressure, flow, pumpStatus],
-  hint: "A Modbus input module takes the 4-20 mA signals of the level and pressure transmitters and the pump's run contact. Map each reading from the module's datasheet; for a 4-20 mA signal use the straight-line conversion (4 mA is the bottom of the transmitter's range, 20 mA the top)."
+  profile: "waveshare-ai8-water",
+  points: [],
+  hint: "The 4 to 20 mA module takes the level transmitter on input 1, the pressure transmitter on input 2 and the flow meter on input 3. Once it answers, give the range printed on each transmitter's label: Greecon works out the scale."
+});
+
+const pumpContact = (assetRef: string): TemplateDevice => ({
+  ref: "pump-contact",
+  name: "Pump contact module (optional)",
+  deviceType: "digital_input_module",
+  ...modbus,
+  assetRef,
+  profile: "waveshare-io8-pump",
+  points: [],
+  hint: "Reads whether the pump is running, from a dry contact on its starter. Remove it if there is no such contact: without it Greecon cannot tell a pump that has stopped from one that is running dry."
 });
 
 export const siteTemplates: readonly SiteTemplate[] = [
@@ -72,7 +87,8 @@ export const siteTemplates: readonly SiteTemplate[] = [
     devices: [
       { ref: "grid-meter", name: "Grid meter", deviceType: "grid_meter", ...modbus, assetRef: "grid", profile: "eastron-sdm630-grid", points: [] },
       { ref: "solar-meter", name: "Solar meter", deviceType: "production_meter", ...modbus, assetRef: "solar", profile: "eastron-sdm630-solar", points: [] },
-      waterModule("water")
+      waterModule("water"),
+      pumpContact("water")
     ],
     checklist: [
       "Ask for the last twelve electricity bills (price per kWh, and the kWh bought each month) and the water bills.",
@@ -132,6 +148,7 @@ export const siteTemplates: readonly SiteTemplate[] = [
         deviceType: "soil_sensor",
         ...modbus,
         assetRef: "zone",
+        defaultUnitId: KIT_UNITS.soil,
         points: [{ canonicalName: "agri.soil.moisture.percent", label: "Soil moisture", unit: "%" }],
         hint: "A wired RS-485 soil probe, or a probe on a radio gateway that speaks Modbus. Soil readings are only as good as the probe's depth and contact: note both in the handover. After the first week, ask the grower what reading means 'time to water' and enter it as the irrigation limit."
       },
@@ -141,13 +158,15 @@ export const siteTemplates: readonly SiteTemplate[] = [
         deviceType: "weather_station",
         ...modbus,
         assetRef: "weather",
+        defaultUnitId: KIT_UNITS.weather,
         points: [
           { canonicalName: "agri.air.temperature.c", label: "Air temperature", unit: "C" },
           { canonicalName: "agri.humidity.percent", label: "Humidity", unit: "%" }
         ],
         hint: "Fit it in the shade, a metre or two above the crop, away from walls and the pump house. Below zero a temperature is a signed number: map it as a signed 16-bit value (int16), or a frosty morning reads as a hot afternoon. Ask the grower at what air temperature the crop is in danger of frost and enter it as the frost limit: the platform says nothing about frost until it is set."
       },
-      waterModule("water")
+      waterModule("water"),
+      pumpContact("water")
     ],
     checklist: [
       "Ask which crop, which soil and how deep the roots are: the irrigation limit depends on them, and the platform gives no irrigation advice until it is set.",
@@ -168,6 +187,7 @@ export const siteTemplates: readonly SiteTemplate[] = [
     ],
     devices: [
       waterModule("water"),
+      pumpContact("water"),
       { ref: "pump-meter", name: "Pump meter (optional)", deviceType: "load_meter", ...modbus, assetRef: "power", profile: "eastron-sdm230-load", points: [] }
     ],
     checklist: [

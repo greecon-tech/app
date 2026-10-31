@@ -1,4 +1,5 @@
 import type { CanonicalPointName } from "./index";
+import type { DiscoveryRequest } from "./discovery";
 import type { ModbusConnection, PointSource } from "./modbus";
 
 // What the gateway at a site and the platform say to each other: what to read (config), and how the
@@ -75,6 +76,8 @@ export interface HeartbeatReply {
   clockSkewSeconds: number;
   latestAgentVersion: string;
   updateAvailable: boolean;
+  /** A person pressed "Find equipment": look at the site's network and say what answers. Sent until the box has said. */
+  discovery?: DiscoveryRequest;
 }
 
 /** The unit each kind of reading is kept in. */
@@ -116,11 +119,16 @@ export const plausibleRanges: Readonly<Partial<Record<CanonicalPointName, { min:
   "agri.humidity.percent": { min: 0, max: 100, what: "a relative humidity" }
 };
 
+/** A tank level can read a little under 0 or over 100 and still be real: a level transmitter's tolerance, or a tank measured a few centimetres short.
+ * The level comes from a 4 to 20 mA loop turned into a percentage, which no register holds ready-made. */
+const LEVEL_SLACK = 5;
+
 /** Why a number could not be this kind of reading, or undefined when it could. */
 export function plausibilityProblem(canonicalName: CanonicalPointName, value: number): string | undefined {
   const range = plausibleRanges[canonicalName];
   if (!range || !Number.isFinite(value)) return undefined;
-  if (value >= range.min && value <= range.max) return undefined;
+  const slack = canonicalName === "water.tank.level.percent" ? LEVEL_SLACK : 0;
+  if (value >= range.min - slack && value <= range.max + slack) return undefined;
   const shown = Math.abs(value) >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
   return `${shown} cannot be ${range.what} (${range.min} to ${range.max}). Check the register address, the scale or the sensor.`;
 }

@@ -86,14 +86,17 @@ describe.skipIf(!testDatabaseUrl)("setting a site up, on a real PostgreSQL", () 
       const again = await start();
       try {
         const restored = again.platform.listDevices(owner, site.id);
-        expect(restored.map((device) => device.connection?.unitId).sort()).toEqual([1, 2, 3]);
+        expect(restored.map((device) => device.connection?.unitId).sort()).toEqual([1, 2, 3, 4]);
+        // Each device remembers which approved model it is, through the database, so that the platform still knows what to ask for and what to look for.
+        expect(restored.map((device) => device.profileKey).sort()).toEqual(["eastron-sdm630-grid", "eastron-sdm630-solar", "waveshare-ai8-water", "waveshare-io8-pump"]);
+        expect(again.platform.listPoints(owner).find((point) => point.canonicalName === "water.pump.status")?.source).toEqual({ kind: "modbus", registerType: "discrete", address: 0, dataType: "uint16" });
         expect(restored.every((device) => device.gatewayId === gatewayId)).toBe(true);
         expect(again.platform.listPoints(owner).find((point) => point.canonicalName === "water.tank.level.percent")?.source?.linear).toEqual({ rawLow: 4, rawHigh: 20, engLow: 0, engHigh: 100 });
 
         const gateway = again.platform.findGateway(gatewayId, owner.tenantId);
         expect(gateway).toMatchObject({ secureIdentityStatus: "provisioned", softwareVersion: "0.2.0", bufferDepth: 3 });
         expect(gateway?.enrolledAtUtc).toBeDefined();
-        expect(gateway?.drivers).toHaveLength(3);
+        expect(gateway?.drivers).toHaveLength(4);
         expect(gateway?.contact).toBe("online");
 
         const record = again.platform.siteSetupRecord(site.id, owner);

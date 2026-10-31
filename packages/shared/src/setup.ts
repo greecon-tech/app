@@ -88,7 +88,7 @@ export interface SetupView {
 export const ALERT_LIMIT_KEYS: readonly string[] = ["critical_low", "warning_low", "irrigate_below", "frost_below", "dry_run_lpm"];
 
 /** The steps a person confirms by hand. */
-export const manualSetupSteps = ["told", "direction", "limits", "commissioned"] as const;
+export const manualSetupSteps = ["paperwork", "told", "direction", "limits", "electrician", "commissioned"] as const;
 export type ManualSetupStep = (typeof manualSetupSteps)[number];
 
 export function isManualSetupStep(key: string): key is ManualSetupStep {
@@ -150,7 +150,7 @@ const SIGN_WORDS: Record<NonNullable<PointSource["part"]>, string> = {
 
 /** "input register 52, float32, ×0.001, only when positive": the register as a person at the box would say it. */
 export function describeSource(source: PointSource): string {
-  const parts = [`${source.registerType} register ${source.address}`, source.dataType];
+  const parts = source.registerType === "discrete" ? [`digital input ${source.address}`] : [`${source.registerType} register ${source.address}`, source.dataType];
   if (source.wordOrder === "little") parts.push("low word first");
   if (source.linear) {
     const { rawLow, rawHigh, engLow, engHigh } = source.linear;

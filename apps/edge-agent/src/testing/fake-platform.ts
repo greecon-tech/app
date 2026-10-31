@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createServer, IncomingMessage, Server, ServerResponse } from "node:http";
 import { AddressInfo } from "node:net";
-import type { EdgeConfig, GatewayHeartbeat, TelemetryMessage } from "@greecon/shared";
+import type { DiscoveryRequest, DiscoveryResult, EdgeConfig, GatewayHeartbeat, TelemetryMessage } from "@greecon/shared";
 
 // The platform as a box sees it: the three routes it calls, with the same answers, over a real socket.
 
@@ -20,6 +20,10 @@ export interface FakePlatform {
   latestAgentVersion: string;
   /** Whether the heartbeat reply says a newer version is available. */
   updateAvailable: boolean;
+  /** A request to look at the network, said in every heartbeat reply until a result for it arrives. */
+  discovery?: DiscoveryRequest;
+  /** What the box found, in the order it said so. */
+  discoveries: DiscoveryResult[];
   /** The code that enrols a box, and what it is given for it. */
   enrolCode: string;
   /** The software the platform offers, if any. `checksum` can be made wrong on purpose. */
@@ -38,6 +42,7 @@ export async function startFakePlatform(config: EdgeConfig, credential = "box-se
     clockSkewSeconds: 0,
     latestAgentVersion: "0.0.0+source",
     updateAvailable: false,
+    discoveries: [],
     enrolCode: "GRC-ABCD-EFGH-JKLM",
     close: async () => undefined
   };
@@ -78,8 +83,15 @@ export async function startFakePlatform(config: EdgeConfig, credential = "box-se
           configVersion: state.config.version,
           clockSkewSeconds: state.clockSkewSeconds,
           latestAgentVersion: state.latestAgentVersion,
-          updateAvailable: state.updateAvailable
+          updateAvailable: state.updateAvailable,
+          ...(state.discovery ? { discovery: state.discovery } : {})
         });
+      }
+      if (route === "POST /edge/discovery") {
+        const result = body as DiscoveryResult;
+        state.discoveries.push(result);
+        if (state.discovery?.id === result.requestId) state.discovery = undefined;
+        return json(response, 201, { recorded: true });
       }
       if (route === "POST /telemetry/ingest-batch") {
         const messages = (body as { messages: TelemetryMessage[] }).messages;

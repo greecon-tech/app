@@ -12,7 +12,8 @@ import {
   describeConnection,
   gatewayContact,
   limitsFor,
-  plausibilityProblem
+  plausibilityProblem,
+  profileByKey
 } from "@greecon/shared";
 
 // The checklist a project manager works down at a new site. Every line is worked out from what the
@@ -85,6 +86,15 @@ export function computeSetup(input: SetupInput): SetupView {
   const latestByPoint = new Map(input.latest.map((reading) => [reading.pointId, reading]));
   const confirmation = (key: string): Confirmation | undefined => input.confirmations[key];
   const steps: SetupStep[] = [];
+
+  // 0. The papers (a person confirms them: the platform cannot see a signature) ---------
+  steps.push(
+    manualStep("paperwork", "Order form signed and data terms agreed", confirmation("paperwork"), {
+      todo: "Greecon does not put equipment in a customer's building without a signed order form and agreed data terms.",
+      next: "Confirm that both are signed, and say who signed for the customer and on what date.",
+      done: "Signed and agreed."
+    })
+  );
 
   // 1. Prices ---------------------------------------------------------------
   const needsEnergyPrice = input.points.some((point) => point.canonicalName.startsWith("energy."));
@@ -173,7 +183,7 @@ export function computeSetup(input: SetupInput): SetupView {
       title: "Where each device is on the network",
       status: "todo",
       detail: "No equipment has been added to this site yet.",
-      nextAction: "Add the equipment the site has. Pick it from the list if Greecon knows it; the box needs each device's IP address, port and unit number."
+      nextAction: "Add the equipment the site has. Pick it from the list if Greecon knows it. Once the box is online, Greecon finds it on the network and fills in the addresses."
     });
   } else if (modbusDevices.length > 0) {
     const items: SetupStepItem[] = modbusDevices.map((device) =>
@@ -187,7 +197,7 @@ export function computeSetup(input: SetupInput): SetupView {
       title: "Where each device is on the network",
       status,
       detail: status === "done" ? "Every device has an address." : `${plural(items.filter((item) => item.status === "todo").length, "device")} still need an address.`,
-      ...(status === "done" ? {} : { nextAction: "Enter each device's IP address, port and unit number. The converter's address goes on every meter behind it; the meters differ by unit number." }),
+      ...(status === "done" ? {} : { nextAction: "Press Find equipment: the box looks for the converter and what is behind it, and Greecon fills in the addresses. Or enter each device's IP address and unit number by hand." }),
       items
     });
   }
@@ -197,18 +207,34 @@ export function computeSetup(input: SetupInput): SetupView {
   const modbusPoints = readablePoints.filter((point) => modbusDeviceIds.has(point.deviceId));
   if (modbusPoints.length > 0) {
     const deviceName = new Map(input.devices.map((device) => [device.id, device.name]));
+    const deviceOf = new Map(input.devices.map((device) => [device.id, device]));
+    // A reading on equipment Greecon knows needs no register, only the range printed on the transmitter's label.
+    const needsRange = (point: Point): boolean => {
+      const profile = profileByKey(deviceOf.get(point.deviceId)?.profileKey ?? "");
+      return profile?.points.some((candidate) => candidate.canonicalName === point.canonicalName && candidate.range !== undefined) === true;
+    };
     const items: SetupStepItem[] = modbusPoints.map((point) =>
       point.source
         ? { label: `${point.label} on ${deviceName.get(point.deviceId)}`, status: "done" }
-        : { label: `${point.label} on ${deviceName.get(point.deviceId)}`, status: "todo", detail: "No register chosen." }
+        : needsRange(point)
+          ? { label: `${point.label} on ${deviceName.get(point.deviceId)}`, status: "todo", detail: "Needs the range printed on the transmitter's label." }
+          : { label: `${point.label} on ${deviceName.get(point.deviceId)}`, status: "todo", detail: "No register chosen." }
     );
     const status = rollup(items);
+    const ranges = modbusPoints.filter((point) => !point.source && needsRange(point)).length;
     steps.push({
       key: "mapping",
       title: "Which register holds which reading",
       status,
       detail: status === "done" ? "Every reading is tied to a register." : `${plural(items.filter((item) => item.status === "todo").length, "reading")} not tied to a register yet.`,
-      ...(status === "done" ? {} : { nextAction: "Open each reading and enter its register from the device's datasheet. Known meters fill this in by themselves." }),
+      ...(status === "done"
+        ? {}
+        : {
+            nextAction:
+              ranges > 0
+                ? "Give the range printed on each transmitter's label: Greecon works out the scale, and nobody types a register. For equipment Greecon does not know, enter its register from the datasheet."
+                : "Open each reading and enter its register from the device's datasheet. Known equipment fills this in by itself."
+          }),
       items
     });
   }
@@ -310,6 +336,15 @@ export function computeSetup(input: SetupInput): SetupView {
     steps.push(step);
   }
 
+  // 9b. The electrical work (a person confirms who did it) ---------------------------
+  steps.push(
+    manualStep("electrician", "Electrical work done by a licensed electrician", confirmation("electrician"), {
+      todo: "Fitting meters to a board and wiring transmitters and contacts is work for a licensed electrician, under the customer's lock-out procedure.",
+      next: "When the electrician has finished and the lock-out is removed, confirm here with their name and licence number. If no electrical work was needed, say so.",
+      done: "Done by a licensed electrician."
+    })
+  );
+
   // 10. Commissioning (a person confirms the numbers match the real world) ---
   const blocking = steps.filter((step) => !step.optional && step.status !== "done");
   const readyToCommission = blocking.length === 0;
@@ -351,9 +386,9 @@ export function computeSetup(input: SetupInput): SetupView {
   };
 }
 
-function manualStep(key: string, title: string, confirmed: Confirmation | undefined, words: { todo: string; next: string }): SetupStep {
+function manualStep(key: string, title: string, confirmed: Confirmation | undefined, words: { todo: string; next: string; done?: string }): SetupStep {
   if (confirmed) {
-    return { key, title, status: "done", detail: "Checked on site.", manual: true, confirmedAtUtc: confirmed.atUtc, confirmedBy: confirmed.by, note: confirmed.note };
+    return { key, title, status: "done", detail: words.done ?? "Checked on site.", manual: true, confirmedAtUtc: confirmed.atUtc, confirmedBy: confirmed.by, note: confirmed.note };
   }
   return { key, title, status: "todo", detail: words.todo, nextAction: words.next, manual: true, canConfirm: true };
 }

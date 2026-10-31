@@ -1,4 +1,4 @@
-import type { EdgeConfig, EnrolResponse, GatewayHeartbeat, HeartbeatReply } from "@greecon/shared";
+import type { DiscoveryResult, EdgeConfig, EnrolResponse, GatewayHeartbeat, HeartbeatReply } from "@greecon/shared";
 import { platformAddress, type EdgeIdentity } from "./identity";
 
 // What the box says to the platform besides readings: asking what to read, saying how it is, and
@@ -60,6 +60,11 @@ export class PlatformClient {
     const body = (await send(this.fetchImpl, `${this.identity.apiUrl}/edge/heartbeat`, { method: "POST", headers: this.headers(), body: JSON.stringify(heartbeat) }, this.timeoutMs)) as HeartbeatReply | undefined;
     if (!body || typeof body.configVersion !== "string") throw new PlatformError("the platform's answer to the heartbeat was not in the form expected.");
     return body;
+  }
+
+  /** What the box found when it was asked to look at the site's network. */
+  async postDiscovery(result: DiscoveryResult): Promise<void> {
+    await send(this.fetchImpl, `${this.identity.apiUrl}/edge/discovery`, { method: "POST", headers: this.headers(), body: JSON.stringify(result) }, this.timeoutMs);
   }
 }
 

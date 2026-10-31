@@ -88,3 +88,18 @@ export class ProvisionGatewayDto {
   @MaxLength(120)
   name!: string;
 }
+
+export class FindEquipmentDto {
+  /** An address to look at instead of the whole network: for a converter whose address is known. Private addresses only (checked in the service). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  host?: string;
+
+  /** For a converter that does not use the usual port, 502. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  port?: number;
+}
