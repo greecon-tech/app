@@ -182,6 +182,9 @@ describe("a range on a transmitter's label", () => {
     expect(rangeProblem(pressure, { range: 0 })).toMatch(/above zero/);
     expect(rangeProblem(pressure, { range: Number.NaN })).toMatch(/above zero/);
     expect(rangeProblem(level, { range: 5 })).toMatch(/how tall the tank is/);
+    // A slip of the finger is refused, not saved as a scale that cannot be saved.
+    expect(rangeProblem(pressure, { range: 1e308 })).toMatch(/above zero/);
+    expect(rangeProblem(level, { range: 5, tankHeight: 5e6 })).toMatch(/how tall the tank is/);
     expect(rangeProblem(level, { range: 3, tankHeight: 4 })).toMatch(/cannot see the top of the water/);
     expect(rangeProblem(level, { range: 5, tankHeight: 5 })).toBeUndefined();
     expect(() => sourceFromRange(level, { range: 3, tankHeight: 4 })).toThrow(/cannot see the top of the water/);

@@ -6,6 +6,7 @@ import {
   PROBES,
   ProbeResult,
   describeIdentity,
+  describeModel,
   expectationOf,
   identifyUnit,
   isPrivateAddress,
@@ -124,11 +125,19 @@ describe("recognising what answered", () => {
     expect(identifyUnit(zeros, 1)).toEqual({ present: true });
     // And one whose first phase is dead is not a meter that can be read either, whatever its power register says.
     expect(identifyUnit(sdm630(1000, 12), 1).family).toBeUndefined();
-    expect(identifyUnit(sdm630(1000, 400), 1).family).toBeUndefined();
+    expect(identifyUnit(sdm630(1000, 900), 1).family).toBeUndefined();
   });
 
-  it("takes a meter on a 110 volt system for a meter", () => {
+  it("takes a meter on a 110 volt system, and one that shows a line-to-line voltage, for a meter", () => {
     expect(identifyUnit(sdm230(300, 112), 1).family).toBe("eastron-meter");
+    expect(identifyUnit(sdm630(300, 398), 1).family).toBe("eastron-meter");
+  });
+
+  it("says which models a meter's registers rule out, and only when they were plainly refused", () => {
+    expect(identifyUnit(sdm230(500), 1)).toMatchObject({ models: ["SDM230"], ruledOut: ["SDM630"] });
+    expect(identifyUnit(sdm630(500), 1)).toMatchObject({ models: ["SDM630", "SDM230"], ruledOut: [] });
+    const silent = sdm230(500).map((probe) => (probe.key === "eastron-630" ? { key: probe.key, outcome: "silent" as const } : probe));
+    expect(identifyUnit(silent, 1)).toMatchObject({ models: ["SDM230"], ruledOut: [] });
   });
 });
 
@@ -193,10 +202,18 @@ describe("matching what was found to what the site is meant to have", () => {
   });
 
   it("does not guess between two meters when neither is at the address expected", () => {
-    const two = converter("192.168.1.50", [unit(8, sdm630()), unit(9, sdm630())]);
+    const two = converter("192.168.1.50", [unit(8, sdm630(1800)), unit(9, sdm630(5200))]);
     const { proposals } = proposeAssignments([two], hotelDevices().slice(0, 2));
     expect(proposals.map((proposal) => proposal.status)).toEqual(["unsure", "unsure"]);
     expect(proposals[0]?.message).toContain("2 of this kind answered (units 8, 9)");
+  });
+
+  it("does not list a unit a second time as unaccounted for when a line above already names it as not certain", () => {
+    const first = converter("192.168.1.50", [unit(1, sdm630(1800))]);
+    const second = converter("192.168.1.51", [unit(1, sdm630(5200))]);
+    expect(proposeAssignments([first, second], hotelDevices().slice(0, 2)).unclaimed).toEqual([]);
+    const two = converter("192.168.1.50", [unit(8, sdm630(1800)), unit(9, sdm630(5200))]);
+    expect(proposeAssignments([two], hotelDevices().slice(0, 2)).unclaimed).toEqual([]);
   });
 
   it("does not swap two meters that answer at the same unit on two converters", () => {
@@ -229,11 +246,68 @@ describe("matching what was found to what the site is meant to have", () => {
     expect(proposals[0]).toMatchObject({ status: "by-hand" });
   });
 
-  it("reads a meter as the model that is there when it is not the one planned", () => {
+  it("offers to read a meter as the model that is there when the planned model's register was plainly refused, and leaves it to a person", () => {
     const single = converter("192.168.1.50", [unit(1, sdm230(500))]);
     const { proposals } = proposeAssignments([single], [hotelDevices()[0]!]);
-    expect(proposals[0]).toMatchObject({ status: "found", useModel: "SDM230" });
-    expect(proposals[0]?.message).toContain("It is a single-phase SDM230, not the three-phase SDM630 planned: Greecon will read it as one.");
+    expect(proposals[0]).toMatchObject({ status: "found", useModel: "SDM230", exact: true });
+    expect(proposals[0]?.message).toContain("It is a single-phase SDM230, not the three-phase SDM630 planned. If you use this address, Greecon reads it as a single-phase SDM230.");
+    expect(describeModel("SDM630")).toBe("three-phase SDM630");
+  });
+
+  it("does not change what a meter is because one answer did not come: a register that said nothing, or was busy, rules nothing out", () => {
+    const silentRegister = sdm230(500).map((probe) => (probe.key === "eastron-630" ? { key: probe.key, outcome: "silent" as const } : probe));
+    const busyRegister = sdm230(500).map((probe) => (probe.key === "eastron-630" ? { ...probe, code: 6 } : probe));
+    const failedRegister = sdm230(500).map((probe) => (probe.key === "eastron-630" ? { ...probe, code: 4 } : probe));
+    for (const probesOfUnit of [silentRegister, busyRegister, failedRegister]) {
+      const { proposals, unclaimed } = proposeAssignments([converter("192.168.1.50", [unit(1, probesOfUnit)])], [hotelDevices()[0]!]);
+      expect(proposals[0]?.status).toBe("unsure");
+      expect(proposals[0]?.useModel).toBeUndefined();
+      expect(proposals[0]?.message).toContain("not clearly enough to tell whether it is the three-phase SDM630 planned");
+      // The unit is named in the line above, and is not listed a second time as unaccounted for.
+      expect(unclaimed).toEqual([]);
+    }
+    // A plain "no such register" (exception 2) or "no such function" (1) is a clear refusal.
+    const clear = sdm230(500).map((probe) => (probe.key === "eastron-630" ? { ...probe, code: 2 } : probe));
+    expect(proposeAssignments([converter("192.168.1.50", [unit(1, clear)])], [hotelDevices()[0]!]).proposals[0]).toMatchObject({ status: "found", useModel: "SDM230" });
+  });
+
+  it("says when a meter planned as single-phase may be a three-phase one, which would be read at one phase only", () => {
+    const water = (planned: "SDM230" | "SDM630") => device("Pump meter (optional)", "load_meter", `eastron-${planned.toLowerCase()}-load`);
+    const both = converter("192.168.1.50", [unit(4, sdm630(9000))]);
+    const warned = proposeAssignments([both], [water("SDM230")]).proposals[0];
+    expect(warned?.status).toBe("found");
+    expect(warned?.message).toContain("it may be a three-phase SDM630: check the model on its label");
+    expect(warned?.useModel).toBeUndefined();
+    // A three-phase meter planned as three-phase says nothing of the kind, and a single-phase one that refuses the total register neither.
+    expect(proposeAssignments([both], [water("SDM630")]).proposals[0]?.message).not.toContain("may be a three-phase");
+    expect(proposeAssignments([converter("192.168.1.50", [unit(4, sdm230(900))])], [water("SDM230")]).proposals[0]?.message).not.toContain("may be a three-phase");
+  });
+
+  it("fills in by itself only what was found at the number the kit gives it: a meter found at another number is a suggestion", () => {
+    const kitFound = proposeAssignments([kit()], hotelDevices()).proposals;
+    expect(kitFound.every((proposal) => proposal.exact === true)).toBe(true);
+    const elsewhere = proposeAssignments([converter("192.168.1.50", [unit(7, sdm630())])], [device("Grid meter", "grid_meter", "eastron-sdm630-grid")]).proposals[0];
+    expect(elsewhere).toMatchObject({ status: "found", exact: false });
+    expect(elsewhere?.message).toContain("if it is this site's, use this address");
+  });
+
+  it("does not take units that said exactly the same words for different devices: the converter is answering every number alike", () => {
+    // A converter in a mode that fixes the unit number: units 1, 2 and 3 all answer as the one meter behind it.
+    const echo = converter("192.168.1.50", [unit(1, sdm630(1800)), unit(2, sdm630(1800)), unit(3, sdm630(1800))]);
+    const { proposals, unclaimed, notes } = proposeAssignments([echo], hotelDevices().slice(0, 2));
+    expect(proposals.map((proposal) => proposal.status)).toEqual(["unsure", "unsure"]);
+    expect(proposals[0]?.message).toContain("Units 1, 2, 3 at 192.168.1.50 all answered with exactly the same words");
+    expect(proposals[0]?.message).toContain("not in a mode that fixes the unit number");
+    expect(proposals.every((proposal) => proposal.match === undefined)).toBe(true);
+    expect(notes[0]).toContain("probably answering every unit number as the one device behind it");
+    expect(unclaimed).toEqual([]);
+  });
+
+  it("does take two real meters that happen to read the same power, because they differ in their voltage", () => {
+    const a = unit(1, probes({ "eastron-voltage": floatWords(231.4), "analog-channels": [...floatWords(231.4), 0], "digital-inputs": "refused", "eastron-630": floatWords(0), "eastron-230": floatWords(0), "module-address": "refused" }));
+    const b = unit(2, probes({ "eastron-voltage": floatWords(229.8), "analog-channels": [...floatWords(229.8), 0], "digital-inputs": "refused", "eastron-630": floatWords(0), "eastron-230": floatWords(0), "module-address": "refused" }));
+    const { proposals } = proposeAssignments([converter("192.168.1.50", [a, b])], hotelDevices().slice(0, 2));
+    expect(proposals.map((proposal) => proposal.status)).toEqual(["found", "found"]);
   });
 
   it("keeps the planned model when it answered its own register, even though the other model's did too", () => {
@@ -301,6 +375,20 @@ describe("what the box says, checked as it arrives", () => {
     expect(validateDiscoveryResult(outcome).join(" ")).toContain("a probe that is not one of ours");
     const words = { ...good(), hosts: [converter("192.168.1.50", [{ unit: 1, probes: [{ key: "eastron-630", outcome: "ok", words: ["a"] as unknown as number[] }] }])] };
     expect(validateDiscoveryResult(words)).toContain("A probe's words must be up to 16 numbers.");
+  });
+
+  it("refuses a host that is not an IPv4 address, a code that is not an exception code, and lists of anything that are not short", () => {
+    expect(validateDiscoveryResult({ ...good(), hosts: [converter("not-an-address\nx", [unit(1, nothing())])] }).join(" ")).toContain("must have an IPv4 address");
+    expect(validateDiscoveryResult({ ...good(), hosts: [converter("010.0.0.1", [])] }).join(" ")).toContain("must have an IPv4 address");
+    // A box looks only at a site's own network: a result that says it found something at a public address is not one a box can have made.
+    expect(validateDiscoveryResult({ ...good(), hosts: [converter("8.8.8.8", [unit(1, nothing())])] })).toContain("hosts[0] is not on a private network.");
+    expect(validateDiscoveryResult({ ...good(), hosts: [converter("172.32.0.1", [])] })).toContain("hosts[0] is not on a private network.");
+    const odd = [{ key: "eastron-630", outcome: "refused", code: 999 }] as unknown as ProbeResult[];
+    expect(validateDiscoveryResult({ ...good(), hosts: [converter("192.168.1.50", [{ unit: 1, probes: odd }])] })).toContain("A probe's exception code must be a whole number from 0 to 255.");
+    const long = { ...good().scanned, units: Array.from({ length: 200_000 }, (_, index) => index % 200) };
+    expect(validateDiscoveryResult({ ...good(), scanned: long })).toContain("scanned must say what was looked at, in short lists.");
+    expect(validateDiscoveryResult({ ...good(), scanned: { ...good().scanned, subnets: null } })).toContain("scanned must say what was looked at, in short lists.");
+    expect(validateDiscoveryResult({ ...good(), scanned: { ...good().scanned, hostsTried: 1e9 } })).toContain("scanned must say what was looked at, in short lists.");
   });
 
   it("refuses a unit number that cannot be one and a port that cannot be one", () => {

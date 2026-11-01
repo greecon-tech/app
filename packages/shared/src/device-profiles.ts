@@ -239,13 +239,16 @@ export interface RangeAnswer {
   tankHeight?: number;
 }
 
+/** No transmitter's range is above this in any unit used here; a larger number is a slip, and would not make a scale that can be saved. */
+const MAX_RANGE = 1_000_000;
+
 /** What is wrong with an answer, in words, or undefined. */
 export function rangeProblem(range: SensorRange, answer: Partial<RangeAnswer>): string | undefined {
   const top = answer.range;
-  if (top === undefined || !Number.isFinite(top) || top <= 0) return `Give the top of the range on the label, as a number above zero (in ${range.rangeUnit}).`;
+  if (top === undefined || !Number.isFinite(top) || top <= 0 || top > MAX_RANGE) return `Give the top of the range on the label, as a number above zero (in ${range.rangeUnit}).`;
   if (range.kind === "level") {
     const height = answer.tankHeight;
-    if (height === undefined || !Number.isFinite(height) || height <= 0) return "Give how tall the tank is inside, as a number above zero (in metres).";
+    if (height === undefined || !Number.isFinite(height) || height <= 0 || height > MAX_RANGE) return "Give how tall the tank is inside, as a number above zero (in metres).";
     if (height > top) return `The transmitter reads up to ${top} ${range.rangeUnit} and the tank is ${height} ${range.rangeUnit} tall: it cannot see the top of the water. Fit a transmitter with a longer range.`;
   }
   return undefined;

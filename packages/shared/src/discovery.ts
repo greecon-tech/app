@@ -45,6 +45,9 @@ export interface ProbeResult {
   outcome: ProbeOutcome;
   /** The words read, for an answer. A digital input is 0 or 1 for each of its inputs. */
   words?: number[];
+  /** For a refusal: the Modbus exception code. 1 and 2 (no such function, no such register) are a device saying plainly that it does not have it;
+   * 4 (device failure) and 6 (busy) are a device that could not say. Absent from an older box, which is read as a plain refusal. */
+  code?: number;
 }
 
 export interface DiscoveredUnit {
@@ -90,6 +93,9 @@ export interface UnitIdentity {
   family?: EquipmentFamily;
   /** The models whose own total-power register answered with a number that can be a power: both, for a three-phase meter, whose phase-one power sits where the SDM230's total does. */
   models?: MeterModel[];
+  /** The models whose own total-power register was plainly refused ("no such register"). A register that merely did not answer rules nothing out: one
+   * missed answer must not turn a three-phase meter into a single-phase one. */
+  ruledOut?: MeterModel[];
   /** What it reads right now, in words. */
   sample?: string;
 }
@@ -103,9 +109,9 @@ function float32(words: readonly number[] | undefined): number | undefined {
   return Number.isFinite(value) && Math.abs(value) < 10_000_000 ? value : undefined;
 }
 
-/** The mains voltage an Eastron meter shows on its first phase is somewhere in this range wherever it is installed (110 to 230 V systems);
- * a register that is not a voltage reads nothing like it. */
-const MAINS_VOLTS = { min: 80, max: 300 };
+/** The mains voltage an Eastron meter shows on its first phase is somewhere in this range wherever it is installed (110 to 400 V systems, a line-to-line
+ * reading included); a register that is not a voltage reads nothing like it. */
+const MAINS_VOLTS = { min: 80, max: 480 };
 
 /** What a unit is, from what it positively said. A unit is a Waveshare module when the register that holds its own address holds the address it
  * answered at, and an analog one if its input channels read and a digital one if its inputs do. A unit is an Eastron meter when its first-phase
@@ -134,7 +140,12 @@ export function identifyUnit(probes: readonly ProbeResult[], unit?: number): Uni
   if (volts !== undefined && volts >= MAINS_VOLTS.min && volts <= MAINS_VOLTS.max && (sdm630 !== undefined || sdm230 !== undefined)) {
     const watts = sdm630 ?? (sdm230 as number);
     const models: MeterModel[] = [...(sdm630 !== undefined ? (["SDM630"] as const) : []), ...(sdm230 !== undefined ? (["SDM230"] as const) : [])];
-    return { present, family: "eastron-meter", models, sample: `${(watts / 1000).toFixed(2)} kW at ${Math.round(volts)} V` };
+    const plainlyRefused = (key: string): boolean => {
+      const probe = by.get(key);
+      return probe?.outcome === "refused" && (probe.code === undefined || probe.code === 1 || probe.code === 2 || probe.code === 3);
+    };
+    const ruledOut: MeterModel[] = [...(plainlyRefused("eastron-630") ? (["SDM630"] as const) : []), ...(plainlyRefused("eastron-230") ? (["SDM230"] as const) : [])];
+    return { present, family: "eastron-meter", models, ruledOut, sample: `${(watts / 1000).toFixed(2)} kW at ${Math.round(volts)} V` };
   }
   return { present };
 }
@@ -207,6 +218,8 @@ export interface UnitFound {
   port: number;
   unit: number;
   identity: UnitIdentity;
+  /** Everything the unit said, as one string. Two different devices never say exactly the same words (their voltage, their power, their own address differ). */
+  signature: string;
 }
 
 export type ProposalStatus = "found" | "already" | "missing" | "unsure" | "by-hand";
@@ -217,7 +230,9 @@ export interface DeviceProposal {
   status: ProposalStatus;
   /** Where it was found, for "found" and "already". */
   match?: { host: string; port: number; unit: number; seen: string };
-  /** The meter that is there is not the model planned: the device is to be read as this one instead. */
+  /** Found at the number the kit gives it: the only kind of match that is filled in without anybody pressing a button. */
+  exact?: boolean;
+  /** The meter that is there is not the model planned: the device is to be read as this one instead, once a person says to. */
   useModel?: MeterModel;
   /** In words: what was found, or what to check. */
   message: string;
@@ -231,58 +246,107 @@ export interface DiscoveryProposal {
   notes: string[];
 }
 
+const signatureOf = (probes: readonly ProbeResult[]): string => JSON.stringify(probes.map((probe) => [probe.key, probe.outcome, probe.words ?? null]));
+
 export function unitsFound(hosts: readonly DiscoveredHost[]): UnitFound[] {
-  return hosts.flatMap((host) => host.units.map((unit) => ({ host: host.host, port: host.port, unit: unit.unit, identity: identifyUnit(unit.probes, unit.unit) }))).filter((found) => found.identity.present);
+  return hosts
+    .flatMap((host) => host.units.map((unit) => ({ host: host.host, port: host.port, unit: unit.unit, identity: identifyUnit(unit.probes, unit.unit), signature: signatureOf(unit.probes) })))
+    .filter((found) => found.identity.present);
 }
 
 const MODEL_WORDS: Record<MeterModel, string> = { SDM230: "single-phase SDM230", SDM630: "three-phase SDM630" };
 
+/** "three-phase SDM630". */
+export function describeModel(model: MeterModel): string {
+  return MODEL_WORDS[model];
+}
+
 export function proposeAssignments(hosts: readonly DiscoveredHost[], devices: ReadonlyArray<ExpectedDevice & { family?: EquipmentFamily; unitId?: number; meterModel?: MeterModel }>): DiscoveryProposal {
   const found = unitsFound(hosts);
   const recognised = found.filter((candidate) => candidate.identity.family);
+  const notes: string[] = [];
+
+  // A converter set to a mode that fixes the unit number answers every unit number as the one device behind it. Units that said exactly the same words are
+  // not different devices, and taking them for the grid meter and the solar meter would show one meter's readings as both.
+  const bySignature = new Map<string, UnitFound[]>();
+  for (const candidate of recognised) {
+    const key = `${candidate.host}:${candidate.port}|${candidate.signature}`;
+    bySignature.set(key, [...(bySignature.get(key) ?? []), candidate]);
+  }
+  const echoed = new Set<UnitFound>();
+  const echoWords = new Map<EquipmentFamily, string>();
+  for (const group of bySignature.values()) {
+    if (group.length < 2) continue;
+    for (const candidate of group) echoed.add(candidate);
+    const first = group[0] as UnitFound;
+    const words = `Units ${group.map((candidate) => candidate.unit).join(", ")} at ${first.host} all answered with exactly the same words, so they cannot be different devices: the converter is probably answering every unit number as the one device behind it. It must be in Modbus TCP to RTU (gateway) mode, not in a mode that fixes the unit number. If the converter is set right and the devices simply read the same (two meters that are both off), look again when one of them is working.`;
+    echoWords.set(first.identity.family as EquipmentFamily, words);
+    notes.push(words);
+  }
+  const usable = recognised.filter((candidate) => !echoed.has(candidate));
+
+  // `claimed`: given to a device (or held for it). `involved`: named in a line that says Greecon is not sure which is which: it stays available to the devices
+  // of its kind, so that each of them says so too, and it is not listed a second time as unaccounted for.
   const claimed = new Set<UnitFound>();
+  const involved = new Set<UnitFound>();
   const result = new Map<string, DeviceProposal>();
   const seen = (candidate: UnitFound) => describeIdentity(candidate.identity);
-  const take = (device: ExpectedDevice & { meterModel?: MeterModel }, candidate: UnitFound, extra = ""): DeviceProposal => {
+  const unsure = (device: ExpectedDevice, message: string): DeviceProposal => ({ deviceId: device.id, name: device.name, status: "unsure", message });
+  const take = (device: ExpectedDevice & { meterModel?: MeterModel }, candidate: UnitFound, exact: boolean, extra = ""): DeviceProposal => {
+    const models = candidate.identity.models ?? [];
+    const ruledOut = candidate.identity.ruledOut ?? [];
+    const planned = device.meterModel;
+    // The planned model's own register did not answer, and was not plainly refused either: a missed answer must not change what a meter is.
+    if (planned && models.length > 0 && !models.includes(planned) && !ruledOut.includes(planned)) {
+      claimed.add(candidate);
+      return unsure(device, `Something answers at ${candidate.host}, unit ${candidate.unit}, but not clearly enough to tell whether it is the ${describeModel(planned)} planned. Look again; if it is the same, check the speed and the A and B wires.`);
+    }
     claimed.add(candidate);
     const same = device.connection && device.connection.host === candidate.host && device.connection.port === candidate.port && device.connection.unitId === candidate.unit;
-    // The meter that answers is read by the register it answered, so when only the other model's answered, the other model it is.
-    const models = candidate.identity.models ?? [];
-    const useModel = device.meterModel && models.length > 0 && !models.includes(device.meterModel) ? (models[0] as MeterModel) : undefined;
-    const change = useModel ? ` It is a ${MODEL_WORDS[useModel]}, not the ${MODEL_WORDS[device.meterModel as MeterModel]} planned: Greecon will read it as one.` : "";
+    // The planned model's register was plainly refused and the other model's answered: it is the other model, and a person is asked to say so.
+    const useModel = planned && models.length > 0 && !models.includes(planned) ? (models[0] as MeterModel) : undefined;
+    const change = useModel ? ` It is a ${describeModel(useModel)}, not the ${describeModel(planned as MeterModel)} planned. If you use this address, Greecon reads it as a ${describeModel(useModel)}.` : "";
+    // Where both power registers answer and a single-phase meter was planned, it may be a three-phase one, which would be read at one phase only.
+    const maybeThreePhase = planned === "SDM230" && models.includes("SDM630") && models.includes("SDM230");
+    const check = maybeThreePhase
+      ? ` It also answers the three-phase meter's total-power register, so it may be a three-phase SDM630: check the model on its label, and if it is one, remove this device and add the three-phase meter from "Add equipment Greecon already knows".`
+      : "";
     return {
       deviceId: device.id,
       name: device.name,
       status: same && !useModel ? "already" : "found",
       match: { host: candidate.host, port: candidate.port, unit: candidate.unit, seen: seen(candidate) },
+      exact,
       ...(useModel ? { useModel } : {}),
-      message: `${same && !useModel ? "Already set, and answering" : "Found"} at ${candidate.host}, unit ${candidate.unit}: ${seen(candidate)}.${change}${extra}`
+      message: `${same && !useModel ? "Already set, and answering" : "Found"} at ${candidate.host}, unit ${candidate.unit}: ${seen(candidate)}.${change}${check}${extra}`
     };
   };
-  const unsure = (device: ExpectedDevice, message: string): DeviceProposal => ({ deviceId: device.id, name: device.name, status: "unsure", message });
 
   const withFamily = devices.filter((device) => device.family);
   // First, the meter, module or contact at the address the kit gives it. Two at one address cannot be told apart from here, and a guess would
   // swap two meters: the grid meter's readings would be the solar's.
   for (const device of withFamily) {
-    const exact = recognised.filter((candidate) => !claimed.has(candidate) && candidate.identity.family === device.family && candidate.unit === device.unitId);
-    if (exact.length === 1) result.set(device.id, take(device, exact[0] as UnitFound));
+    const exact = usable.filter((candidate) => !claimed.has(candidate) && candidate.identity.family === device.family && candidate.unit === device.unitId);
+    if (exact.length === 1) result.set(device.id, take(device, exact[0] as UnitFound, true));
     else if (exact.length > 1) {
+      for (const candidate of exact) involved.add(candidate);
       result.set(
         device.id,
         unsure(device, `${exact.length} of this kind answer at unit ${device.unitId} (at ${exact.map((candidate) => candidate.host).join(", ")}), so Greecon cannot tell which is this one. Give each its own unit number (the install card lists them), or enter its address by hand.`)
       );
     }
   }
-  // Then, where only one of a kind is left and only one device wants it, that one, whatever address it has been left at.
+  // Then, where only one of a kind is left and only one device wants it, that one, whatever address it has been left at. It is only a suggestion: a
+  // person says whether it is theirs, because it may be a meter of the customer's own that happens to share the cable.
   for (const device of withFamily) {
     if (result.has(device.id)) continue;
     const wanting = withFamily.filter((other) => !result.has(other.id) && other.family === device.family);
-    const spare = recognised.filter((candidate) => !claimed.has(candidate) && candidate.identity.family === device.family);
+    const spare = usable.filter((candidate) => !claimed.has(candidate) && candidate.identity.family === device.family);
     if (wanting.length === 1 && spare.length === 1) {
       const candidate = spare[0] as UnitFound;
-      result.set(device.id, take(device, candidate, ` It is at unit ${candidate.unit}, not ${device.unitId}: it works, and the install card gives ${device.unitId} so that the next site looks like this one.`));
+      result.set(device.id, take(device, candidate, false, ` It is at unit ${candidate.unit}, not ${device.unitId}: if it is this site's, use this address, and the install card gives ${device.unitId} so that the next site looks like this one.`));
     } else if (spare.length > 1) {
+      for (const candidate of spare) involved.add(candidate);
       result.set(device.id, unsure(device, `${spare.length} of this kind answered (units ${spare.map((candidate) => candidate.unit).join(", ")}) and none is at unit ${device.unitId}. Set each to the address on the install card, then find the equipment again.`));
     }
   }
@@ -290,6 +354,8 @@ export function proposeAssignments(hosts: readonly DiscoveredHost[], devices: Re
     if (result.has(device.id)) continue;
     if (!device.family) {
       result.set(device.id, { deviceId: device.id, name: device.name, status: "by-hand", message: "Greecon cannot recognise this one on the network. Enter its address by hand." });
+    } else if (echoWords.has(device.family)) {
+      result.set(device.id, unsure(device, echoWords.get(device.family) as string));
     } else {
       const optional = /\(optional\)/i.test(device.name) ? " If the site does not have one, remove it from the list below." : "";
       result.set(device.id, {
@@ -301,13 +367,17 @@ export function proposeAssignments(hosts: readonly DiscoveredHost[], devices: Re
     }
   }
 
-  const notes: string[] = [];
   if (hosts.length === 0) {
-    notes.push("No Modbus converter answered on this network. Check that the converter is switched on and plugged into the same router as the box, then find the equipment again.");
+    notes.push("No Modbus converter answered on this network. Check that the converter is switched on and plugged into the same router as the box, then find the equipment again. If the converter is on a different part of the network, give its address (I know the converter's address).");
   } else if (found.length === 0) {
     notes.push(`A converter answers at ${hosts.map((host) => host.host).join(", ")}, but nothing answers behind it. Check each meter's address, the speed on the converter and the meters, and the A and B wires.`);
   }
-  return { proposals: devices.map((device) => result.get(device.id) as DeviceProposal), unclaimed: found.filter((candidate) => !claimed.has(candidate)), notes };
+  return {
+    proposals: devices.map((device) => result.get(device.id) as DeviceProposal),
+    // What answered and is named in one of the lines above is not listed a second time as unaccounted for.
+    unclaimed: found.filter((candidate) => !claimed.has(candidate) && !involved.has(candidate) && !echoed.has(candidate)),
+    notes
+  };
 }
 
 // ---- What the person who pressed "Find equipment" sees --------------------------------------------------------------------------
@@ -363,9 +433,12 @@ export function validateDiscoveryResult(body: unknown): string[] {
   }
   if (!Array.isArray(result.hosts) || result.hosts.length > 64) return [...problems, "hosts must be a list of up to 64 entries."];
   const probeKeys = new Set(PROBES.map((probe) => probe.key));
+  const ipv4 = /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/;
   result.hosts.forEach((entry: unknown, hostIndex: number) => {
     const host = entry as Partial<DiscoveredHost> | null;
-    if (typeof host !== "object" || host === null || typeof host.host !== "string" || host.host.length > 64) return void problems.push(`hosts[${hostIndex}] must have an address.`);
+    if (typeof host !== "object" || host === null || typeof host.host !== "string" || !ipv4.test(host.host)) return void problems.push(`hosts[${hostIndex}] must have an IPv4 address.`);
+    // A box only looks at a site's own network, so an answer from anywhere else is not one it can have got.
+    if (!isPrivateAddress(host.host)) problems.push(`hosts[${hostIndex}] is not on a private network.`);
     if (typeof host.port !== "number" || !Number.isInteger(host.port) || host.port < 1 || host.port > 65535) problems.push(`hosts[${hostIndex}].port must be a port number.`);
     if (!Array.isArray(host.units) || host.units.length > 64) return void problems.push(`hosts[${hostIndex}].units must be a list of up to 64 entries.`);
     host.units.forEach((unit, unitIndex) => {
@@ -374,12 +447,26 @@ export function validateDiscoveryResult(body: unknown): string[] {
       for (const probe of unit.probes) {
         if (!probeKeys.has(probe?.key) || !["ok", "refused", "silent"].includes(probe?.outcome)) problems.push(`hosts[${hostIndex}].units[${unitIndex}] has a probe that is not one of ours.`);
         if (probe?.words !== undefined && (!Array.isArray(probe.words) || probe.words.length > 16 || probe.words.some((word: unknown) => typeof word !== "number" || !Number.isFinite(word)))) problems.push("A probe's words must be up to 16 numbers.");
+        if (probe?.code !== undefined && (typeof probe.code !== "number" || !Number.isInteger(probe.code) || probe.code < 0 || probe.code > 255)) problems.push("A probe's exception code must be a whole number from 0 to 255.");
       }
     });
   });
   if (!Array.isArray(result.notes) || result.notes.length > 20 || result.notes.some((note: unknown) => typeof note !== "string" || note.length > 300)) problems.push("notes must be up to 20 short sentences.");
   const scanned = result.scanned as Record<string, unknown> | undefined;
-  if (typeof scanned !== "object" || scanned === null || !Array.isArray(scanned.subnets) || !Array.isArray(scanned.ports) || !Array.isArray(scanned.units)) problems.push("scanned must say what was looked at.");
+  const listOf = (value: unknown, max: number, each: (item: unknown) => boolean): boolean => Array.isArray(value) && value.length <= max && value.every(each);
+  if (
+    typeof scanned !== "object" ||
+    scanned === null ||
+    !listOf(scanned.subnets, 8, (item) => typeof item === "string" && item.length <= 40) ||
+    !listOf(scanned.ports, 8, (item) => typeof item === "number" && Number.isInteger(item) && item >= 1 && item <= 65535) ||
+    !listOf(scanned.units, 64, (item) => typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 247) ||
+    typeof scanned.hostsTried !== "number" ||
+    !Number.isInteger(scanned.hostsTried) ||
+    scanned.hostsTried < 0 ||
+    scanned.hostsTried > 100_000
+  ) {
+    problems.push("scanned must say what was looked at, in short lists.");
+  }
   return problems;
 }
 

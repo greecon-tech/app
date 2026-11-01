@@ -63,6 +63,7 @@ export * from "./acknowledge-link";
 export * from "./fleet";
 export * from "./quick-find";
 export * from "./places";
+export * from "./typed-number";
 
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;
 export type SeverityLevel = (typeof severityLevels)[number];
