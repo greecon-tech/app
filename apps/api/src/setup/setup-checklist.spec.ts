@@ -42,11 +42,14 @@ function hotel(options: { addressed?: boolean; mapped?: boolean } = {}): { devic
       driverType: entry.driverType,
       health: "OK",
       secureIdentityStatus: "placeholder",
+      ...(entry.profile ? { profileKey: entry.profile } : {}),
       ...(options.addressed ? { connection: { kind: "modbus_tcp" as const, host: "192.168.1.50", port: 502, unitId: unit++ } } : {})
     });
     const profileDef = entry.profile ? profileByKey(entry.profile) : undefined;
     for (const [index, definition] of (profileDef ? profileDef.points : entry.points).entries()) {
-      const mapped = profileDef !== undefined || options.mapped === true;
+      // Known equipment arrives with its registers; a reading that waits for a transmitter's range does not.
+      const known = "source" in definition && definition.source !== undefined;
+      const mapped = known || options.mapped === true;
       points.push({
         id: `p-${entry.ref}-${index}`,
         tenantId: TENANT,
@@ -95,6 +98,8 @@ function working(extra: Partial<SetupInput> = {}): SetupInput {
 }
 
 const done = (by = "pm@greecon.earth"): Confirmation => ({ atUtc: secondsAgo(60), by });
+/** The two checks about people and papers, which every site has whatever its equipment. */
+const papers = (): Record<string, Confirmation> => ({ paperwork: done(), electrician: done() });
 
 describe("a site with no equipment at all", () => {
   it("asks for the equipment first and cannot be commissioned", () => {
@@ -168,10 +173,10 @@ describe("someone is told", () => {
 
   it("holds commissioning back until it is done", () => {
     const base = working();
-    const before = computeSetup({ ...base, notifications: { ...on, lastTestAtMs: NOW }, confirmations: { direction: done(), limits: done() } });
+    const before = computeSetup({ ...base, notifications: { ...on, lastTestAtMs: NOW }, confirmations: { ...papers(), direction: done(), limits: done() } });
     expect(before.readyToCommission).toBe(false);
     expect(step(before, "commissioned")?.status).toBe("waiting");
-    const after = computeSetup({ ...base, notifications: { ...on, lastTestAtMs: NOW }, confirmations: { told: done(), direction: done(), limits: done() } });
+    const after = computeSetup({ ...base, notifications: { ...on, lastTestAtMs: NOW }, confirmations: { ...papers(), told: done(), direction: done(), limits: done() } });
     expect(after.readyToCommission).toBe(true);
   });
 });
@@ -192,15 +197,44 @@ describe("a brand-new site made from the hotel template", () => {
 
   it("names each device that still needs an address", () => {
     const addresses = step(computeSetup(input()), "addresses");
-    expect(addresses?.items?.map((item) => item.label)).toEqual(["Grid meter", "Solar meter", "Water I/O module"]);
-    expect(addresses?.detail).toBe("3 devices still need an address.");
+    expect(addresses?.items?.map((item) => item.label)).toEqual(["Grid meter", "Solar meter", "Water I/O module", "Pump contact module (optional)"]);
+    expect(addresses?.detail).toBe("4 devices still need an address.");
   });
 
-  it("only lists the readings that are not tied to a register, because a known meter fills its own in", () => {
+  it("tells the person to press Find equipment, not to type addresses", () => {
+    const addresses = step(computeSetup(input()), "addresses");
+    expect(addresses?.nextAction).toContain("Press Find equipment");
+    expect(addresses?.nextAction).toContain("by hand");
+  });
+
+  it("only lists the readings that are not tied to a register, because known equipment fills its own in", () => {
     const mapping = step(computeSetup(input()), "mapping");
     const todo = mapping?.items?.filter((item) => item.status === "todo").map((item) => item.label);
-    expect(todo).toEqual(["Tank level on Water I/O module", "Line pressure on Water I/O module", "Pump flow on Water I/O module", "Pump running on Water I/O module"]);
-    expect(mapping?.items?.filter((item) => item.status === "done")).toHaveLength(3);
+    expect(todo).toEqual(["Tank level on Water I/O module", "Line pressure on Water I/O module", "Pump flow on Water I/O module"]);
+    // The three meter readings and the pump contact are known; nothing else needs a register.
+    expect(mapping?.items?.filter((item) => item.status === "done")).toHaveLength(4);
+  });
+
+  it("asks for the range on a transmitter's label, not for a register, where the equipment is one Greecon knows", () => {
+    const mapping = step(computeSetup(input()), "mapping");
+    const tank = mapping?.items?.find((item) => item.label.startsWith("Tank level"));
+    expect(tank?.detail).toBe("Needs the range printed on the transmitter's label.");
+    expect(mapping?.nextAction).toContain("range printed on each transmitter's label");
+  });
+
+  it("asks for a register, as before, for a reading on equipment Greecon does not know", () => {
+    const { devices, points } = hotel();
+    const unknown = devices.map((device) => (device.profileKey === "waveshare-ai8-water" ? { ...device, profileKey: undefined } : device));
+    const mapping = step(computeSetup(input({ devices: unknown, points })), "mapping");
+    expect(mapping?.items?.find((item) => item.label.startsWith("Tank level"))?.detail).toBe("No register chosen.");
+  });
+
+  it("counts a range once it has been given, because the reading then has its register and scale", () => {
+    const base = hotel();
+    const points = base.points.map((point) => (point.canonicalName === "water.tank.level.percent" ? { ...point, source: { kind: "modbus" as const, registerType: "input" as const, address: 0, dataType: "uint16" as const, linear: { rawLow: 4000, rawHigh: 20000, engLow: 0, engHigh: 125 } } } : point));
+    const mapping = step(computeSetup(input({ devices: base.devices, points })), "mapping");
+    expect(mapping?.items?.find((item) => item.label.startsWith("Tank level"))?.status).toBe("done");
+    expect(mapping?.detail).toBe("2 readings not tied to a register yet.");
   });
 
   it("lists answering and arriving from the start, as waiting, so the list does not grow while it is worked down", () => {
@@ -210,7 +244,7 @@ describe("a brand-new site made from the hotel template", () => {
     expect(step(view, "answering")?.nextAction).toBe("Finish the addresses and registers above first.");
     expect(step(view, "readings")?.status).toBe("waiting");
     expect(step(view, "readings")?.nextAction).toBe("Finish the addresses and registers above first.");
-    expect(view.steps.map((candidate) => candidate.key)).toEqual(["prices", "box", "addresses", "mapping", "answering", "readings", "direction", "limits", "commissioned"]);
+    expect(view.steps.map((candidate) => candidate.key)).toEqual(["paperwork", "prices", "box", "addresses", "mapping", "answering", "readings", "direction", "limits", "electrician", "commissioned"]);
   });
 
   it("keeps the same steps all the way to done", () => {
@@ -335,11 +369,11 @@ describe("the steps a person confirms", () => {
     const view = computeSetup(working());
     expect(view.readyToCommission).toBe(false);
     expect(step(view, "commissioned")?.status).toBe("waiting");
-    expect(step(view, "commissioned")?.detail).toBe("2 steps above must be done first.");
+    expect(step(view, "commissioned")?.detail).toBe("4 steps above must be done first.");
   });
 
-  it("opens commissioning once direction and limits are confirmed, even with no prices", () => {
-    const view = computeSetup(working({ profile, confirmations: { direction: done(), limits: done() } }));
+  it("opens commissioning once the papers, the direction, the limits and the electrician are confirmed, even with no prices", () => {
+    const view = computeSetup(working({ profile, confirmations: { ...papers(), direction: done(), limits: done() } }));
     expect(step(view, "prices")?.status).toBe("todo");
     expect(view.readyToCommission).toBe(true);
     expect(step(view, "commissioned")?.status).toBe("todo");
@@ -347,7 +381,7 @@ describe("the steps a person confirms", () => {
   });
 
   it("records who confirmed and when", () => {
-    const view = computeSetup(working({ confirmations: { direction: { atUtc: "2026-10-19T09:00:00Z", by: "pm@greecon.earth", note: "Import rose with the kettle on" }, limits: done(), commissioned: done("pm@greecon.earth") } }));
+    const view = computeSetup(working({ confirmations: { ...papers(), direction: { atUtc: "2026-10-19T09:00:00Z", by: "pm@greecon.earth", note: "Import rose with the kettle on" }, limits: done(), commissioned: done("pm@greecon.earth") } }));
     const direction = step(view, "direction");
     expect(direction).toMatchObject({ status: "done", confirmedBy: "pm@greecon.earth", confirmedAtUtc: "2026-10-19T09:00:00Z", note: "Import rose with the kettle on" });
     expect(view.commissioned).toBe(true);
@@ -356,7 +390,7 @@ describe("the steps a person confirms", () => {
   });
 
   it("keeps a commissioned site commissioned even if a device stops answering later", () => {
-    const base = working({ confirmations: { direction: done(), limits: done(), commissioned: done() } });
+    const base = working({ confirmations: { ...papers(), direction: done(), limits: done(), commissioned: done() } });
     const view = computeSetup({ ...base, gateways: [gateway({ lastSeenUtc: secondsAgo(7200) })] });
     expect(view.commissioned).toBe(true);
     expect(step(view, "box")?.status).toBe("attention");
@@ -368,6 +402,33 @@ describe("the steps a person confirms", () => {
     const view = computeSetup({ ...base, points: base.points.map((point) => (point.id === tank.id ? { ...point, thresholdConfig: { critical_low: 20 } } : point)) });
     const detail = step(view, "limits")?.items?.find((item) => item.label === "Tank level")?.detail;
     expect(detail).toBe("Critical below 20 %; Low below 35 % (standard)");
+  });
+});
+
+describe("the papers and the electrician", () => {
+  it("puts the papers first, because nothing goes into a customer's building without them", () => {
+    const view = computeSetup(input());
+    expect(view.steps[0]?.key).toBe("paperwork");
+    expect(view.steps[0]).toMatchObject({ status: "todo", manual: true, canConfirm: true });
+  });
+
+  it("puts the electrician last before commissioning, for every kind of site", () => {
+    for (const devices of [input().devices, [] as Device[]]) {
+      const keys = computeSetup(input({ devices, points: devices.length > 0 ? input().points : [] })).steps.map((candidate) => candidate.key);
+      expect(keys.at(-2)).toBe("electrician");
+      expect(keys.at(-1)).toBe("commissioned");
+    }
+  });
+
+  it("holds commissioning back until both are confirmed, and records who confirmed", () => {
+    const base = working({ confirmations: { direction: done(), limits: done() } });
+    const open = computeSetup(base);
+    expect(open.readyToCommission).toBe(false);
+    expect(step(open, "commissioned")?.detail).toBe("2 steps above must be done first.");
+    const closed = computeSetup({ ...base, confirmations: { ...base.confirmations, paperwork: { atUtc: secondsAgo(30), by: "pm@greecon.earth", note: "Signed by Besa Krasniqi, 19 October" }, electrician: { atUtc: secondsAgo(20), by: "pm@greecon.earth", note: "Arben Hoxha, licence E-1234" } } });
+    expect(closed.readyToCommission).toBe(true);
+    expect(step(closed, "paperwork")).toMatchObject({ status: "done", detail: "Signed and agreed.", note: "Signed by Besa Krasniqi, 19 October" });
+    expect(step(closed, "electrician")).toMatchObject({ status: "done", detail: "Done by a licensed electrician.", note: "Arben Hoxha, licence E-1234" });
   });
 });
 
@@ -392,7 +453,7 @@ describe("prices", () => {
 describe("a site with nothing on it yet", () => {
   it("still says what to do first", () => {
     const view = computeSetup(input({ devices: [], points: [] }));
-    expect(view.steps.map((candidate) => candidate.key)).toEqual(["box", "addresses", "commissioned"]);
+    expect(view.steps.map((candidate) => candidate.key)).toEqual(["paperwork", "box", "addresses", "electrician", "commissioned"]);
     expect(step(view, "box")?.status).toBe("todo");
   });
 });

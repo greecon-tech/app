@@ -3,7 +3,7 @@ import { publicApiUrl } from "../../common/public-url";
 import { RequestWithPrincipal } from "../../common/principal";
 import { RequirePermissions } from "../../common/require-permissions.decorator";
 import { SetupService } from "../../setup/setup.service";
-import { ConfirmSetupStepDto, CreateDeviceFromProfileDto, CreateSiteFromTemplateDto, ProvisionGatewayDto } from "./setup.dto";
+import { ConfirmSetupStepDto, CreateDeviceFromProfileDto, CreateSiteFromTemplateDto, FindEquipmentDto, ProvisionGatewayDto } from "./setup.dto";
 
 type Request = RequestWithPrincipal & { protocol: string; get(name: string): string | undefined };
 
@@ -34,6 +34,32 @@ export class SetupController {
   @RequirePermissions("site:manage")
   reopen(@Param("siteId") siteId: string, @Param("stepKey") stepKey: string, @Req() request: RequestWithPrincipal) {
     return this.setup.reopenStep(siteId, stepKey, request.principal);
+  }
+
+  // "Find equipment": the box looks at the site's network, and the addresses of what it finds are filled in. Asking changes nothing by itself.
+  @Post("sites/:siteId/discovery")
+  @RequirePermissions("device:manage")
+  findEquipment(@Param("siteId") siteId: string, @Body() body: FindEquipmentDto, @Req() request: RequestWithPrincipal) {
+    return this.setup.requestDiscovery(siteId, body, request.principal);
+  }
+
+  @Get("sites/:siteId/discovery")
+  @RequirePermissions("site:read")
+  equipmentFound(@Param("siteId") siteId: string, @Req() request: RequestWithPrincipal) {
+    return this.setup.discoveryView(siteId, request.principal);
+  }
+
+  @Post("sites/:siteId/discovery/apply")
+  @RequirePermissions("device:manage")
+  useAddresses(@Param("siteId") siteId: string, @Req() request: RequestWithPrincipal) {
+    return this.setup.applyDiscovery(siteId, request.principal);
+  }
+
+  // The range printed on each transmitter's label: Greecon works out the register and the scale from it. Checked in words in the service.
+  @Put("devices/:deviceId/ranges")
+  @RequirePermissions("device:manage")
+  ranges(@Param("deviceId") deviceId: string, @Body() body: Record<string, unknown>, @Req() request: RequestWithPrincipal) {
+    return this.setup.setRanges(deviceId, body, request.principal);
   }
 
   // Lists the account's people, which only those who may manage users may see: the same two roles that manage sites.

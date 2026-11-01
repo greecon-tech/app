@@ -43,6 +43,12 @@ export class EdgeController {
     return this.setup.heartbeat(request.principal, body);
   }
 
+  // What the box found when it was asked to look at the site's network. Checked field by field in the service, in words.
+  @Post("discovery")
+  discovery(@Body() body: Record<string, unknown>, @Req() request: RequestWithPrincipal) {
+    return this.setup.recordDiscovery(request.principal, body);
+  }
+
   // The installer a project manager pastes onto a box. Public: it holds nothing secret, only this
   // platform's address, and it asks for a code before it gets anything.
   @Get("install.sh")

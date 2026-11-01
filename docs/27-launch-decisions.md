@@ -33,6 +33,11 @@ The practical pages that follow from these decisions are in [launch/](launch/REA
 | **L18** | **The customer's data is theirs and downloadable** (every reading for 31 days, hourly averages for a year, alerts, the audit log, account setup; and, when they stop, every reading Greecon holds, as a file, on request). Deletion on written request, by the founder, after they have their data, in one documented transaction. **No retention rule is built yet** | Required by Law 124/2024 and the EU Data Act; the answer to lock-in | The database nears its volume, or at about ten sites: decide how long raw readings are kept |
 | **L19** | **Before the first signature: a lawyer reads the order form, the data terms and the privacy page (`/privacy`), the accountant says how to invoice, and an electrician agrees a written price** | Not optional ([22](22-legal-and-compliance-map.md), section 6) | Nothing |
 
+| **L20** | **Approved equipment only, set at the office.** A kit is made of approved models (the Eastron SDM630 and SDM230 meters, the Waveshare 4 to 20 mA input module and the Waveshare digital input module), each with the same number on the cable in every kit (grid 1, solar 2, water module 3, load or pump meter 4, pump contact 5, soil 6, weather 7) and the same speed (9600, 8, none, 1). Greecon sets the numbers, the speeds and the converter **at the office**; the project manager checks the labels and changes nothing. Equipment that is not approved is added, typed from its datasheet, and the platform says so | A project manager with no engineering skills cannot be asked to know a register or a baud rate; the way to remove the question is to remove the choice ([30](30-guided-setup.md)) | A customer whose equipment must stay; a model that fails on a desk; a maker that stops selling one |
+| **L21** | **The box looks at the customer's network only when a person presses "Find equipment", for about a minute, at private addresses only, one port (502), and only reads.** Nothing is scanned on a schedule. The customer's network administrator is told so, in the same words, in writing before the installation day | The aim is that nobody types an address; the price is that Greecon's box looks at a network that is not Greecon's, so it does so only when asked, briefly, narrowly, and in a way that can be explained and defended ([30](30-guided-setup.md), section 4) | A customer's policy that forbids it (then the address is typed, as before); a lawyer's advice on the order form's wording ([22](22-legal-and-compliance-map.md)) |
+| **L22** | **Two checks that no one can skip, and that must say who and when:** the papers (the signed order form and the agreed data terms, step 1, before anything goes into the customer's building) and the electrician (name and licence number, or that no electrical work was needed, before commissioning) | The papers and the licence are somewhere else; the record here is the only one a customer, an insurer or a lawyer can find. A step with no name is a step nobody answers for | A register of licences a program may check; a lawyer who wants the papers held in the platform |
+| **L23** | **Three messages are always the same** (before the day, for the customer's network administrator, after the handover), written once, with the site's name in them, and each also as an Albanian draft to be read by someone who writes Albanian every day before it is sent | Customers speak Albanian and the interface does not ([L12](27-launch-decisions.md)); a message written afresh each time is a message that forgets to say that Greecon only reads | An owner who needs the interface in Albanian; then a native editor and a template in the platform |
+
 ## What was built to make these decisions possible
 
 Research and the first build left a platform that could be shown but not run by a project manager. These were built, in
@@ -44,6 +49,7 @@ this order, and each is tested ([18](18-reality-audit.md) has the evidence):
 - **The customer's data:** downloads of readings, alerts and the account's setup, each recorded in the audit trail.
 - **Greecon's own team:** a login for each person, who is told about silent boxes each morning, and one table of every customer's sites. Only the owner of Greecon's account can add people or reset a customer's password; a person turned off loses their session on their next click.
 - **A public privacy page** (`/privacy`), linked from the sign-in page, the request-access page, the choose-your-own-password page and the footer of every screen: what is kept, why, who sees it, how long, and the person's rights, written to be true of the platform as it is and read by a lawyer before the first signature.
+- **Guided setup ([30](30-guided-setup.md)):** approved equipment with its numbers and settings fixed in code and set at the office; "Find equipment" (the box looks, the platform recognises what answered by what it positively said, matches it to the site's devices, refuses to guess, and fills in the addresses as the person who asked); the range on a transmitter's label as the only thing typed for the 4 to 20 mA module; the papers and the electrician as steps that must say who and when; and an install card per site, worked out from its own equipment, with three messages to the customer.
 - **Smaller things found on the way:** one account per email address (sign-in looks the account up by it); readings that share a second are ordered by name; a meter note that gave one maker's speed for another's.
 
 ## Not verified, and why it matters
@@ -52,7 +58,7 @@ These could not be tested from here. Each is a step in [01](launch/01-founder-go
 
 - **Text messages to Albanian networks.** The adapter is tested against a stand-in for Twilio. Whether a sender name survives on each Albanian network is only learned by sending to a phone on each.
 - **Email deliverability from `alerts@greecon.earth`.** The domain must be verified at Resend and the mail seen to arrive, outside spam.
-- **Real meters.** Every register is from the maker's published tables; a pretend meter and the real wire protocol are tested; no real Eastron meter has been read by this software. The SDM230's total power register and its serial defaults vary by version.
+- **Real meters and modules.** Every register is from the maker's published tables; a pretend kit and the real wire protocol are tested; no real Eastron meter and no real Waveshare module has been read by this software. The SDM230's total power register and its serial defaults vary by version. The first real kit is rehearsed on a desk before any site ([30](30-guided-setup.md), section 8).
 - **Railway.** Nothing here has been deployed to a real Railway project. The steps are the platform's own settings, in the order the software needs them.
 - **Prices.** Every price in [03](launch/03-hardware-and-wiring.md) is a planning estimate from public listings. The fee and the monthly prices are hypotheses.
 - **The order form.** It is a draft.
@@ -85,6 +91,10 @@ that the pages that quote it agree.)
   which the privacy page would have to disclose, and mail programs that hide such images defeat it). The goal is that the
   owner **reads** it on 5 days in 7 and says so at the day-60 meeting; the platform's own record is that it was **sent** on
   those days. Nothing else about L3 changes.
+
+- **A2, 31 October 2026: L8 is amended by L20 to L23.** "One way to install" now includes that the equipment is approved and prepared at the office, that the
+  project manager presses Find equipment instead of typing an address, and that the papers and the electrician are written down before a site can be commissioned.
+  Nothing else about L8 changes.
 
 ## Review
 

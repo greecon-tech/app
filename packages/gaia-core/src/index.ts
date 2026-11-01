@@ -9,6 +9,7 @@ import {
   StateKey,
   TelemetryReading,
   UserRole,
+  gridDirectionSuspect,
   hasPermission
 } from "@greecon/shared";
 import { assessReadingAge, defaultMaxAgeSeconds, describeAge, ReadingAge } from "./freshness";
@@ -295,6 +296,9 @@ export function deriveOperationalStates(sensors: SensorSnapshot, options: Derive
   const consumption = numericSensor(current["energy.consumption.kw"]);
   const batterySoc = numericSensor(current["energy.battery.soc.percent"]);
   const soilMoisture = numericSensor(current["agri.soil.moisture.percent"]);
+  const gridExport = numericSensor(current["energy.grid.export.kw"]);
+  const batteryPower = numericSensor(current["energy.battery.power.kw"]);
+  const airTemperature = numericSensor(current["agri.air.temperature.c"]);
 
   const states: DerivedStateEvaluation[] = [];
 
@@ -387,6 +391,35 @@ export function deriveOperationalStates(sensors: SensorSnapshot, options: Derive
       severity: soilMoisture < irrigateBelowConfigured ? "watch" : "info",
       confidence: 0.85,
       reason: `Soil moisture is ${soilMoisture.toFixed(1)}%; this field's start-at limit is ${irrigateBelowConfigured.toFixed(1)}%.`
+    });
+  }
+
+  // Energy cannot leave a site that nothing is producing: a meter that says so is fitted the wrong way round (the rule is shared with the
+  // energy picture, which says the same in its notes).
+  const suspect = gridDirectionSuspect({ exportKw: gridExport, solarKw: solarPower, batteryKw: batteryPower, hasBattery: batterySoc !== undefined || batteryPower !== undefined });
+  if (suspect !== undefined) {
+    states.push({
+      stateKey: "energy.grid.direction_suspect",
+      stateValue: suspect,
+      severity: suspect ? "warning" : "info",
+      confidence: 0.8,
+      reason: suspect
+        ? `The grid meter reports ${(gridExport ?? 0).toFixed(1)} kW going out while solar makes ${(solarPower ?? 0).toFixed(2)} kW and nothing else measured could be supplying it.`
+        : "The grid meter's direction is plausible."
+    });
+  }
+
+  // Frost belongs to the crop: the same air is harmless to one and ruinous to another, and it depends on how far on it is. So there is
+  // no platform-wide default. Without the grower's own limit the platform says nothing about frost, which is the honest answer.
+  const frostBelowConfigured = current["agri.air.temperature.c"]?.thresholds?.frost_below;
+  if (airTemperature !== undefined && typeof frostBelowConfigured === "number" && Number.isFinite(frostBelowConfigured)) {
+    const frost = airTemperature <= frostBelowConfigured;
+    states.push({
+      stateKey: "agri.frost_risk",
+      stateValue: frost,
+      severity: frost ? "critical" : "info",
+      confidence: 0.85,
+      reason: `The air at the field is ${airTemperature.toFixed(1)} °C; this field's frost limit is ${frostBelowConfigured.toFixed(1)} °C.`
     });
   }
 

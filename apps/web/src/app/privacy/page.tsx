@@ -1,18 +1,40 @@
 import Link from "next/link";
 import { GREECON_COMPANY, GREECON_PUBLIC_EMAILS } from "@greecon/shared";
+import { Shell } from "../../components/Shell";
+import { isStaticExport } from "../../lib/api";
+import { getSession } from "../../lib/session";
 
 export const metadata = { title: "Privacy" };
 
 // Public, like the sign-in page: the people whose details Greecon keeps should be able to read what it keeps without an account.
 // A plain statement of what the platform does today, written to be true of it; a lawyer reads it before the first customer signs
 // (docs/launch/04-sales-kit.md), and it changes when the platform does.
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const session = await getSession();
   const email = GREECON_PUBLIC_EMAILS[0];
+  // Public, and also reachable from inside the app (the bar's foot): a signed-in person keeps their bar and their way back; a visitor gets the bare page.
+  if (isStaticExport() || session) {
+    return (
+      <Shell title="Privacy" subtitle="What Greecon keeps about you, and why.">
+        <div className="privacy privacy--in-app">
+          <PrivacyBody email={email} signedIn />
+        </div>
+      </Shell>
+    );
+  }
   return (
     <main className="privacy">
       <img src={`${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`} alt="Greecon" width="32" height="45" />
       <p className="eyebrow">Privacy</p>
       <h1>What Greecon keeps about you, and why</h1>
+      <PrivacyBody email={email} />
+    </main>
+  );
+}
+
+function PrivacyBody({ email, signedIn = false }: { email: string; signedIn?: boolean }) {
+  return (
+    <>
       <p>
         This is {GREECON_COMPANY}, Durana Tech Park, Albania. For anything about your data, write to <a href={`mailto:${email}`}>{email}</a>.
       </p>
@@ -33,6 +55,13 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Messages sent:</strong> which message went to whom, when, and what the email or text service answered. This is to show you what was sent.
+        </li>
+        <li>
+          <strong>How a site was set up:</strong> who signed the order form for you and when, the name and licence number of the electrician who did the electrical work, and who confirmed each check and when. This is so that there is one record of how your site was set up, and by whom.
+        </li>
+        <li>
+          <strong>What the box finds on your site&apos;s network, for a day:</strong> when someone at your site presses Find equipment, Greecon&apos;s box looks at your site&apos;s own network for about a minute (private addresses only, one port, reading
+          only; it never changes anything) and tells Greecon which meters and modules answered, at which address and number. Greecon does not keep a list of the other machines on your network: only what answered is sent, and it is forgotten after a day. This is so that the addresses of your equipment need not be typed.
         </li>
         <li>
           <strong>Requests for access:</strong> the name, company, email address, telephone number, kind of site and message you give on the Request access page. This is to answer you.
@@ -72,11 +101,15 @@ export default function PrivacyPage() {
       </p>
 
       <p className="muted">
-        This page is a plain summary of what the platform does today. It does not replace the agreement between you and Greecon, and it changes as the platform does. Last changed 19 October 2026.
+        This page is a plain summary of what the platform does today. It does not replace the agreement between you and Greecon, and it changes as the platform does. Last changed 31 October 2026.
       </p>
-      <p>
-        <Link className="standalone-link" href="/login">Back to sign in</Link>
-      </p>
-    </main>
+      {signedIn ? null : (
+        <p>
+          <Link className="standalone-link" href="/login">
+            Back to sign in
+          </Link>
+        </p>
+      )}
+    </>
   );
 }

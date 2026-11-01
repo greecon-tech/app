@@ -1,5 +1,5 @@
 {
-  "about": "What each standard kit contains, taken from docs/launch/03-hardware-and-wiring.md, section 2 (the rows, the quantities and the planning estimates in EUR, excluding VAT and labour). The site packs, the hardware reference and the shopping lists in the guides are all written from this one file, so they cannot disagree with each other. Change a figure here and rebuild. The estimates are planning figures, not quotes.",
+  "about": "What each standard kit contains, taken from docs/launch/03-hardware-and-wiring.md, section 2 (the rows, the quantities and the planning estimates in EUR, excluding VAT and labour). The meters and the two modules are approved models: a kit is made of those and no others. The site packs, the hardware reference and the shopping lists in the guides are all written from this one file, so they cannot disagree with each other. Change a figure here and rebuild. The estimates are planning figures, not quotes.",
   "parts": {
     "box": {
       "row": 1,
@@ -13,28 +13,28 @@
       "item": "Converter",
       "spec": "RS-485 to Ethernet, DIN rail, 9 to 36 V DC, Modbus TCP to RTU gateway mode",
       "estimate": "30 to 60 (basic) or 250 and up (industrial)",
-      "does": "Puts the meters' cable (RS-485) on the network, so that the box can reach every meter and module on it. It must be in Modbus TCP to RTU gateway mode."
+      "does": "Puts the meters' cable (RS-485) on the network, so that the box can reach every meter and module on it. It must be in Modbus TCP to RTU gateway mode, and is set at the office (9600 baud, 8 data bits, no parity, 1 stop bit, TCP port 502)."
     },
     "meter3": {
       "row": 3,
       "item": "Three-phase meter",
       "spec": "Eastron SDM630 Modbus. The MCT version comes with three clamp-on current sensors for up to 100 A a phase; for more than 100 A, the ordinary SDM630 with 5 A current transformers",
       "estimate": "90 to 180 each",
-      "does": "Measures electrical power on three phases. One at the grid connection gives both Grid import and Grid export; one on the inverter's AC output gives Solar production. Fitted by the electrician."
+      "does": "Measures electrical power on three phases. One at the grid connection (unit 1) gives both Grid import and Grid export; one on the inverter's AC output (unit 2) gives Solar production; a third, if wanted, on the site's own consumption (unit 4). Fitted by the electrician."
     },
     "analog": {
       "row": 4,
-      "item": "Analog input module",
-      "spec": "Modbus RTU, at least 4 channels, 4 to 20 mA, 7 to 36 V DC",
-      "estimate": "30 to 60 (basic) or 150 to 250 (industrial)",
-      "does": "Reads the 4 to 20 mA signals of the level, pressure and flow transmitters, and the pump's run contact, and answers the box on the same RS-485 cable as the meters."
+      "item": "4 to 20 mA input module",
+      "spec": "Waveshare Modbus RTU Analog Input 8CH (current version, the one that reads current), 8 inputs, 4 to 20 mA, 7 to 36 V DC",
+      "estimate": "30 to 60",
+      "does": "Reads the 4 to 20 mA signals of the level, pressure and flow transmitters (inputs 1, 2 and 3) and answers the box on the same RS-485 cable as the meters, as unit 3. It is left in its default 0 to 20 mA mode, so that a wire that has come off reads zero and Greecon can say so."
     },
     "pumpin": {
       "row": 5,
-      "item": "Pump run input",
-      "spec": "A Modbus RTU digital input (dry contact) module, or one spare channel of a combined module",
+      "item": "Pump contact module",
+      "spec": "Waveshare Modbus RTU IO 8CH: eight isolated digital inputs, a dry contact is enough. Relay outputs never used",
       "estimate": "30 to 60",
-      "does": "Reports whether the pump is running, from a spare contact of its starter. It only reports; it never switches anything."
+      "does": "Reports whether the pump is running, from a spare contact of its starter (a dry contact on input 1), as unit 5. It only reports; it never switches anything."
     },
     "level": {
       "row": 6,
@@ -62,7 +62,7 @@
       "item": "24 V DIN power supply",
       "spec": "30 to 60 W",
       "estimate": "25 to 50",
-      "does": "Powers the input module, the loop transmitters and the converter from one place."
+      "does": "Powers the two modules, the loop transmitters and the converter from one place."
     },
     "ups": {
       "row": 10,
@@ -76,7 +76,7 @@
       "item": "Enclosure and fittings",
       "spec": "IP54 (IP65 outdoors), DIN rail, terminals, fuses or small breakers for the meters' voltage taps, glands",
       "estimate": "80 to 150",
-      "does": "Holds the converter, the input module, the supply, the fuses, the terminal blocks and, if there is room, the box."
+      "does": "Holds the converter, the modules, the supply, the fuses, the terminal blocks and, if there is room, the box."
     },
     "cable": {
       "row": 12,
@@ -97,21 +97,21 @@
       "item": "Single-phase meter",
       "spec": "Eastron SDM230, on the pump's feed, to measure its electricity",
       "estimate": "35 to 60",
-      "does": "Measures the electricity of one pump or a small load (single-phase), on its own feed."
+      "does": "Measures the electricity of one pump or a small load (single-phase), on its own feed (unit 4)."
     },
     "soil": {
       "row": null,
       "item": "Soil moisture probe",
       "spec": "RS-485 Modbus, with a published register table, one for each zone",
       "estimate": "40 to 120 each",
-      "does": "Measures soil moisture at the probe's depth. Its depth and place are written down, because soil readings mean little without them."
+      "does": "Measures soil moisture at the probe's depth. Its depth and place are written down, because soil readings mean little without them. Unit 6, mapped by hand from the maker's register table."
     },
     "climate": {
       "row": null,
       "item": "Temperature and humidity sensor",
       "spec": "RS-485 Modbus, with a published register table",
       "estimate": "20 to 80",
-      "does": "Measures air temperature and humidity at the field."
+      "does": "Measures air temperature and humidity at the field. Unit 7, mapped by hand from the maker's register table."
     }
   },
   "kits": {
@@ -142,7 +142,8 @@
         },
         {
           "part": "pumpin",
-          "qty": "1"
+          "qty": "1",
+          "note": "leave it out if the starter has no spare running contact"
         },
         {
           "part": "level",
@@ -319,7 +320,8 @@
         },
         {
           "part": "pumpin",
-          "qty": "1"
+          "qty": "1",
+          "note": "leave it out if the starter has no spare running contact"
         },
         {
           "part": "level",
@@ -369,7 +371,8 @@
   },
   "spares": [
     "A converter",
-    "An input module",
+    "A 4 to 20 mA module",
+    "A pump contact module",
     "A meter",
     "A 24 V supply",
     "A transmitter (pressure)",
@@ -382,7 +385,7 @@
   ],
   "tools": [
     "A laptop",
-    "A USB-to-RS-485 adapter (to talk to a meter alone)",
+    "A USB-to-RS-485 adapter (to number a module or a probe, and to talk to one device alone)",
     "A loop calibrator (or a 4 to 20 mA source)",
     "A multimeter",
     "Screwdrivers (slotted and Phillips, small and medium)",

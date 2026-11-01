@@ -236,6 +236,7 @@ describe("tenant isolation across the service", () => {
       ["siteSetupRecord", () => platform.siteSetupRecord(a.site, b)],
       ["recordSiteTemplate", () => platform.recordSiteTemplate(a.site, "hotel", b)],
       ["setSetupConfirmation", () => platform.setSetupConfirmation(a.site, "direction", { atUtc: new Date().toISOString(), by: "b@x.example" }, b)],
+      ["recordSetupEvent", () => platform.recordSetupEvent(a.site, b, { eventType: "setup.discovery_requested", reason: "Intruder" })],
       ["provisionGateway", () => platform.provisionGateway({ siteId: a.site, name: "Intruder" }, b)],
       // These are told which box by its credential, not by a person, so they take the account's id.
       ["completeGatewayEnrolment", () => platform.completeGatewayEnrolment(aGateway, b.tenantId, undefined)],
@@ -347,7 +348,7 @@ describe("tenant isolation across the service", () => {
       "updateUser", "resetUserPassword", "recordEdgeSync", "ingestTelemetry", "updateTenantStatus", "listAllTenants", "createTenant",
       "listStaff", "addStaffMember", "setStaffStatus", "resetStaffPassword", "fleet", "listClientPeople", "resetClientPersonPassword",
       "siteProfile", "updateSiteProfile", "siteValue", "valueSummary",
-      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "provisionGateway", "beginSupportSession",
+      "siteSetupRecord", "recordSiteTemplate", "setSetupConfirmation", "recordSetupEvent", "provisionGateway", "beginSupportSession",
       // The batch route and the shared implementation behind both ingest routes.
       "ingestTelemetryBatch", "applyTelemetry"
     ]);

@@ -57,35 +57,52 @@ export function SensorMap({
   }
 
   const readingByPoint = new Map(readings.map((reading) => [reading.pointId, reading]));
-  const devicesWithPosition = layoutDevices(devices);
   const deviceBuckets = new Map(devices.map((device) => [device.id, worstBucket(device, points, readingByPoint)]));
   const presentStatuses = new Set(deviceBuckets.values());
-  const hasSurveyedPlacement = devices.some((device) => device.positionX !== undefined && device.positionY !== undefined);
+  // Only a device whose real position was recorded at the site is drawn on the map. One whose position was not recorded is listed with its state:
+  // a place made up for it would look as true as the others, and a generated layout put long names on top of each other on a phone.
+  const surveyed = devices.filter((device): device is SensorMapDevice & { positionX: number; positionY: number } => device.positionX !== undefined && device.positionY !== undefined);
+  const listed = devices.filter((device) => device.positionX === undefined || device.positionY === undefined);
 
   return (
     <div className="site-map-block">
-      <div
-        className={`site-map${hasSurveyedPlacement ? " site-map--field" : ""}`}
-        role="img"
-        aria-label={hasSurveyedPlacement ? "Map of where each sensor is physically placed on site" : "Schematic layout of site devices by status"}
-      >
-        {devicesWithPosition.map(({ device, x, y }) => {
-          const bucket = deviceBuckets.get(device.id) ?? "ok";
-          return (
-            <div
-              className="site-map__node"
-              key={device.id}
-              style={{ left: `${x}%`, top: `${y}%` }}
-              title={`${device.name}${device.placementNote ? ` — ${device.placementNote}` : ""} — ${LEGEND_LABEL[bucket]}`}
-            >
-              <span className={`site-map__dot status-${bucket}`} />
-              <span className="site-map__label">{device.name}</span>
-            </div>
-          );
-        })}
-      </div>
+      {surveyed.length > 0 ? (
+        <div className="site-map site-map--field" role="img" aria-label="Map of where each sensor is physically placed on site">
+          {surveyed.map((device) => {
+            const bucket = deviceBuckets.get(device.id) ?? "ok";
+            return (
+              <div
+                className="site-map__node"
+                key={device.id}
+                style={{ left: `${device.positionX}%`, top: `${device.positionY}%` }}
+                title={`${device.name}${device.placementNote ? ` — ${device.placementNote}` : ""} — ${LEGEND_LABEL[bucket]}`}
+              >
+                <span className={`site-map__dot status-${bucket}`} />
+                <span className="site-map__label">{device.name}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {listed.length > 0 ? (
+        <ul className="site-map-flow" aria-label={surveyed.length > 0 ? "Devices with no recorded position, by state" : "Devices of the site, by state"}>
+          {listed.map((device) => {
+            const bucket = deviceBuckets.get(device.id) ?? "ok";
+            return (
+              <li className="site-map-flow__item" key={device.id} title={`${device.name} — ${LEGEND_LABEL[bucket]}`}>
+                <span className={`site-map__dot status-${bucket}`} />
+                <span>{device.name}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
       <p className="muted site-map__caption">
-        {hasSurveyedPlacement ? "Positions reflect where each sensor is physically installed on site." : "Real installed positions are not yet recorded for this site — showing a generated layout."}
+        {listed.length === 0
+          ? "Positions reflect where each sensor is physically installed on site."
+          : surveyed.length > 0
+            ? "Positions reflect where each sensor is physically installed on site. The devices listed under the map have no recorded position yet, so they are listed with their state."
+            : "Real installed positions are not yet recorded for this site, so the devices are listed with their state."}
       </p>
       <div className="site-map__legend">
         {LEGEND_ORDER.filter((bucket) => presentStatuses.has(bucket)).map((bucket) => (
@@ -135,43 +152,6 @@ export function SensorMap({
       </div>
     </div>
   );
-}
-
-/** Prefers each device's real surveyed placement (positionX/positionY, captured at site
- * commissioning) so the map shows where the sensor actually sits in the field. Only devices
- * missing that data fall back to a deterministic generated grid, so an unsurveyed device still
- * appears on the map without pretending to know its real location. */
-function layoutDevices(devices: readonly SensorMapDevice[]): Array<{ device: SensorMapDevice; x: number; y: number }> {
-  const positioned = devices.filter((device) => device.positionX !== undefined && device.positionY !== undefined);
-  const unpositioned = devices.filter((device) => device.positionX === undefined || device.positionY === undefined);
-
-  const placed: Array<{ device: SensorMapDevice; x: number; y: number }> = positioned.map((device) => ({
-    device,
-    x: device.positionX as number,
-    y: device.positionY as number
-  }));
-
-  const count = unpositioned.length;
-  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
-  const rows = Math.max(1, Math.ceil(count / columns));
-
-  let index = 0;
-  for (let row = 0; row < rows; row++) {
-    const itemsInRow = Math.min(columns, count - row * columns);
-    for (let col = 0; col < itemsInRow; col++) {
-      const device = unpositioned[index];
-      if (device) {
-        placed.push({
-          device,
-          x: ((col + 1) / (itemsInRow + 1)) * 100,
-          y: ((row + 1) / (rows + 1)) * 100
-        });
-      }
-      index++;
-    }
-  }
-
-  return placed;
 }
 
 /** A word beside a reading only when it has something to say: nothing is claimed for a reading

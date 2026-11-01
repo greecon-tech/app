@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { EnergyFlowView, GREECON_PUBLIC_EMAILS, hasPermission, SiteValue, TenantHealth } from "@greecon/shared";
+import { EnergyFlowView, SiteValue, TenantHealth } from "@greecon/shared";
 import { AlertItem, AlertList } from "../components/AlertList";
 import { EnergyFlowSwitch } from "../components/EnergyFlowSwitch";
+import { FirstRun } from "../components/FirstRun";
 import { HealthHeadline } from "../components/HealthHeadline";
 import { LiveRefresh } from "../components/LiveRefresh";
 import { Section } from "../components/Section";
@@ -37,7 +38,6 @@ export default async function OverviewPage() {
   const siteNames = new Map(overview.sites.map((site) => [site.id, site.name]));
   const hasSites = overview.sites.length > 0;
   const role = session?.user.role ?? DEMO_ROLE;
-  const canManageSites = hasPermission(role, "site:manage");
 
   return (
     <Shell title="Overview" subtitle="Is everything all right, and what needs you?">
@@ -66,21 +66,7 @@ export default async function OverviewPage() {
         </>
       ) : (
         <Section title="No site yet">
-          <div className="empty-state">
-            <p>
-              <strong>Nothing to show yet.</strong> A site is one place Greecon watches: a hotel, a solar plant, a farm, a tank. Once the first one is set up, this page answers one
-              question: is everything all right?
-            </p>
-            {canManageSites ? (
-              <p>
-                <Link href="/sites/new" className="button-primary">
-                  Add your first site
-                </Link>
-              </p>
-            ) : (
-              <p className="muted">Greecon adds your first site when your equipment is installed. Questions: {GREECON_PUBLIC_EMAILS[0]}.</p>
-            )}
-          </div>
+          <FirstRun role={role} />
         </Section>
       )}
     </Shell>

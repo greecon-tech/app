@@ -43,6 +43,14 @@ the platform, install a box from a code, read a pretend meter, take a change wit
 version that will not start). Unit tests cannot see a missing provider, a route the guard turns away or a validation rule
 that refuses a good request; this can.
 
+A third script, `smoke-sites.mjs` (`node scripts/run-smoke.mjs smoke-sites.mjs`), runs **four kinds of site from zero**: a
+hotel, a solar plant with a battery, a farm and a water station, each with its own customer, the real installer and a real
+box, against pretend equipment that holds what real equipment holds (a 4 to 20 mA tank level, a meter's float, a signed
+air temperature, a battery's signed power, separate registers for each unit on one cable). Then it does to each what goes
+wrong in the field: a meter's clamps the wrong way round, an inverted pump contact, a module that stops answering, a tank
+that empties, a level above its range, a frost, and a customer that Greecon suspends and turns back on. It is not in CI's
+default list because it takes minutes; run it before a release.
+
 ## 4. The browser journeys and the demo build, by hand
 
 - `scripts/e2e/` drives **the whole project manager's job in a real browser** against a real stack (a real API and database,
@@ -50,6 +58,10 @@ that refuses a good request; this can.
   install command, addresses and registers, the checklist following a pretend box, who is told and a test message, an Act now
   email within seconds, acknowledging, the downloads, the handover sheet and its print view, the fleet and Greecon's own
   morning message, and the team.
+- `scripts/e2e/a11y-audit.cjs` measures **the standards of `29-apple-notion-standards.md`** page by page as each kind of person
+  sees it (axe, a keyboard walk, text at 200 %, 320 px wide, the dark, more contrast, less motion, touch sizes, names);
+  `first-day.cjs` runs **a customer's first day on an empty platform**; `field-trouble.cjs` does **what goes wrong at a
+  customer** (a client suspended, a box gone silent) and checks what each person is told.
 - **The five-role static export** that GitHub Pages publishes must build for each role (`apps/web/scripts/build-static.sh`,
   see `12-deployment-github-pages.md`). A route or page that works live can break it (a Server Action, a dynamic route with no
   parameters); CI's Pages workflow is the only automatic check, so run it before merging a change to the web app.

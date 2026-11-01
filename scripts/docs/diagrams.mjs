@@ -55,9 +55,9 @@ function pipeWithSensors(d, { from, to, y, pressureAt, flowAt, markers }) {
   if (flowAt) sensor(flowAt, "flow", "Flow meter (optional)", markers.flow, "4 3");
 }
 
-const terminatorPills = (d, top, h, { both = true } = {}) => {
+const terminatorPills = (d, top, h, { both = true, rightX = 604 } = {}) => {
   d.pill(26, top + h + 6, "120 ohm*", { fill: "#fff", colour: COLOURS.forest, stroke: COLOURS.forest, weight: 600 });
-  if (both) d.pill(604, top + h + 6, "120 ohm*", { fill: "#fff", colour: COLOURS.forest, stroke: COLOURS.forest, weight: 600 });
+  if (both) d.pill(rightX, top + h + 6, "120 ohm*", { fill: "#fff", colour: COLOURS.forest, stroke: COLOURS.forest, weight: 600 });
 };
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -180,16 +180,16 @@ function ctFitting({ kit, label }) {
 
 function loopFigure({ kit, label }) {
   const d = new Svg(W, 330, { kit, title: "A 4 to 20 mA loop: the 24 V supply is in series with the module's input", label });
-  d.box(28, 66, 168, 104, { title: "24 V DC supply", body: "In series with the module's input, as the module's manual draws it. Some modules supply the loop, some do not", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 8.8 });
+  d.box(28, 66, 168, 104, { title: "24 V DC supply", body: "In series with the module's input, as the module's manual draws it. The electrician wires it", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 8.8 });
   d.box(318, 66, 140, 104, { title: "Two-wire transmitter", body: "Level or pressure. It takes its power from the loop", icon: "level", ...siteBox, titleSize: 11.4, bodySize: 9 });
-  d.box(580, 66, 154, 104, { title: "Module input channel", body: "Set the channel to 4 to 20 mA", icon: "converter", ...mistBox, titleSize: 11.4, bodySize: 9 });
+  d.box(580, 66, 154, 104, { title: "Module input channel", body: "Left in its 0 to 20 mA mode: a wire that has come off reads zero", icon: "converter", ...mistBox, titleSize: 11.4, bodySize: 9 });
   d.wire("ma", [[196, 100], [318, 100]], { label: ["24 V + to", "transmitter (+)"], labelSide: "above", at: [257, 100] });
   d.wire("ma", [[458, 100], [580, 100]], { label: ["transmitter (-)", "to channel (+)"], labelSide: "above", at: [519, 100] });
   d.wire("ma", [[657, 170], [657, 214], [112, 214], [112, 170]], { radius: 10, label: "channel (-) back to the 24 V supply (-)", labelSide: "below", at: [384, 214] });
   const y = 260;
   d.rect(28, y - 12, 706, 60, { fill: COLOURS.cream, stroke: COLOURS.rule, sw: 1.2, rx: 10 });
   d.text(44, y + 6, "Check the channel with a loop calibrator", { size: 10.6, weight: 700 });
-  d.paragraph(44, y + 22, "Send 4, 12 and 20 mA. Read the register with greecon-edge modbus-test and write the numbers down: they are the signal at the bottom and at the top.", { maxWidth: 674, size: 9.4, fill: COLOURS.muted });
+  d.paragraph(44, y + 22, "Send 4, 12 and 20 mA. Read the module with greecon-edge modbus-test: it must read 4000, 12000 and 20000 (microamps), and Greecon then shows 0, half the range and the whole range.", { maxWidth: 674, size: 9.4, fill: COLOURS.muted });
   d.bottom = 322;
   return d.finish({ legendKinds: ["ma"], noteLines: [MANUAL] });
 }
@@ -329,17 +329,18 @@ function enclosureDiagram({ kit, label, rail1, rail2, extraNote }) {
   return d.finish({ legendKinds: [], noteLines: [extraNote ?? "", "The order is a recommendation, not a maker's drawing: the electrician may change it to suit the enclosure. Keep mains and low voltage apart, and label every wire at both ends. " + MANUAL].filter(Boolean) });
 }
 
-const sensorRow = (d, { y, bus, top, h, items }) => {
+/** The transmitters (4 to 20 mA, to the water module at `maTarget`) and the pump starter's contact (low voltage, to the pump contact module at `lvTarget`). */
+const sensorRow = (d, { y, bus, top, h, items, maTarget = 668, lvTarget = 704 }) => {
   items.forEach((sensor) => {
     d.box(sensor.x, y, 148, 80, { title: sensor.title, body: sensor.body, icon: sensor.icon, ...siteBox, dash: sensor.dash ?? null, titleSize: 11, bodySize: 8.8, iconPos: "top" });
     if (sensor.who) d.pill(sensor.x + 140, y + 7, sensor.who, { fill: "#fff", colour: COLOURS.forest, stroke: COLOURS.forest, anchor: "end", size: 7.2 });
   });
-  d.wire("ma", [[items[0].x + 74, y], [items[0].x + 74, bus], [668, bus], [668, top + h]], { radius: 8 });
+  d.wire("ma", [[items[0].x + 74, y], [items[0].x + 74, bus], [maTarget, bus], [maTarget, top + h]], { radius: 8 });
   items.filter((item) => item.kind !== "lv").slice(1).forEach((sensor) => d.wire("ma", [[sensor.x + 74, y], [sensor.x + 74, bus]], { radius: 0 }));
   const contact = items.find((item) => item.kind === "lv");
-  if (contact) d.wire("lv", [[contact.x + 74, y], [contact.x + 74, bus + 16], [704, bus + 16], [704, top + h]], { radius: 8 });
+  if (contact) d.wire("lv", [[contact.x + 74, y], [contact.x + 74, bus + 16], [lvTarget, bus + 16], [lvTarget, top + h]], { radius: 8 });
   d.tag(380, bus - 1, "4 to 20 mA: two wires to each transmitter, powered from the 24 V supply", { size: 8.6, side: "above" });
-  if (contact) d.tag(704, top + h + 70, "dry contact", { size: 8.2, side: "above" });
+  if (contact) d.tag(lvTarget, top + h + 70, "dry contact", { size: 8.2, side: "above" });
 };
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -386,7 +387,7 @@ function kitHSystem() {
     ["3", "Tank level", "percent, level transmitter"],
     ["4", "Line pressure", "bar, pressure transmitter"],
     ["5", "Pump flow", "litres a minute, flow meter if fitted"],
-    ["6", "Pump running", "on or off, spare contact"]
+    ["6", "Pump running", "on or off, from the pump contact module"]
   ]);
   return d.finish({ legendKinds: ["mains", "water", "dc"], extraLegend: [swatches.greecon, swatches.site], note: "Greecon only reads. Each numbered point is a meter or a sensor; none can switch anything." });
 }
@@ -396,48 +397,52 @@ function kitHWiring() {
   d.box(24, 56, 150, 66, { title: "Router", body: "The customer's, or the 4G router", icon: "router", ...siteBox, titleSize: 11.6, bodySize: 9.4 });
   d.box(268, 56, 140, 66, { title: "Box", body: "The small computer", icon: "pc", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
   d.wire("eth", [[174, 89], [268, 89]], { label: "Ethernet", labelSide: "above" });
-  d.box(528, 56, 208, 66, { title: "24 V DIN supply", body: "Feeds the module and the loop transmitters", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
+  d.box(528, 56, 208, 66, { title: "24 V DIN supply", body: "Feeds the modules and the loop transmitters", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
 
   const top = 176;
   const h = 96;
-  d.box(24, top, 150, h, { title: "Converter", body: "Modbus TCP to RTU gateway mode. 9600 baud, no parity", icon: "converter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(222, top, 140, h, { title: "Grid meter", body: "Eastron SDM630", chip: "unit 1", icon: "meter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(410, top, 140, h, { title: "Solar meter", body: "Eastron SDM630", chip: "unit 2", icon: "meter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(598, top, 138, h, { title: "Water I/O module", body: "Analog inputs and the pump contact", chip: "unit 3", icon: "level", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(24, top, 112, h, { title: "Converter", body: "Modbus TCP to RTU gateway mode. 9600 baud, no parity", icon: "converter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(174, top, 108, h, { title: "Grid meter", body: "Eastron SDM630", chip: "unit 1", icon: "meter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(320, top, 108, h, { title: "Solar meter", body: "Eastron SDM630", chip: "unit 2", icon: "meter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(466, top, 116, h, { title: "Water I/O module", body: "4 to 20 mA inputs 1, 2 and 3", chip: "unit 3", icon: "level", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(620, top, 116, h, { title: "Pump contact module", body: "Optional. Input 1", chip: "unit 5", icon: "contact", ...mistBox, ...optional, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
   const mid = top + 56;
-  d.wire("eth", [[99, 122], [99, top]], { label: "Ethernet", labelSide: "right", at: [99, 150] });
-  [[174, 222], [362, 410], [550, 598]].forEach(([a, b]) => {
+  d.wire("eth", [[80, 122], [80, top]], { label: "Ethernet", labelSide: "right", at: [80, 150] });
+  [[136, 174], [282, 320], [428, 466], [582, 620]].forEach(([a, b]) => {
     d.wire("rs485", [[a, mid], [b, mid]], { radius: 0 });
     d.port(a, mid, null);
     d.port(b, mid, null);
-    d.tag((a + b) / 2, mid - 4, "A B GND", { size: 8.2, side: "above" });
+    d.tag((a + b) / 2, mid - 4, ["A B", "GND"], { size: 8.2, side: "above" });
   });
-  terminatorPills(d, top, h);
-  d.wire("lv", [[632, 122], [632, top]], { label: "24 V", labelSide: "left", at: [632, 150] });
+  terminatorPills(d, top, h, { rightX: 622 });
+  d.wire("lv", [[550, 122], [550, top]], { label: "24 V", labelSide: "left", at: [550, 150] });
+  d.wire("lv", [[678, 122], [678, top]], { label: "24 V", labelSide: "left", at: [678, 150] });
 
-  d.zone(204, 316, 358, 98, "", { fill: "#fbf3f1", stroke: COLOURS.critical, dash: "6 4" });
-  d.pill(218, 407, "MAINS SIDE: ELECTRICIAN ONLY", { fill: COLOURS.critical, size: 7.6 });
-  d.box(222, 328, 140, 62, { title: "Supply entry", body: "In the main board", icon: "board", ...siteBox, titleSize: 11, bodySize: 9 });
-  d.box(410, 328, 140, 62, { title: "Inverter AC output", body: "In the board", icon: "board", ...siteBox, titleSize: 11, bodySize: 9 });
-  d.wire("mains", [[292, 328], [292, top + h]], { radius: 0 });
-  d.wire("mains", [[480, 328], [480, top + h]], { radius: 0 });
-  d.tag(292, 304, ["fused voltage taps and", "3 clamps, arrows to the site"], { size: 8.2, side: "above" });
-  d.tag(480, 304, ["fused voltage taps and", "3 clamps, arrows to the site"], { size: 8.2, side: "above" });
+  d.zone(150, 316, 304, 98, "", { fill: "#fbf3f1", stroke: COLOURS.critical, dash: "6 4" });
+  d.pill(164, 407, "MAINS SIDE: ELECTRICIAN ONLY", { fill: COLOURS.critical, size: 7.6 });
+  d.box(163, 328, 130, 62, { title: "Supply entry", body: "In the main board", icon: "board", ...siteBox, titleSize: 11, bodySize: 9 });
+  d.box(309, 328, 130, 62, { title: "Inverter AC output", body: "In the board", icon: "board", ...siteBox, titleSize: 11, bodySize: 9 });
+  d.wire("mains", [[228, 328], [228, top + h]], { radius: 0 });
+  d.wire("mains", [[374, 328], [374, top + h]], { radius: 0 });
+  d.tag(228, 304, ["fused voltage taps and", "3 clamps, arrows to the site"], { size: 8.2, side: "above" });
+  d.tag(374, 304, ["fused voltage taps and", "3 clamps, arrows to the site"], { size: 8.2, side: "above" });
 
   sensorRow(d, {
     y: 466,
     bus: 442,
     top,
     h,
+    maTarget: 524,
+    lvTarget: 678,
     items: [
-      { x: 24, title: "Level transmitter", body: "At the bottom of the tank", icon: "level", who: "Electrician or plumber" },
-      { x: 212, title: "Pressure transmitter", body: "On the pipe through an isolating valve", icon: "gauge", who: "Plumber" },
-      { x: 400, title: "Flow meter", body: "Optional. In the pipe", icon: "flow", dash: "5 3" },
+      { x: 24, title: "Level transmitter", body: "At the bottom of the tank. Input 1", icon: "level", who: "Electrician or plumber" },
+      { x: 212, title: "Pressure transmitter", body: "On the pipe through an isolating valve. Input 2", icon: "gauge", who: "Plumber" },
+      { x: 400, title: "Flow meter", body: "Optional. In the pipe. Input 3", icon: "flow", dash: "5 3" },
       { x: 588, title: "Pump starter", body: "A spare contact. It only reports", icon: "contact", kind: "lv", who: "Electrician" }
     ]
   });
   d.bottom = 560;
-  return d.finish({ legendKinds: ["eth", "rs485", "ma", "lv", "mains"], noteLines: ["*Only for runs longer than about 50 m, or if readings are unreliable at 9600 baud. " + MANUAL] });
+  return d.finish({ legendKinds: ["eth", "rs485", "ma", "lv", "mains"], noteLines: ["*Only for runs longer than about 50 m, or if readings are unreliable at 9600 baud. The electrician wires the 4 to 20 mA loops and the contact. " + MANUAL] });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -514,7 +519,7 @@ function kitSWiring() {
   [292, 480, 668].forEach((x) => d.tag(x, 304, ["fused voltage taps and", "3 clamps, arrows to the site"], { size: 8.2, side: "above" }));
   d.paragraph(222, 436, "On the solar meter the clamp arrows point away from the inverter, towards the board (towards the site).", { maxWidth: 520, size: 8.8, weight: 600 });
 
-  d.box(24, 462, 420, 76, { title: "Battery system", body: "Optional. It speaks Modbus itself, on the site's network (its own address) or on its own RS-485 port (then it joins the cable with its own unit number).", icon: "battery", ...mistBox, ...optional, titleSize: 11.6, bodySize: 9 });
+  d.box(24, 462, 420, 76, { title: "Battery system", body: "Optional. It speaks Modbus itself, on the site's network (its own address) or on its own RS-485 port (then it joins the cable with a unit number of its own, by hand, for example 8).", icon: "battery", ...mistBox, ...optional, titleSize: 11.6, bodySize: 9 });
   d.paragraph(466, 484, "It needs the maker's register table. A battery without one is left out: do not guess registers.", { maxWidth: 270, size: 9.6, fill: COLOURS.muted });
   d.bottom = 550;
   return d.finish({ legendKinds: ["eth", "rs485", "lv", "mains"], noteLines: ["*A 120 ohm resistor across A and B at each end of the cable (the converter and the last device), only for runs longer than about 50 m or if readings are unreliable at 9600 baud. " + MANUAL] });
@@ -564,7 +569,7 @@ function kitFSystem() {
     ["4", "Tank level", "percent, level transmitter"],
     ["5", "Line pressure", "bar, pressure transmitter"],
     ["6", "Pump flow", "litres a minute, if fitted"],
-    ["7", "Pump running", "on or off, if there is a pump to watch"]
+    ["7", "Pump running", "on or off, from the pump contact module"]
   ]);
   return d.finish({ legendKinds: ["water"], extraLegend: [swatches.greecon, swatches.site, swatches.optional], note: "Greecon gives no irrigation advice until the grower's own start-irrigating-below value is entered. Greecon only reads." });
 }
@@ -574,40 +579,44 @@ function kitFWiring() {
   d.box(24, 56, 150, 66, { title: "4G router", body: "With a data SIM: the likelier case in a field", icon: "router", ...mistBox, titleSize: 11.6, bodySize: 9 });
   d.box(268, 56, 140, 66, { title: "Box", body: "The small computer", icon: "pc", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
   d.wire("eth", [[174, 89], [268, 89]], { label: "Ethernet", labelSide: "above" });
-  d.box(528, 56, 208, 66, { title: "24 V DIN supply", body: "Feeds the module and the loop transmitters", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
+  d.box(528, 56, 208, 66, { title: "24 V DIN supply", body: "Feeds the modules and the loop transmitters", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
 
   const top = 176;
   const h = 96;
-  d.box(24, top, 150, h, { title: "Converter", body: "Modbus TCP to RTU gateway mode. 9600 baud, no parity", icon: "converter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(222, top, 140, h, { title: "Soil probe", body: "In the field. Its own unit number", icon: "soil", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(410, top, 140, h, { title: "Weather sensor", body: "In the field. Its own unit number", icon: "thermo", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(598, top, 138, h, { title: "Water I/O module", body: "Analog inputs (and the pump contact)", chip: "unit 3", icon: "level", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(24, top, 112, h, { title: "Converter", body: "Modbus TCP to RTU gateway mode. 9600 baud, no parity", icon: "converter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(174, top, 108, h, { title: "Soil probe", body: "In the field. Entered by hand", chip: "unit 6", icon: "soil", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(320, top, 108, h, { title: "Weather sensor", body: "In the field. Entered by hand", chip: "unit 7", icon: "thermo", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(466, top, 116, h, { title: "Water I/O module", body: "4 to 20 mA inputs 1, 2 and 3", chip: "unit 3", icon: "level", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(620, top, 116, h, { title: "Pump contact module", body: "Optional. Input 1", chip: "unit 5", icon: "contact", ...mistBox, ...optional, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
   const mid = top + 56;
-  d.wire("eth", [[99, 122], [99, top]], { label: "Ethernet", labelSide: "right", at: [99, 150] });
-  [[174, 222], [362, 410], [550, 598]].forEach(([a, b]) => {
+  d.wire("eth", [[80, 122], [80, top]], { label: "Ethernet", labelSide: "right", at: [80, 150] });
+  [[136, 174], [282, 320], [428, 466], [582, 620]].forEach(([a, b]) => {
     d.wire("rs485", [[a, mid], [b, mid]], { radius: 0 });
     d.port(a, mid, null);
     d.port(b, mid, null);
-    d.tag((a + b) / 2, mid - 4, "A B GND", { size: 8.2, side: "above" });
+    d.tag((a + b) / 2, mid - 4, ["A B", "GND"], { size: 8.2, side: "above" });
   });
-  terminatorPills(d, top, h);
-  d.wire("lv", [[632, 122], [632, top]], { label: "24 V", labelSide: "left", at: [632, 150] });
-  d.paragraph(222, top + h + 24, "Set each probe's unit number before it is buried or mounted. Write down its depth and where it is.", { maxWidth: 330, size: 9.2, fill: COLOURS.muted });
+  terminatorPills(d, top, h, { rightX: 622 });
+  d.wire("lv", [[550, 122], [550, top]], { label: "24 V", labelSide: "left", at: [550, 150] });
+  d.wire("lv", [[678, 122], [678, top]], { label: "24 V", labelSide: "left", at: [678, 150] });
+  d.paragraph(200, top + h + 24, "Set each probe's unit number before it is buried or mounted. Write down its depth and where it is.", { maxWidth: 300, size: 9.2, fill: COLOURS.muted });
 
   sensorRow(d, {
     y: 366,
     bus: 340,
     top,
     h,
+    maTarget: 524,
+    lvTarget: 678,
     items: [
-      { x: 24, title: "Level transmitter", body: "At the bottom of the tank", icon: "level", who: "Electrician or plumber" },
-      { x: 212, title: "Pressure transmitter", body: "On the pipe through an isolating valve", icon: "gauge", who: "Plumber" },
-      { x: 400, title: "Flow meter", body: "Optional. In the pipe", icon: "flow", dash: "5 3" },
+      { x: 24, title: "Level transmitter", body: "At the bottom of the tank. Input 1", icon: "level", who: "Electrician or plumber" },
+      { x: 212, title: "Pressure transmitter", body: "On the pipe through an isolating valve. Input 2", icon: "gauge", who: "Plumber" },
+      { x: 400, title: "Flow meter", body: "Optional. In the pipe. Input 3", icon: "flow", dash: "5 3" },
       { x: 588, title: "Pump starter", body: "Optional. A spare contact. It only reports", icon: "contact", kind: "lv", who: "Electrician", dash: "5 3" }
     ]
   });
   d.bottom = 462;
-  return d.finish({ legendKinds: ["eth", "rs485", "ma", "lv"], noteLines: ["*Only for runs longer than about 50 m, or if readings are unreliable at 9600 baud. The soil probe and the weather sensor need a published register table. " + MANUAL] });
+  return d.finish({ legendKinds: ["eth", "rs485", "ma", "lv"], noteLines: ["*Only for runs longer than about 50 m, or if readings are unreliable at 9600 baud. The soil probe and the weather sensor need a published register table, and their addresses are entered by hand. The electrician wires the 4 to 20 mA loops and the contact. " + MANUAL] });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -639,7 +648,7 @@ function kitWSystem() {
     ["1", "Tank level", "percent, level transmitter"],
     ["2", "Line pressure", "bar, pressure transmitter"],
     ["3", "Pump flow", "litres a minute, flow meter if fitted"],
-    ["4", "Pump running", "on or off, spare contact"],
+    ["4", "Pump running", "on or off, from the pump contact module"],
     ["5", "Energy consumption", "kW, the pump's own electricity"]
   ]);
   return d.finish({ legendKinds: ["mains", "water"], extraLegend: [swatches.greecon, swatches.site, swatches.optional], note: "The simplest site, and a good first rehearsal. Greecon only reads." });
@@ -650,23 +659,26 @@ function kitWWiring() {
   d.box(24, 56, 150, 66, { title: "Router", body: "The customer's, or the 4G router", icon: "router", ...siteBox, titleSize: 11.6, bodySize: 9.4 });
   d.box(268, 56, 140, 66, { title: "Box", body: "The small computer", icon: "pc", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
   d.wire("eth", [[174, 89], [268, 89]], { label: "Ethernet", labelSide: "above" });
-  d.box(528, 56, 208, 66, { title: "24 V DIN supply", body: "Feeds the module and the loop transmitters", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
+  d.box(528, 56, 208, 66, { title: "24 V DIN supply", body: "Feeds the modules and the loop transmitters", icon: "psu", ...mistBox, titleSize: 11.6, bodySize: 9.4 });
 
   const top = 176;
   const h = 96;
   d.box(24, top, 150, h, { title: "Converter", body: "Modbus TCP to RTU gateway mode. 9600 baud, no parity", icon: "converter", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
   d.box(222, top, 140, h, { title: "Pump meter", body: "Optional. Eastron SDM230", chip: "unit 4", icon: "meter", ...mistBox, ...optional, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
-  d.box(598, top, 138, h, { title: "Water I/O module", body: "Analog inputs and the pump contact", chip: "unit 3", icon: "level", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(410, top, 140, h, { title: "Water I/O module", body: "4 to 20 mA inputs 1, 2 and 3", chip: "unit 3", icon: "level", ...mistBox, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
+  d.box(598, top, 138, h, { title: "Pump contact module", body: "Optional. Input 1", chip: "unit 5", icon: "contact", ...mistBox, ...optional, titleSize: 11.6, bodySize: 9.2, iconPos: "top" });
   const mid = top + 56;
   d.wire("eth", [[99, 122], [99, top]], { label: "Ethernet", labelSide: "right", at: [99, 150] });
-  d.wire("rs485", [[174, mid], [222, mid]], { radius: 0 });
-  d.wire("rs485", [[362, mid], [598, mid]], { radius: 0 });
-  [174, 222, 362, 598].forEach((x) => d.port(x, mid, null));
-  d.tag(198, mid - 4, "A B GND", { size: 8.2, side: "above" });
-  d.tag(480, mid - 4, "A B GND", { size: 8.2, side: "above" });
+  [[174, 222], [362, 410], [550, 598]].forEach(([a, b]) => {
+    d.wire("rs485", [[a, mid], [b, mid]], { radius: 0 });
+    d.port(a, mid, null);
+    d.port(b, mid, null);
+    d.tag((a + b) / 2, mid - 4, "A B GND", { size: 8.2, side: "above" });
+  });
   terminatorPills(d, top, h);
-  d.wire("lv", [[632, 122], [632, top]], { label: "24 V", labelSide: "left", at: [632, 150] });
-  d.paragraph(24, top + h + 40, "If the pump meter is not fitted, the converter goes straight to the module.", { maxWidth: 172, size: 9, fill: COLOURS.muted });
+  d.wire("lv", [[540, 122], [540, top]], { label: "24 V", labelSide: "left", at: [540, 150] });
+  d.wire("lv", [[667, 122], [667, top]], { label: "24 V", labelSide: "left", at: [667, 150] });
+  d.paragraph(24, top + h + 40, "If the pump meter is not fitted, the converter goes straight to the water module.", { maxWidth: 172, size: 9, fill: COLOURS.muted });
 
   d.zone(204, 316, 170, 98, "", { fill: "#fbf3f1", stroke: COLOURS.critical, dash: "6 4" });
   d.pill(212, 407, "MAINS SIDE: ELECTRICIAN ONLY", { fill: COLOURS.critical, size: 7.6 });
@@ -679,15 +691,17 @@ function kitWWiring() {
     bus: 442,
     top,
     h,
+    maTarget: 500,
+    lvTarget: 667,
     items: [
-      { x: 24, title: "Level transmitter", body: "At the bottom of the tank", icon: "level", who: "Electrician or plumber" },
-      { x: 212, title: "Pressure transmitter", body: "On the pipe through an isolating valve", icon: "gauge", who: "Plumber" },
-      { x: 400, title: "Flow meter", body: "Optional. In the pipe", icon: "flow", dash: "5 3" },
-      { x: 588, title: "Pump starter", body: "A spare contact. It only reports", icon: "contact", kind: "lv", who: "Electrician" }
+      { x: 24, title: "Level transmitter", body: "At the bottom of the tank. Input 1", icon: "level", who: "Electrician or plumber" },
+      { x: 212, title: "Pressure transmitter", body: "On the pipe through an isolating valve. Input 2", icon: "gauge", who: "Plumber" },
+      { x: 400, title: "Flow meter", body: "Optional. In the pipe. Input 3", icon: "flow", dash: "5 3" },
+      { x: 588, title: "Pump starter", body: "Optional. A spare contact. It only reports", icon: "contact", kind: "lv", who: "Electrician", dash: "5 3" }
     ]
   });
   d.bottom = 560;
-  return d.finish({ legendKinds: ["eth", "rs485", "ma", "lv", "mains"], noteLines: ["*Only for runs longer than about 50 m, or if readings are unreliable at 9600 baud. The pump meter is connected as its maker's manual shows. " + MANUAL] });
+  return d.finish({ legendKinds: ["eth", "rs485", "ma", "lv", "mains"], noteLines: ["*Only for runs longer than about 50 m, or if readings are unreliable at 9600 baud. The pump meter is connected as its maker's manual shows. The electrician wires the 4 to 20 mA loops and the contact. " + MANUAL] });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -704,8 +718,8 @@ register("order-of-things", { kit: "ALL KITS", label: "1-2", caption: "The order
 register("ref-rs485", { kit: "ALL KITS", label: "4-1", caption: "The RS-485 data cable: one cable and a daisy chain, never branches.", draw: () => rs485Rules({ kit: "ALL KITS", label: "DATA CABLE" }) });
 register("ref-ct", { kit: "ALL KITS", label: "4-2", caption: "Fitting a three-phase meter: fused voltage taps and three current clamps, arrows towards the site. The electrician's work.", draw: () => ctFitting({ kit: "ALL KITS", label: "METERS" }) });
 register("ref-loop", { kit: "ALL KITS", label: "4-3", caption: "A 4 to 20 mA loop: the 24 V supply in series with the module's input.", draw: () => loopFigure({ kit: "ALL KITS", label: "SIGNALS" }) });
-register("ref-power", { kit: "ALL KITS", label: "4-4", caption: "Power: everything from one clean place, on a UPS.", draw: () => powerFigure({ kit: "ALL KITS", label: "POWER", feeds: "Feeds the input module and the loop transmitters" }) });
-register("ref-network", { kit: "ALL KITS", label: "4-5", caption: "The network: the customer's router (best), or a 4G router with a data SIM.", draw: () => networkDiagram({ kit: "ALL KITS", label: "NETWORK", badgeA: "Best", badgeB: null, behind: "the meters and the input modules, each with its own unit number." }) });
+register("ref-power", { kit: "ALL KITS", label: "4-4", caption: "Power: everything from one clean place, on a UPS.", draw: () => powerFigure({ kit: "ALL KITS", label: "POWER", feeds: "Feeds the modules and the loop transmitters" }) });
+register("ref-network", { kit: "ALL KITS", label: "4-5", caption: "The network: the customer's router (best), or a 4G router with a data SIM.", draw: () => networkDiagram({ kit: "ALL KITS", label: "NETWORK", badgeA: "Best", badgeB: null, behind: "the meters and the two modules, each with its own unit number." }) });
 
 const rail = (mains, low, rail2Low, extraNote) => ({ rail1: { mains, low }, rail2: { mains: [], low: rail2Low }, extraNote });
 const fuses = { title: "Fuses or small breakers", sub: "voltage taps", w: 80, fill: "#fff" };
@@ -716,17 +730,17 @@ const theBox = { title: "Box", sub: "if there is room, else on a shelf beside it
 
 // kit H
 register("kit-h-system", { kit: "KIT H", label: "H-1", caption: "Kit H, hotel or guesthouse. System: what is measured where. The numbers mark what Greecon reads; they are listed under the drawing.", draw: kitHSystem });
-register("kit-h-wiring", { kit: "KIT H", label: "H-2", caption: "Kit H. Wiring: one RS-485 cable from the converter through the grid meter and the solar meter to the water module, with the 4 to 20 mA loops and the pump contact into the module. Mains work is inside the dashed box.", draw: kitHWiring });
-register("kit-h-network", { kit: "KIT H", label: "H-3", caption: "Kit H. Network: the box and the converter on the customer's router (best) or on a 4G router.", draw: () => networkDiagram({ kit: "KIT H", label: "NETWORK", badgeA: "Best", badgeB: null, behind: "the grid meter (unit 1), the solar meter (unit 2) and the water module (unit 3)." }) });
+register("kit-h-wiring", { kit: "KIT H", label: "H-2", caption: "Kit H. Wiring: one RS-485 cable from the converter through the grid meter, the solar meter and the water module to the pump contact module, with the 4 to 20 mA loops into the water module and the pump starter's contact into the pump contact module. Mains work is inside the dashed box.", draw: kitHWiring });
+register("kit-h-network", { kit: "KIT H", label: "H-3", caption: "Kit H. Network: the box and the converter on the customer's router (best) or on a 4G router.", draw: () => networkDiagram({ kit: "KIT H", label: "NETWORK", badgeA: "Best", badgeB: null, behind: "the grid meter (unit 1), the solar meter (unit 2), the water module (unit 3) and, if fitted, the pump contact module (unit 5)." }) });
 register("kit-h-enclosure", {
   kit: "KIT H",
   label: "H-4",
   caption: "Kit H. The enclosure: the recommended order of the parts on the DIN rail, mains side on the left.",
-  draw: () => enclosureDiagram({ kit: "KIT H", label: "ENCLOSURE", ...rail([fuses, psu], [{ title: "Converter", sub: "9600 baud, gateway mode", w: 122 }, { title: "Analog input module", sub: "unit 3", w: 122 }, { title: "Pump run input", sub: "only if a separate module", w: 122, dash: "5 3" }], [terminals, theBox], "The meters are not in this enclosure: they sit in the distribution board at the point they measure.") })
+  draw: () => enclosureDiagram({ kit: "KIT H", label: "ENCLOSURE", ...rail([fuses, psu], [{ title: "Converter", sub: "9600 baud, gateway mode", w: 122 }, { title: "4 to 20 mA module", sub: "unit 3", w: 122 }, { title: "Pump contact module", sub: "unit 5, if fitted", w: 122, dash: "5 3" }], [terminals, theBox], "The meters are not in this enclosure: they sit in the distribution board at the point they measure.") })
 });
 register("kit-h-ct", { kit: "KIT H", label: "H-5", caption: "Kit H. Fitting the grid meter and the solar meter: fused voltage taps and three clamps each, arrows towards the site.", draw: () => ctFitting({ kit: "KIT H", label: "METERS" }) });
 register("kit-h-loop", { kit: "KIT H", label: "H-6", caption: "Kit H. One 4 to 20 mA loop; the level, the pressure and the flow transmitter are each wired this way.", draw: () => loopFigure({ kit: "KIT H", label: "SIGNALS" }) });
-register("kit-h-power", { kit: "KIT H", label: "H-7", caption: "Kit H. Power: the UPS feeds the box, the converter and the 24 V supply.", draw: () => powerFigure({ kit: "KIT H", label: "POWER", feeds: "Feeds the water module and the loop transmitters" }) });
+register("kit-h-power", { kit: "KIT H", label: "H-7", caption: "Kit H. Power: the UPS feeds the box, the converter and the 24 V supply.", draw: () => powerFigure({ kit: "KIT H", label: "POWER", feeds: "Feeds the modules and the loop transmitters" }) });
 
 // kit S
 register("kit-s-system", { kit: "KIT S", label: "S-1", caption: "Kit S, solar plant with grid connection. System: what is measured where. The dashed boxes are optional.", draw: kitSSystem });
@@ -743,29 +757,29 @@ register("kit-s-power", { kit: "KIT S", label: "S-6", caption: "Kit S. Power: th
 
 // kit F
 register("kit-f-system", { kit: "KIT F", label: "F-1", caption: "Kit F, farm or greenhouse with irrigation. System: what is measured where. The dashed parts are optional.", draw: kitFSystem });
-register("kit-f-wiring", { kit: "KIT F", label: "F-2", caption: "Kit F. Wiring: one RS-485 cable from the converter through the soil probe and the weather sensor to the water module, with the 4 to 20 mA loops into the module.", draw: kitFWiring });
-register("kit-f-network", { kit: "KIT F", label: "F-3", caption: "Kit F. Network: a 4G router with a data SIM is the likelier case in a field; the customer's router is better where there is one.", draw: () => networkDiagram({ kit: "KIT F", label: "NETWORK", badgeA: null, badgeB: "Likelier in a field", behind: "the soil probe(s) and the weather sensor, each with its own unit number, and the water module (unit 3)." }) });
+register("kit-f-wiring", { kit: "KIT F", label: "F-2", caption: "Kit F. Wiring: one RS-485 cable from the converter through the soil probe, the weather sensor and the water module to the pump contact module, with the 4 to 20 mA loops into the water module and the pump starter's contact into the pump contact module.", draw: kitFWiring });
+register("kit-f-network", { kit: "KIT F", label: "F-3", caption: "Kit F. Network: a 4G router with a data SIM is the likelier case in a field; the customer's router is better where there is one.", draw: () => networkDiagram({ kit: "KIT F", label: "NETWORK", badgeA: null, badgeB: "Likelier in a field", behind: "the soil probe(s) (unit 6) and the weather sensor (unit 7), the water module (unit 3) and, if there is a pump to watch, the pump contact module (unit 5)." }) });
 register("kit-f-enclosure", {
   kit: "KIT F",
   label: "F-4",
   caption: "Kit F. The enclosure: the recommended order of the parts on the DIN rail, mains side on the left.",
-  draw: () => enclosureDiagram({ kit: "KIT F", label: "ENCLOSURE", ...rail([fusesAsNeeded, psu], [{ title: "Converter", sub: "9600 baud, gateway mode", w: 110 }, { title: "Analog input module", sub: "unit 3", w: 110 }, { title: "4G router", sub: "DIN rail, with SIM", w: 110 }, { title: "Pump run input", sub: "if there is a pump", w: 110, dash: "5 3" }], [terminals, theBox], "The probes and the weather sensor are in the field, on the data cable. Check the signal where the router sits.") })
+  draw: () => enclosureDiagram({ kit: "KIT F", label: "ENCLOSURE", ...rail([fusesAsNeeded, psu], [{ title: "Converter", sub: "9600 baud, gateway mode", w: 110 }, { title: "4 to 20 mA module", sub: "unit 3", w: 110 }, { title: "4G router", sub: "DIN rail, with SIM", w: 110 }, { title: "Pump contact", sub: "module, unit 5, if a pump", w: 110, dash: "5 3" }], [terminals, theBox], "The probes and the weather sensor are in the field, on the data cable. Check the signal where the router sits.") })
 });
 register("kit-f-loop", { kit: "KIT F", label: "F-5", caption: "Kit F. One 4 to 20 mA loop; the level, the pressure and the flow transmitter are each wired this way.", draw: () => loopFigure({ kit: "KIT F", label: "SIGNALS" }) });
-register("kit-f-power", { kit: "KIT F", label: "F-6", caption: "Kit F. Power. The hardware guide's standard list for this kit has no UPS: decide at the survey and write it down.", draw: () => powerFigure({ kit: "KIT F", label: "POWER", feeds: "Feeds the water module and the loop transmitters", feedsNote: "The hardware guide's standard list for Kit F has no UPS row. If the site has one, it sits between the mains and the supplies as drawn." }) });
+register("kit-f-power", { kit: "KIT F", label: "F-6", caption: "Kit F. Power. The hardware guide's standard list for this kit has no UPS: decide at the survey and write it down.", draw: () => powerFigure({ kit: "KIT F", label: "POWER", feeds: "Feeds the modules and the loop transmitters", feedsNote: "The hardware guide's standard list for Kit F has no UPS row. If the site has one, it sits between the mains and the supplies as drawn." }) });
 
 // kit W
 register("kit-w-system", { kit: "KIT W", label: "W-1", caption: "Kit W, water tank and pump station. System: what is measured where. The dashed parts are optional.", draw: kitWSystem });
-register("kit-w-wiring", { kit: "KIT W", label: "W-2", caption: "Kit W. Wiring: one RS-485 cable from the converter to the water module (and to the pump meter, if fitted), with the 4 to 20 mA loops and the pump contact into the module.", draw: kitWWiring });
-register("kit-w-network", { kit: "KIT W", label: "W-3", caption: "Kit W. Network: the box and the converter on the customer's router (best) or on a 4G router.", draw: () => networkDiagram({ kit: "KIT W", label: "NETWORK", badgeA: "Best", badgeB: null, behind: "the water module (unit 3) and, if fitted, the pump meter (unit 4)." }) });
+register("kit-w-wiring", { kit: "KIT W", label: "W-2", caption: "Kit W. Wiring: one RS-485 cable from the converter through the pump meter (if fitted) and the water module to the pump contact module, with the 4 to 20 mA loops into the water module and the pump starter's contact into the pump contact module.", draw: kitWWiring });
+register("kit-w-network", { kit: "KIT W", label: "W-3", caption: "Kit W. Network: the box and the converter on the customer's router (best) or on a 4G router.", draw: () => networkDiagram({ kit: "KIT W", label: "NETWORK", badgeA: "Best", badgeB: null, behind: "the water module (unit 3), the pump contact module (unit 5) and, if fitted, the pump meter (unit 4)." }) });
 register("kit-w-enclosure", {
   kit: "KIT W",
   label: "W-4",
   caption: "Kit W. The enclosure: the recommended order of the parts on the DIN rail, mains side on the left.",
-  draw: () => enclosureDiagram({ kit: "KIT W", label: "ENCLOSURE", ...rail([fusesAsNeeded, psu], [{ title: "Converter", sub: "9600 baud, gateway mode", w: 122 }, { title: "Analog input module", sub: "unit 3", w: 122 }, { title: "Pump run input", sub: "only if a separate module", w: 122, dash: "5 3" }], [terminals, theBox], "The optional pump meter sits in the board that feeds the pump, not in this enclosure.") })
+  draw: () => enclosureDiagram({ kit: "KIT W", label: "ENCLOSURE", ...rail([fusesAsNeeded, psu], [{ title: "Converter", sub: "9600 baud, gateway mode", w: 122 }, { title: "4 to 20 mA module", sub: "unit 3", w: 122 }, { title: "Pump contact module", sub: "unit 5, if fitted", w: 122, dash: "5 3" }], [terminals, theBox], "The optional pump meter sits in the board that feeds the pump, not in this enclosure.") })
 });
 register("kit-w-loop", { kit: "KIT W", label: "W-5", caption: "Kit W. One 4 to 20 mA loop; the level, the pressure and the flow transmitter are each wired this way.", draw: () => loopFigure({ kit: "KIT W", label: "SIGNALS" }) });
-register("kit-w-power", { kit: "KIT W", label: "W-6", caption: "Kit W. Power: the UPS feeds the box, the converter and the 24 V supply.", draw: () => powerFigure({ kit: "KIT W", label: "POWER", feeds: "Feeds the water module and the loop transmitters" }) });
+register("kit-w-power", { kit: "KIT W", label: "W-6", caption: "Kit W. Power: the UPS feeds the box, the converter and the 24 V supply.", draw: () => powerFigure({ kit: "KIT W", label: "POWER", feeds: "Feeds the modules and the loop transmitters" }) });
 
 export function buildDiagrams() {
   const out = {};

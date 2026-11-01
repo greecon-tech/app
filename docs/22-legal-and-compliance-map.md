@@ -55,6 +55,15 @@ the product to be able to do.
 - GDPR applies if Greecon offers services to, or monitors, people in the EU. No EU adequacy decision
   for Albania was found, so EU customers will bring standard contractual clauses.
 
+### The box looks at the customer's network, when asked (added 31 October 2026)
+
+- Guided setup ([30](30-guided-setup.md)) lets a person at the site press **Find equipment**: the box then looks at the site's own network for about a minute (private
+  addresses, one port, reading only) and tells Greecon what answered. It is never scheduled and never reaches a public address. This is a decision ([L21](27-launch-decisions.md)),
+  not legal advice. Looking at a network that belongs to someone else is something computer-misuse rules care about, so the order form and the data terms should say it in one plain sentence and the
+  customer's network administrator should be told in writing beforehand (the install card has the message). Counsel is asked to confirm that is enough (checklist 16).
+- The setup record keeps free text typed by staff: who signed the order form, and the name and licence number of the electrician. Those are personal data of those people. The privacy page says so
+  (`/privacy`); counsel is asked about the basis and how long they are kept (checklist 17).
+
 ### Cybersecurity: Law 25/2024, NIS2, the Cyber Resilience Act
 
 - **Law 25/2024** (partly aligned with NIS2): operators on a confidential list carry the duties
@@ -270,3 +279,6 @@ meter data without authorisation; rule logic in clear text on the edge.
     replace TimescaleDB or not.
 15. Tax and commercial: e-invoicing for foreign invoices, VAT on exports, incentives at the tech park,
     CE and electronic-waste duties, EU authorised-representative duties.
+16. The box looking at a customer's own network when a person at the site asks (private addresses, one port, reading only, about a minute): is one plain sentence in the order form and the data
+    terms, and a written note to the customer's network administrator beforehand, enough under the Albanian computer-misuse rules and the customer's own policy?
+17. The setup record keeps the names of who signed for the customer and of the licensed electrician with their licence number: the legal basis, how long, and whether the privacy page says enough.

@@ -194,8 +194,11 @@ vision difference, and red and green, green and yellow, and white and cyan are t
 confusions, which is why shapes differ.
 
 Built: contrast-checked tokens, shapes, visible focus, reduced-motion rule, 44-point targets on a
-phone width, and the live region on the headline. Not yet audited: the full page set at 200% text,
-a screen reader pass, and the Outdoor mode.
+phone width, and the live region on the headline; and, since 2026-10-27 (document 29, which says how
+each is measured by `scripts/e2e/a11y-audit.cjs`): text that follows the person's size and holds at
+200%, a dark appearance and a more-contrast one that follow the device (no switch of Greecon's own),
+forced colours, a keyboard that reaches everything and shows where it is, and quick find (Ctrl+K).
+Not yet done: a screen reader pass, and the Outdoor mode.
 
 ## 9. How we will know the design works
 
@@ -219,7 +222,7 @@ Consent and retention for these studies fall under Law 124/2024 (`docs/22`).
 
 | Item | Evidence that would prove the need |
 |---|---|
-| Outdoor mode and a night mode | Midday legibility fails on real phones; evening use is observed |
+| Outdoor mode (a night mode is built: Greecon follows the device's light or dark, document 29) | Midday legibility fails on real phones |
 | Native shell for Critical alerts and background sync | Field data show gaps in push or sync on the phones in use |
 | Two-person approvals, time-limited elevated access | The first real actuator pilot |
 | Alert-health dashboard (rate per site per day, floods, chatter, priority mix) | Alert load per site passes the budget |

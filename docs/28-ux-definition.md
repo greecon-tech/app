@@ -149,18 +149,21 @@ also has the three states in section 6: empty, loading and failed.
 | Pattern | Definition |
 |---|---|
 | **Shell** | Desktop: a left bar of 240 px (brand, destinations, a foot with the company, Help and Privacy), a header with the title and the person's menu, the page. Phone: a slim top bar (brand, page title, the person's menu) and the bottom bar of destinations (at least 56 px tall, icon and word, the current one marked by shape and weight as well as colour). |
-| **The person's menu** | A small round mark with the initials; name and role beside it on a desk. Opens to Account, Help, Log out. It is a disclosure (`details`), so it works before the page's script has loaded. |
+| **The person's menu** | A small round mark with the initials; name and role beside it on a desk. Opens to Account, Help, Log out. It is a disclosure (`details`), so it works before the page's script has loaded; once it has, Escape closes it (and the focus goes back to its button) and so does going elsewhere. |
+| **Quick find** | **Ctrl+K** (**⌘K**), or **/**, or the Search button (a field at the top of the left bar on a desk, a magnifier in the top bar on a phone) opens one box, a modal dialog: the page behind it is inert, Escape closes it, the focus returns. It finds a page (only those the role may open), a site, for Greecon's team a client or a request, and an action, by what the person remembers of the name, in any order, without accents or capitals. Document 29, rule S5. |
 | **Header** | Title (one line), a sentence beneath, the main action at the right. No "Greecon Platform" over-line. |
 | **Cards** | The status card (word, shape, the sentence, the age) and the stat tile (a number, its unit, its name, its age). Same radius, padding and border everywhere. |
-| **Lists and tables** | A table on a desk, with the main column first. On a phone the same rows become cards: the name first, then the others as "label: value" lines. A table never scrolls sideways. |
-| **Buttons** | Primary (filled green), secondary (outlined), quiet (text), danger (outlined red, asks once). At least 44 px high on a phone, 36 px on a desk. Never two lines of label. |
+| **Lists and tables** | A table on a desk, with the main column first. On a phone the same rows become cards: the name first, then the others as "label: value" lines. A table never scrolls sideways. A row's "More" opens in the row, not over it: a table's box clips what floats out of it. |
+| **Buttons** | Primary (filled green), secondary (outlined), quiet (text), danger (outlined red, asks once). At least 44 px high on a phone, 36 px on a desk. Never two lines of label. A button that cannot be used, or is working, is dimmed and does not answer the pointer; anything that stops a customer's account (suspending it) asks once and says what it will do, and turning it back on asks nothing. |
 | **Status vocabulary** | Stable, Attention needed, Action required, Unknown, Simulated (document 20, section 2). Alert priority: Act now, Check today, For your information. |
 | **Forms** | Label above, help text below the label, the field, the error under the field. Optional is said, required is not. A form that saves says "Saved." |
 | **Disclosures** | Advanced and rarely used things sit in a `details` the person opens (prices, "How is this calculated?", the roles). Never anything needed to do the page's main job. |
-| **Empty** | Says what would be here, why it is not, and the one thing to do ("No site yet. Add your first site."). |
+| **Empty** | Says what would be here, why it is not, who is doing what next, and the one thing to do. A new account with no site gets three steps (Greecon sets it up; you say who is told, which can be done now; the first readings arrive) and a link to Who is told. A site that has sent nothing yet says it is being set up, why the answer is Unknown, and that the page fills in by itself; its equipment says "Not connected yet", never "Offline". A place is never disabled or hidden because it is empty (Apple's tab-bar rule). |
 | **Loading** | A skeleton of the page's blocks, not a spinner over a blank page. |
 | **Failed** | "This page could not be loaded." What it means for the person, a **Try again**, and the address to write to. Never a stack trace or a code. |
+| **Turned away** | A person who is not let in is told why, and what to do, in words that fit the reason: a wrong password and an address with no account say only "Invalid email or password." (nothing is learned about which accounts exist); a client that Greecon has suspended says so and whom to write to, at sign-in and to a person already signed in (who is taken to the sign-in page, not shown a page that failed); too many attempts says to wait a minute; a platform that did not answer says it is not the password. `lib/refusals.ts`. |
 | **Not found, not allowed** | One friendly page each, with the way back. A page a role may not use answers "You do not have access to this page" with the way back, not a bare "not found". |
+| **Appearance** | Greecon follows the device: light or dark (a surface above another is lighter in the dark), more contrast, forced colours, larger text, less motion. There is no switch of its own. Print is always light. Document 29. |
 | **Motion** | The energy flow moves with the measured power and stops when the power is zero; every other animation is a short fade. All of it stops for "reduce motion". |
 | **Print** | The handover sheet and the setup list print cleanly; nothing else needs to. |
 
@@ -170,16 +173,18 @@ also has the three states in section 6: empty, loading and failed.
 |---|---|---|
 | Sideways scrolling | None on any page at 390 px | `ux-tour.cjs` |
 | Controls with a name | All | `ux-tour.cjs` (and the journeys, which find them by name) |
-| Tap targets on a phone | At least 44 px for buttons, links in the bars and form fields; 32 px at least for inline links in a sentence | `ux-tour.cjs` |
-| Smallest text | 12 px | `ux-tour.cjs` |
-| Contrast | 4.5:1 text, 3:1 shapes and borders (the tokens in `globals.css` are checked) | the tokens; not re-measured per page |
-| Keyboard | Everything reachable, visible focus, a "Skip to the page" link first | the journeys use keyboard-reachable names; not a full audit |
+| Tap targets on a phone | At least 44 px for buttons, links in the bars, form fields and the headings that open a section; inline links in a sentence are exempt | `a11y-audit.cjs` (`ux-tour.cjs` reports under 40 px) |
+| Smallest text | 12 px, and all text in `rem`, so it follows the person's text setting and holds at 200 % | `ux-tour.cjs`, `a11y-audit.cjs` |
+| Contrast | 4.5:1 text, 3:1 shapes and borders, in the light, in the dark and with more contrast | axe in each setting (`a11y-audit.cjs`); the tokens |
+| Keyboard | Everything reachable, a visible mark at every stop, a working "Skip to the page" link first, nothing under the bar at the foot of a phone, Escape closes a menu and the search | `a11y-audit.cjs` |
+| Quick find | Opens from the key, is named and modal, holds the focus, closes on Escape | `a11y-audit.cjs`; the matching has unit tests |
+| A first day | An empty platform, a request, onboarding, a first sign-in, an account with nothing in it, a site before its box: each says what is here and what comes next | `scripts/e2e/first-day.cjs` |
 | Console errors | None | `ux-tour.cjs` and the journeys |
-| The journeys | The project manager's (70 steps) and the team's (22), updated for the new names | `scripts/e2e` |
+| The journeys | The project manager's (82 steps) and the team's (24), a first day, and trouble at a customer (a client suspended and turned back on, a box gone silent) | `scripts/e2e` |
 | The demo build | The five role builds still export | `scripts/e2e/static-export.sh` |
 
-Not yet done, and said so: a screen-reader pass, 200% text on every page, the Outdoor mode, sessions with real users
-(document 20, sections 9 and 10).
+Not yet done, and said so: a screen-reader pass, the Outdoor mode, sessions with real users (document 20, sections 9 and 10;
+document 29, section 6). Text at 200 % and the dark appearance are done and measured on every page (document 29).
 
 ## 7. Words
 
@@ -214,8 +219,8 @@ Put in: the team's **Today**, **Requests** and **Team**; the phone's bottom bar 
 the page"; the answer "Forgot your password?" on the sign-in page; the site's **Equipment** page; **Add a site** on the
 Sites screen; the table-to-list behaviour on a phone.
 
-Left for later, with what would justify it: an Albanian interface (`docs/27`, L12); an Outdoor mode and a night mode
-(document 20, section 10); a notification centre; push notifications; a per-user "my sites" filter for clients with many
+Left for later, with what would justify it: an Albanian interface (`docs/27`, L12); an Outdoor mode
+(document 20, section 10; a night mode is built, as the device's own dark setting, document 29); a notification centre; push notifications; a per-user "my sites" filter for clients with many
 sites; the savings comparison against last year's bills as a chart.
 
 ## 9. Built, and how it was checked
@@ -231,5 +236,11 @@ Built on 2026-10-26 as defined above, with these differences from the plan, none
 Checked, in a real browser against the real stack: the project manager's whole journey (82 checks, including the alert link), the
 Greecon team's (24 checks), and `scripts/e2e/ux-tour.cjs` over every screen for the team, a client and the demo, on a desk and on a phone
 (no page scrolls sideways at 390 px, no control without a name, no button under 40 px, no text under 12 px, no error in the console).
-The five role builds of the demo export. Not checked, and still open: a screen-reader pass, every page at 200% text, sessions with real
+The five role builds of the demo export. Not checked, and still open: a screen-reader pass, sessions with real
 users (document 20, sections 9 and 10).
+
+Added on 2026-10-27 (document 29): quick find (Ctrl+K), the dark and the more-contrast appearance, text that follows the person's size,
+a keyboard that reaches everything and shows where it is, first-day pages that explain themselves (an account with no site, a site that
+has sent nothing yet), Privacy drawn inside the app for a signed-in person, and distinct titles for Downloads and Trends. Trouble run in a real
+browser (`field-trouble.cjs`) added: a sentence for each reason a person is turned away, a question before a client is suspended, dimmed
+disabled controls, a "More" menu that opens in its row, and the time a message is due on the viewer's own clock.

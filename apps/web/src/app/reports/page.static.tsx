@@ -3,14 +3,14 @@ import { Shell } from "../../components/Shell";
 import { requirePermission } from "../../lib/access";
 import { DEMO_ROLE } from "../../lib/api";
 
-export const metadata = { title: "Reports" };
+export const metadata = { title: "Downloads" };
 
 // Static-export twin of page.tsx (see apps/web/scripts/build-static.sh). A downloaded file is made by the live
 // platform for the person who asks; the demo has no server to make one.
 export default function ReportsPage() {
   requirePermission(DEMO_ROLE, "report:export");
   return (
-    <Shell title="Reports" subtitle="Your data, as files you can keep.">
+    <Shell title="Downloads" subtitle="Your data, as files you can keep.">
       <Section title="Download your data">
         <div className="stack">
           <p className="muted">

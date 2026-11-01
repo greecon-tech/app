@@ -34,7 +34,7 @@ Survey about 1 hour. Install day 4 to 6 hours with the electrician. Commissionin
 ::: fact
 **Standard settings**
 
-Unit numbers: grid meter 1, solar meter 2, optional load meter 4. 9600 baud, 8 data bits, no parity, 1 stop bit. Converter on port 502, in Modbus TCP to RTU gateway mode.
+Unit numbers: grid meter 1, solar meter 2, optional load meter 4, set at the office. A battery is addressed by hand (for example 8). 9600 baud, 8 data bits, no parity, 1 stop bit. Converter on port 502, in Modbus TCP to RTU gateway mode.
 :::
 :::::
 
@@ -44,14 +44,14 @@ Unit numbers: grid meter 1, solar meter 2, optional load meter 4. 9600 baud, 8 d
 
 ## What it measures
 
-The template **{{kit.template}}** makes up to four devices. Delete what the site does not have (see the project manager's steps below). What each gives:
+The template **{{kit.template}}** makes up to four devices. Take off what the site does not have, with **{{ui.site_does_not_have}}** (setup step 4, below). What each gives:
 
 | Reading in Greecon | Comes from | Unit | Standard alert limits |
 |------------|-------------------------|--------|-------------------------|
 | **{{ui.reading_grid_import}}** and **{{ui.reading_grid_export}}** | {{ui.device_grid_meter}}: an Eastron SDM630 where the supply enters, unit 1. One meter gives both: positive power is energy coming in, negative is energy sent out | kW | None |
 | **{{ui.reading_solar}}** | {{ui.device_solar_meter}}: an Eastron SDM630 on the inverter's AC output, unit 2. It reads the size of the power, so it works with any inverter brand | kW | None |
 | **{{ui.reading_consumption}}** (optional) | {{ui.device_load_meter}}: an Eastron SDM630 on the feed to the loads, unit 4, if the owner wants the site's own consumption measured | kW | None |
-| **{{ui.reading_battery_charge}}** (optional) | {{ui.device_battery}}: the battery's own Modbus, mapped by hand from the maker's register table | % | Low below 25 % |
+| **{{ui.reading_battery_charge}}** (optional) | {{ui.device_battery}}: the battery's own Modbus, its address entered and its readings mapped by hand from the maker's register table | % | Low below 25 % |
 | **{{ui.reading_battery_power}}** (optional) | The same device. Positive while charging | kW | None |
 
 If the maker of the battery will not publish its Modbus register table, leave the battery out: do not guess registers. Solar surplus has no standard limit: the platform says nothing about it rather than guess.
@@ -148,7 +148,7 @@ About four to six hours. The electrician and the project manager work at the sam
 ::: steps
 | | # | Who | Do this |
 |--|-|-----|--------------------------------------------|
-| {{cb}} | 1 | {{who:e}} {{who:pm}} | **Walk the site together.** Agree where each meter goes. Photograph everything before you start. |
+| {{cb}} | 1 | {{who:e}} {{who:pm}} | **Before anyone touches anything:** the signed papers are in your hand, the electrician is there, and the lock-out is agreed. **Walk the site together.** Agree where each meter goes. Photograph everything before you start. |
 | {{cb}} | 2 | {{who:c}} | Show the way to the main board and the inverter. Have the router and a socket that stays on ready, and the person who can give the converter a fixed address. |
 | {{cb}} | 3 | {{who:e}} | **Apply the customer's lock-out** on the board to be worked on. |
 | {{cb}} | 4 | {{who:e}} | **Fit the grid meter** at the supply entry: voltage taps with their small fuses or 2 A breakers as the meter's manual says, and the three current clamps around the incoming phases, **arrow towards the site**. Figure S-5. |
@@ -157,27 +157,30 @@ About four to six hours. The electrician and the project manager work at the sam
 | {{cb}} | 7 | {{who:c}} | **Battery (if there is one):** the customer's installer, or the battery's maker, enables the battery's Modbus connection and gives you its address, unit number and register table. Nobody from Greecon opens the battery or touches its DC wiring. |
 | {{cb}} | 8 | {{who:pm}} | **Mount the enclosure** and in it the converter, the 24 V supply and the UPS (the box too, if there is room, otherwise on a shelf beside it). Figure S-4. |
 | {{cb}} | 9 | {{who:pm}} | **Run the RS-485 data cable** from the converter to the grid meter, on to the solar meter, and on to the load meter if there is one: one cable, a daisy chain, no branches. Shielded twisted pair, the shield joined to ground at one end only, away from power cables. The electrician connects its ends at the meters' A and B terminals inside the board. Figure S-2. |
-| {{cb}} | 10 | {{who:pm}} | **Set the converter:** Modbus TCP to RTU gateway mode, 9600 baud, 8 data bits, no parity, 1 stop bit, TCP port 502, and a fixed address on the site's network. Write the address down and photograph the settings page. |
-| {{cb}} | 11 | {{who:pm}} | **Connect the network:** plug the box and the converter into the customer's router, or into the sockets of the 4G router if the site has no usable internet. Figure S-3. |
+| {{cb}} | 10 | {{who:pm}} | **Check the labels:** the number on each meter against the table under *Numbers, addresses and ranges* (grid meter 1, solar meter 2, load meter 4). They were set at the office: do not change them. Photograph each label and each display. |
+| {{cb}} | 11 | {{who:pm}} | **Check the converter's label** (gateway mode, 9600 baud, 8 data bits, no parity, 1 stop bit, port 502) and **connect the network:** plug the box and the converter into the customer's router, or into the sockets of the 4G router if the site has no usable internet. Ask for a fixed address for the converter and write it down. Figure S-3. |
 | {{cb}} | 12 | {{who:e}} {{who:pm}} | **Photograph before closing:** every meter's label (model and serial number), the wiring, the converter's settings. Then close the board. |
 | {{cb}} | 13 | {{who:e}} | **Remove the lock-out** only when you both agree the work is closed up. |
-| {{cb}} | 14 | {{who:pm}} | **Set each meter at its own display:** unit number (grid 1, solar 2, load 4), speed 9600, parity none. Write them down and photograph each display. Do this before the box starts reading: meters are delivered as unit 1, and two on one cable would answer at once. |
-| {{cb}} | 15 | {{who:pm}} | **Power up** the UPS, the 24 V supply, the converter and the box. |
-| {{cb}} | 16 | {{who:e}} | **Stay until commissioning is done.** |
-| {{cb}} | 17 | {{who:pm}} | **Open the customer for setup again** on your laptop (the four hours are over by now) and go down the platform's setup list. |
+| {{cb}} | 14 | {{who:pm}} | **Power up** the UPS, the 24 V supply, the converter and the box. |
+| {{cb}} | 15 | {{who:e}} | **Stay until commissioning is done.** |
+| {{cb}} | 16 | {{who:pm}} | **Open the customer for setup again** on your laptop (the four hours are over by now) and go down the platform's setup list: **{{ui.find_equipment}}**, the battery by hand if there is one, and the electrician's name and licence number. |
 :::
 
-## Addresses and registers
+## Numbers, addresses and ranges
 
-Meters behind one converter share its IP address and differ only by unit number. Write the numbers down here as you set them; you type them into the setup list in step 3.
+The numbers on the cable were set at the office. The box finds where the converter is. You type no IP address, no port and no register for the meters, and kit S has no transmitters, so there is no range to give. Only a battery is entered by hand.
+
+### The numbers on the cable
+
+The meters are behind one converter: they share its address and port 502, and differ only by number. Check each label against this table on install day. **Do not change a number on site.**
 
 ::: {.form .short}
-| Device in Greecon | Make and model | Unit number | IP address | Port |
-|--------------|-------------|------|-----------------|-----|
-| {{ui.device_grid_meter}} | Eastron SDM630 | 1 | (the converter's) | 502 |
-| {{ui.device_solar_meter}} | Eastron SDM630 | 2 | (the converter's) | 502 |
-| {{ui.device_load_meter}} | Eastron SDM630 | 4 | (the converter's) | 502 |
-| {{ui.device_battery}} | | (from its manual) | (its own, or the converter's) | |
+| Device in Greecon | Make and model | Number | Label checked | Address found (the converter's) |
+|--------------|-------------|----------|-----------------|-----------------|
+| {{ui.device_grid_meter}} | Eastron SDM630 | 1 | {{cb}} | |
+| {{ui.device_solar_meter}} | Eastron SDM630 | 2 | {{cb}} | |
+| {{ui.device_load_meter}} | Eastron SDM630 | 4 | {{cb}} | |
+| {{ui.device_battery}} | The customer's own | By hand: from its manual (for example 8 if it joins the cable) | | Its own, or the converter's |
 :::
 
 ### The Eastron meters
@@ -190,7 +193,7 @@ greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input --address 52 
 
 ### The battery, if there is one
 
-Two readings, mapped by hand from the maker's register table (step 4 of the setup list): press **{{ui.choose_the_register}}** under each reading's name. The register kind is **{{ui.register_input}}** for a manual's 3xxxx and **{{ui.register_holding}}** for 4xxxx; the address is counted from zero.
+The box cannot recognise a battery on a network, so the step **Where each device is on the network** says **{{ui.found_by_hand}}**: open **{{ui.enter_address_by_hand}}** under it and fill in its **{{ui.ip_address}}** (its own, or the converter's), **{{ui.port}}** and **{{ui.unit_number}}**. Its two readings are mapped by hand from the maker's register table (step 5 of the setup list): press **{{ui.choose_the_register}}** under each reading's name. The register kind is **{{ui.register_input}}** for a manual's 3xxxx and **{{ui.register_holding}}** for 4xxxx; the address is counted from zero.
 
 ::: {.form .short}
 | Reading | Register kind | Address | Kind of number | How it becomes the reading | Notes |
@@ -199,7 +202,7 @@ Two readings, mapped by hand from the maker's register table (step 4 of the setu
 | {{ui.reading_battery_power}} | | | | | kW, positive while charging |
 :::
 
-**Remove what the site does not have:** open **{{ui.equipment_and_readings}}**, find the battery (or the load meter) under **Equipment**, and press **{{ui.remove}}**. A reading with no register holds the setup list at step 4. If the plant is not allowed to send energy to the grid, tick *{{ui.no_export}}* in the prices (step 1).
+**Take off what the site does not have:** in step 4 press **{{ui.site_does_not_have}}** under the load meter, and under the battery, if the site has none (it asks you to confirm, because the device's readings go with it). A reading with no register holds the setup list at step 5. If the plant is not allowed to send energy to the grid, tick *{{ui.no_export}}* in the prices (step 2).
 
 ## The platform's setup list
 
@@ -241,6 +244,8 @@ Signed off by: {{line}} Date: {{line:short}}
 | Date, and who was there | |
 | {{ui.who_is_told}}, in order (name, mobile with country code, email) | |
 | Prices entered (electricity, export) and where they came from; zero-export box ticked if needed | |
+| Papers: who signed for the customer, and the date | |
+| Electrician: name and licence number (or: no electrical work was needed) | |
 | Battery: limits agreed (Low below), or no battery | |
 | {{ui.setup_list}}: every step Done and the site Commissioned | {{cb}} Yes |
 | {{ui.handover_sheet_link}} printed and signed | {{cb}} Yes |
@@ -259,7 +264,7 @@ Signed off by: {{line}} Date: {{line:short}}
 | What you see | Likely cause | What to do |
 |----------------|--------------------|------------------------------|
 | **The solar meter reads zero at midday** | A clamp closed on the wrong cable, a closed breaker upstream, or the inverter is limited to zero export | Compare with the meter's own display and test the register from the box (`greecon-edge modbus-test`). Ask the electrician to confirm that the clamps are on the inverter's output phases. If the plant is zero-export, midday solar can honestly be low: check the inverter's display |
-| **Import and export are swapped** (export rises when a load is switched on) | The grid meter's clamps are the wrong way round | The electrician turns them, with the lock-out on; you repeat the direction check (step 8 of the setup list). A reversed clamp swaps what the site buys with what it sells, and every figure with it |
+| **Import and export are swapped** (export rises when a load is switched on) | The grid meter's clamps are the wrong way round | The electrician turns them, with the lock-out on; you repeat the direction check (step 9 of the setup list). A reversed clamp swaps what the site buys with what it sells, and every figure with it. Left reversed, Greecon notices at night or in cloud and opens a Check today alert, *The grid meter may be fitted the wrong way round*; at midday it cannot |
 | **A reading is a thousand times too big** | Watts shown as kilowatts, typically on a hand-mapped battery reading | In the register form multiply by 0.001 (the Eastron meters already do) |
 
-More, by symptom, are in the Appendices of the Complete Deployment Guide (Appendix C) and in the Field Manual. A device that does not answer is, in this order: a wrong unit number (the commonest), a wrong speed or parity at the converter, A and B swapped on the data cable, the converter not in gateway mode, a wrong IP address.
+More, by symptom, are in the Appendices of the Complete Deployment Guide (Appendix C) and in the Field Manual. A device that does not answer is, in this order: the converter's address changed (press **{{ui.find_equipment}}** again), the number on the device's label not the one on the install card, a wrong speed at the converter, A and B swapped on the data cable, the converter not in gateway mode.

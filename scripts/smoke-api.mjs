@@ -53,7 +53,7 @@ try {
   check(refusedTemplate.status === 400, "an unknown template is refused");
 
   const devices = (await call("GET", `/devices?siteId=${siteId}`, { token: owner })).json;
-  check(Array.isArray(devices) && devices.length === 3, "the hotel has three devices");
+  check(Array.isArray(devices) && devices.length === 4, "the hotel has four devices: two meters, the 4 to 20 mA module and the pump contact module");
 
   step("Each device is given an address");
   const bad = await call("PATCH", `/devices/${devices[0].id}`, { token: owner, body: { connection: { kind: "modbus_tcp", host: "192.168.1.999", port: 502, unitId: 1 } } });
@@ -98,7 +98,7 @@ try {
   check(asPerson.status === 403, "a person's session is not a box");
   const config = await call("GET", "/edge/config", { box: secret });
   check(config.status === 200 && config.json?.gatewayId === gatewayId, "GET /edge/config with the credential");
-  check(config.json?.devices?.length === 3, "all three addressed devices are in the configuration");
+  check(config.json?.devices?.length === 4, "all four addressed devices are in the configuration");
   const gridDevice = config.json?.devices?.find((d) => d.name === "Grid meter");
   check(gridDevice?.points?.length === 2 && gridDevice.points[0].source.address === 52, "the grid meter reads two readings from register 52");
   const heartbeat = await call("POST", "/edge/heartbeat", {

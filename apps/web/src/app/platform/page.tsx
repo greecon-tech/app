@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AccessRequest } from "@greecon/shared";
 import { ClientPeople } from "../../components/ClientPeople";
+import { ClientStatusButton } from "../../components/ClientStatusButton";
 import { CreateTenantForm } from "../../components/CreateTenantForm";
 import { DataTable } from "../../components/DataTable";
 import { OpenForSetupButton } from "../../components/OpenForSetupButton";
@@ -94,11 +95,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           <details className="row-menu">
             <summary>More</summary>
             <div className="row-menu__panel">
-              <form action={updateTenantStatusAction.bind(null, tenant.id, tenant.status === "active" ? "suspended" : "active")}>
-                <button type="submit" className="button-ghost">
-                  {tenant.status === "active" ? "Suspend this client" : "Reactivate this client"}
-                </button>
-              </form>
+              <ClientStatusButton action={updateTenantStatusAction.bind(null, tenant.id, tenant.status === "active" ? "suspended" : "active")} suspend={tenant.status === "active"} clientName={tenant.name} />
               <p className="muted">{tenant.status === "active" ? "Its people cannot sign in and its box is turned away. Nothing is deleted." : "Its people can sign in again and its box reports again."}</p>
             </div>
           </details>

@@ -46,6 +46,24 @@ describe("alertConditionsFromStates", () => {
     );
   });
 
+  it("asks for a day's attention when a grid meter looks fitted backwards, but only once it has held for five minutes", () => {
+    const direction = (minutes: number) => alertConditionsFromStates([state("energy.grid.direction_suspect", true, "warning", minutesAgo(minutes))], NOW);
+    expect(direction(1)).toEqual([]);
+    const [condition] = direction(6);
+    expect(condition?.category).toBe("grid_direction_suspect");
+    expect(condition?.severity).toBe("warning");
+    expect(condition?.suggestedAction).toContain("turn the meter's current clamps round");
+  });
+
+  it("tells the grower now when the air reaches their frost limit, after two minutes so one bad sample does not wake them", () => {
+    const frost = (minutes: number) => alertConditionsFromStates([state("agri.frost_risk", true, "critical", minutesAgo(minutes))], NOW);
+    expect(frost(1)).toEqual([]);
+    const [condition] = frost(3);
+    expect(condition?.category).toBe("frost_risk");
+    expect(condition?.severity).toBe("critical");
+    expect(condition?.title).not.toMatch(/\d/);
+  });
+
   it("does not alarm on ordinary operation: needing irrigation or having surplus solar is not a fault", () => {
     expect(alertConditionsFromStates([state("agri.irrigation_required", true, "watch"), state("energy.surplus_available", true, "watch")])).toEqual([]);
   });
@@ -169,12 +187,23 @@ describe("losing sight of a condition is not the same as it clearing", () => {
         ["water.tank.low", false],
         ["water.pump.dry_run_risk", false],
         ["energy.battery.constrained", false],
+        ["energy.grid.direction_suspect", false],
+        ["agri.frost_risk", false],
         ["system.communication_degraded", false],
         ["system.sensor_quality_bad", false]
       ])
     );
     expect([...all].sort()).toEqual(
-      ["battery_constrained", "communication_degraded", "pump_dry_run_risk", "sensor_quality_degradation", "water_tank_critical", "water_tank_low"].sort()
+      [
+        "battery_constrained",
+        "communication_degraded",
+        "frost_risk",
+        "grid_direction_suspect",
+        "pump_dry_run_risk",
+        "sensor_quality_degradation",
+        "water_tank_critical",
+        "water_tank_low"
+      ].sort()
     );
   });
 

@@ -30,7 +30,7 @@ export function DataTable<Row extends object>({
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={String(column.key)}>{column.label}</th>
+              <th key={String(column.key)}>{column.label || <span className="visually-hidden">Actions</span>}</th>
             ))}
           </tr>
         </thead>

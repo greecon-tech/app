@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { GREECON_PUBLIC_EMAILS, hasPermission } from "@greecon/shared";
+import { hasPermission } from "@greecon/shared";
+import { FirstRun } from "../../components/FirstRun";
 import { LiveRefresh } from "../../components/LiveRefresh";
 import { Section } from "../../components/Section";
 import { Shell } from "../../components/Shell";
@@ -27,10 +28,7 @@ export default async function SitesPage() {
       <LiveRefresh enabled={!isStaticExport()} />
       {sites.length === 0 ? (
         <Section title="No site yet">
-          <div className="empty-state">
-            <p>A site is one place Greecon watches: a hotel, a solar plant, a farm, a water tank and pump. Each has its own readings, alerts and status.</p>
-            {addSite ? <p>{addSite}</p> : <p className="muted">Greecon adds your first site when your equipment is installed. Questions: {GREECON_PUBLIC_EMAILS[0]}.</p>}
-          </div>
+          <FirstRun role={role} />
         </Section>
       ) : (
         <Section title={`${sites.length} ${sites.length === 1 ? "site" : "sites"}`} aside={<span className="muted">Worst first</span>}>

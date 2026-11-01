@@ -11,6 +11,7 @@ runs on it today is described in [14 Edge hardware deployment](14-edge-hardware-
   about thirteen devices; a site with more devices keeps fewer days) when the platform cannot be reached, sending them
   when it can.
 - **Say how it is:** a heartbeat with its version, its clock, its queue and how each device answered.
+- **Look at the site's network when a person asks:** the heartbeat's reply can carry a request to look (**Find equipment**); the box looks for about a minute at private addresses, reading only, and sends what answered to `POST /edge/discovery` ([30](30-guided-setup.md)).
 - **Take fixes** from the platform, with a checksum, a trial run, and an automatic return to the previous version.
 - **Stay read-only.** There is no write path to any device.
 

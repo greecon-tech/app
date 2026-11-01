@@ -129,6 +129,62 @@ describe("derived states use the thresholds configured on the point", () => {
     expect(stateOf(deriveOperationalStates(soil({ irrigate_below: 8 }), { nowMs: NOW }), "agri.irrigation_required")?.stateValue).toBe(false);
   });
 
+  it("says nothing about frost until the grower has set a frost limit, then judges the air by it", () => {
+    const air = (celsius: number, thresholds?: Record<string, number>) => ({ "agri.air.temperature.c": withThresholds(celsius, "C", thresholds ?? {}) });
+
+    // -3.5 C ruins a flowering orchard and is nothing to a field of winter wheat: only the grower knows. With no limit set, say nothing.
+    expect(deriveOperationalStates(air(-3.5), { nowMs: NOW }).map((state) => state.stateKey)).not.toContain("agri.frost_risk");
+    expect(stateOf(deriveOperationalStates(air(-3.5, { frost_below: 1 }), { nowMs: NOW }), "agri.frost_risk")?.stateValue).toBe(true);
+    expect(stateOf(deriveOperationalStates(air(1, { frost_below: 1 }), { nowMs: NOW }), "agri.frost_risk")?.stateValue).toBe(true);
+    expect(stateOf(deriveOperationalStates(air(4.2, { frost_below: 1 }), { nowMs: NOW }), "agri.frost_risk")?.stateValue).toBe(false);
+    const frost = stateOf(deriveOperationalStates(air(-3.5, { frost_below: 1 }), { nowMs: NOW }), "agri.frost_risk");
+    expect(frost?.severity).toBe("critical");
+    expect(frost?.reason).toContain("-3.5");
+  });
+
+  it("does not judge frost from an air temperature that is out of date", () => {
+    const stale = { "agri.air.temperature.c": { ...withThresholds(-5, "C", { frost_below: 1 }), timestampUtc: at(600) } };
+    expect(deriveOperationalStates(stale, { nowMs: NOW }).map((state) => state.stateKey)).not.toContain("agri.frost_risk");
+  });
+
+  describe("a grid meter fitted the wrong way round", () => {
+    const direction = (states: ReturnType<typeof deriveOperationalStates>) => stateOf(states, "energy.grid.direction_suspect");
+    const site = (extra: SensorSnapshot) => ({ "energy.grid.export.kw": reading(0.5, "kW", 1), "energy.solar.power.kw": reading(0, "kW", 1), ...extra });
+
+    it("is suspected when energy goes out at a site that nothing is producing for", () => {
+      const state = direction(deriveOperationalStates(site({}), { nowMs: NOW }));
+      expect(state?.stateValue).toBe(true);
+      expect(state?.severity).toBe("warning");
+      expect(state?.reason).toContain("0.5 kW going out");
+    });
+
+    it("is not suspected when the sun is producing, however much goes out", () => {
+      expect(direction(deriveOperationalStates(site({ "energy.solar.power.kw": reading(7.2, "kW", 1), "energy.grid.export.kw": reading(3, "kW", 1) }), { nowMs: NOW }))?.stateValue).toBe(false);
+    });
+
+    it("is not suspected for a few watts of noise at zero", () => {
+      expect(direction(deriveOperationalStates(site({ "energy.grid.export.kw": reading(0.02, "kW", 1) }), { nowMs: NOW }))?.stateValue).toBe(false);
+    });
+
+    it("is not suspected while a battery measured to be discharging could be what feeds the grid", () => {
+      const discharging = site({ "energy.battery.soc.percent": reading(80, "%", 1), "energy.battery.power.kw": reading(-0.6, "kW", 1) });
+      expect(direction(deriveOperationalStates(discharging, { nowMs: NOW }))?.stateValue).toBe(false);
+      // ... but a battery that is charging cannot be the source, so it is still suspected.
+      const charging = site({ "energy.battery.soc.percent": reading(50, "%", 1), "energy.battery.power.kw": reading(0.5, "kW", 1) });
+      expect(direction(deriveOperationalStates(charging, { nowMs: NOW }))?.stateValue).toBe(true);
+    });
+
+    it("says nothing when a battery is there but its power is not measured: it might be the source, and guessing would be a false alarm", () => {
+      expect(direction(deriveOperationalStates(site({ "energy.battery.soc.percent": reading(80, "%", 1) }), { nowMs: NOW }))).toBeUndefined();
+    });
+
+    it("says nothing when the solar production or the grid export is not measured or not current", () => {
+      expect(direction(deriveOperationalStates({ "energy.grid.export.kw": reading(0.5, "kW", 1) }, { nowMs: NOW }))).toBeUndefined();
+      expect(direction(deriveOperationalStates({ "energy.solar.power.kw": reading(0, "kW", 1) }, { nowMs: NOW }))).toBeUndefined();
+      expect(direction(deriveOperationalStates(site({ "energy.solar.power.kw": reading(0, "kW", 60) }), { nowMs: NOW }))).toBeUndefined();
+    });
+  });
+
   it("applies a tank's own critical and low levels instead of the platform defaults", () => {
     const configured = { critical_low: 25, warning_low: 50 };
 

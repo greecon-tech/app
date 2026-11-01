@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { ReactNode } from "react";
-import { GREECON_COMPANY, GREECON_DOMAIN, UserRole } from "@greecon/shared";
-import { Audience, Nav, SectionTabs } from "./Nav";
+import { actionsForFind, Audience, FindEntry, GREECON_COMPANY, GREECON_DOMAIN, pagesForFind, UserRole } from "@greecon/shared";
+import { DismissMenus } from "./DismissMenus";
+import { Nav, SectionTabs } from "./Nav";
+import { QuickFind, QuickFindButton, QuickFindSearch } from "./QuickFind";
 
 /**
  * The frame of every page (docs/28-ux-definition.md, section 5): on a desk, a bar on the left and the title and the person's menu above
@@ -19,6 +21,8 @@ export function Frame({
   action,
   tools,
   banner,
+  search,
+  findExtra,
   children
 }: {
   audience: Audience;
@@ -33,6 +37,9 @@ export function Frame({
   tools: ReactNode;
   /** A line above the top bar, such as "You are in X's account as Greecon staff". */
   banner?: ReactNode;
+  /** Where quick find asks for sites and clients as the person types. The static demo has no server, and gives `findExtra` instead. */
+  search?: QuickFindSearch;
+  findExtra?: readonly FindEntry[];
   children: ReactNode;
 }) {
   const logo = `${process.env.NEXT_BASE_PATH ?? ""}/greecon-logo.svg`;
@@ -47,6 +54,7 @@ export function Frame({
           <img src={logo} alt="" width="22" height="31" />
           <span>Greecon</span>
         </Link>
+        <QuickFindButton variant="sidebar" />
         <Nav role={role} audience={audience} requestsWaiting={waiting} />
         <div className="sidebar-foot">
           <p>{GREECON_COMPANY}</p>
@@ -69,6 +77,7 @@ export function Frame({
           </div>
           <div className="topbar__tools">
             {action ? <div className="topbar__action">{action}</div> : null}
+            <QuickFindButton variant="bar" />
             {tools}
           </div>
         </header>
@@ -77,6 +86,8 @@ export function Frame({
           {children}
         </main>
       </div>
+      <DismissMenus />
+      <QuickFind pages={[...pagesForFind(role, audience), ...actionsForFind(role, audience)]} extra={findExtra} search={search} />
     </div>
   );
 }

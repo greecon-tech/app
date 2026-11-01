@@ -5,8 +5,8 @@ This book takes the platform from nothing to live, and a customer from the first
 | Who | Does | Never does |
 |-------------|------------------------------|-----------------------------|
 | **The founder** | Puts the platform on the internet, once (Part 2). Gives the project manager a login. Owns every incident about the platform or about security. Reads the morning check when the project manager is away. Meets the customer at day 60 and day 90 | Hands out hardware, or installs anything at a customer, before the go-live checklist is ticked |
-| {{who:pm}} | Surveys, prepares the customer in Greecon and the box at the office, installs the low-voltage side with the electrician, works down the setup list, commissions, hands over, and looks after the site (Parts 3 and 6) | Works inside a distribution board. Touches the solar panels' wiring, a tank that must be entered, wastewater or chemicals. Promises a saving. Says Greecon is a safety system |
-| {{who:e}} | All the mains-voltage work: meters' voltage taps and current clamps, the pump's run contact, anything inside a distribution board, under the customer's lock-out procedure | Works on a live conductor for Greecon's sake. Connects anything of Greecon's to a control circuit |
+| {{who:pm}} | Surveys, prepares the customer in Greecon and the box at the office (the kit's numbers and the converter are set there too), installs the low-voltage side with the electrician, works down the setup list, commissions, hands over, and looks after the site (Parts 3 and 6) | Works inside a distribution board. Touches the solar panels' wiring, a tank that must be entered, wastewater or chemicals. Promises a saving. Says Greecon is a safety system |
+| {{who:e}} | All the mains-voltage work: meters' voltage taps and current clamps, the pump's run contact, the 4 to 20 mA loops and their 24 V supply, anything inside a distribution board, under the customer's lock-out procedure | Works on a live conductor for Greecon's sake. Connects anything of Greecon's to a control circuit |
 | {{who:c}} | Names the people who are told, gives access and a socket that stays on, starts and stops their own equipment, signs the handover | |
 
 The colours used for these people in every step table are the same all through the book: black for the electrician, green for the project manager, sand for the customer.
@@ -25,7 +25,7 @@ The colours used for these people in every step table are the same all through t
 
 {{diagram:how-it-works}}
 
-Meters and sensors at the site are read by a small computer, the **box**. The meters and modules share one two-wire cable (RS-485); a **converter** puts that cable on the network so that the box can reach every device. The box sends what it reads to the platform over the internet, and keeps about three days of readings if the internet is down. The platform turns readings into a picture of the site and, when something needs attention, tells the people on the list. Everything points one way: Greecon reads, and nothing it does can switch a pump, an inverter or a valve.
+Meters and sensors at the site are read by a small computer, the **box**. The meters and modules share one two-wire cable (RS-485); a **converter** puts that cable on the network so that the box can reach every device. Nobody types an address: when a person presses **{{ui.find_equipment}}** on the setup list, the box looks at the site's network and the platform fills in where each device is, asking the person only where it is not certain. The box sends what it reads to the platform over the internet, and keeps about three days of readings if the internet is down. The platform turns readings into a picture of the site and, when something needs attention, tells the people on the list. Everything points one way: Greecon reads, and nothing it does can switch a pump, an inverter or a valve.
 
 ## [1.3]{.num} The path of a customer
 
@@ -51,7 +51,7 @@ Tick these before the first customer is surveyed. Nothing here needs a technicia
 
 - {{cb}} **The platform is live,** and the founder has ticked every line of the go-live checklist (Part 2, the last page).
 - {{cb}} **The project manager has a login** of their own and has chosen their own password.
-- {{cb}} **The rehearsal is done** (section 3.11, record A.5): the whole job on a desk, with a laptop standing in for the meters. It finds the mistakes in the room instead of at a hotel.
+- {{cb}} **The rehearsal is done** (section 3.11, record A.5): the whole job on a desk, with a laptop standing in for the kit, and once more with the first real kit in its place. It finds the mistakes in the room instead of at a hotel.
 - {{cb}} **One full kit has been bought and bench-tested.** Change the specification, not the kit, when something fails. Quotes for every part are in the shared drive.
 - {{cb}} **The spares kit is complete,** and the project manager's tools are in the car (Appendix D).
 - {{cb}} **An electrician is named, and a second one,** and the contact sheet is filled in (Appendix E).
@@ -75,4 +75,4 @@ Tick these before the first customer is surveyed. Nothing here needs a technicia
 
 **Screen names** follow the web app as redesigned in October 2026: Greecon's team has **{{ui.today}}**, **{{ui.clients}}**, **{{ui.requests}}**, **{{ui.team}}** and **{{ui.settings}}**; a customer has **{{ui.overview}}**, **{{ui.sites}}**, **{{ui.alerts}}**, **{{ui.reports}}** and **{{ui.settings}}**.
 
-**What this book is made from.** The launch documents in `docs/launch/` and the platform's own code; it is rebuilt with `npm run docs:pdf`. If something in it does not match what you see, fix the source and rebuild, and do not mark up the PDF. The ten setup-list step titles are checked against the platform at every build. A maker's terminal numbers, register tables and menus are in the maker's manual that came with the part.
+**What this book is made from.** The launch documents in `docs/launch/` and the platform's own code; it is rebuilt with `npm run docs:pdf`. If something in it does not match what you see, fix the source and rebuild, and do not mark up the PDF. The twelve setup-list step titles are checked against the platform at every build. A maker's terminal numbers, register tables and menus are in the maker's manual that came with the part.

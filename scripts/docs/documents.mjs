@@ -179,7 +179,7 @@ export function documents(kits) {
         subtitle: `${kit.short}. Everything for one kind of site in one pack: what to buy, the survey, the diagrams, install day step by step, the platform steps, the commissioning tests and the handover sheet.`,
         forWho: "The project manager at this kind of site, the electrician, and the customer's owner at handover",
         print: "The whole pack, for the site in front of you. Tick the boxes as you go",
-        covers: `Bill of materials · survey · system, wiring, network and enclosure diagrams · install day · addressing · the ten setup steps · commissioning · handover`,
+        covers: `Bill of materials · survey · system, wiring, network and enclosure diagrams · install day · numbers, addresses and ranges · the twelve setup steps · commissioning · handover`,
         badge: letter
       },
       parts: [PARTS.pack(letter)]
@@ -239,7 +239,7 @@ export function documents(kits) {
         print: "Once for the car and the office; print the forms (Appendix A) for each site",
         covers: "The job · the rules · the setup list step by step · the four kinds of site · commissioning · handover · the runbooks a project manager uses · forms, glossary, symptoms, shopping lists, contacts"
       },
-      parts: [PARTS.part3, PARTS.part6, (g) => PARTS.part7(g, { only: ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R10", "R11"] }), PARTS.appendices]
+      parts: [PARTS.part3, PARTS.part6, (g) => PARTS.part7(g, { only: ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R10", "R11", "R15", "R16", "R17", "R18"] }), PARTS.appendices]
     },
     {
       id: "03",

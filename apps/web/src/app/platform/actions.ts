@@ -20,9 +20,14 @@ interface CreatedOwner {
   name: string;
 }
 
-export async function updateTenantStatusAction(tenantId: string, nextStatus: "active" | "suspended"): Promise<void> {
-  await apiMutate(`/platform-admin/tenants/${tenantId}/status`, "PATCH", { status: nextStatus });
+export async function updateTenantStatusAction(tenantId: string, nextStatus: "active" | "suspended"): Promise<{ error?: string }> {
+  try {
+    await apiMutate(`/platform-admin/tenants/${tenantId}/status`, "PATCH", { status: nextStatus });
+  } catch (error) {
+    return { error: apiErrorMessage(error, nextStatus === "suspended" ? "The client could not be suspended." : "The client could not be reactivated.") };
+  }
   revalidatePath("/platform");
+  return {};
 }
 
 export async function createTenantAction(

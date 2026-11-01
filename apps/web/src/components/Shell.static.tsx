@@ -1,9 +1,11 @@
 import { ReactNode } from "react";
 import { userRoles } from "@greecon/shared";
-import { DEMO_ROLE } from "../lib/api";
+import { apiGet, DEMO_ROLE } from "../lib/api";
+import { siteEntries } from "../lib/find-entries";
 import { roleLabel } from "../lib/roles";
 import { DemoBanner } from "./DemoBanner";
 import { Frame } from "./Frame";
+import type { SiteRowData } from "./SiteRows";
 import { UserMenu } from "./UserMenu";
 
 // Static-export twin of Shell.tsx (see apps/web/scripts/build-static.sh). The live Shell reads a
@@ -12,12 +14,14 @@ import { UserMenu } from "./UserMenu";
 // would break the entire static export, not just one route. This twin has no login concept at
 // all: each of the five static builds already "is" its DEMO_ROLE by construction, and it is
 // always the client's own view (the demo has no Greecon team).
-export function Shell({ children, title, subtitle, action }: { children: ReactNode; title: string; subtitle?: string; action?: ReactNode }) {
+export async function Shell({ children, title, subtitle, action }: { children: ReactNode; title: string; subtitle?: string; action?: ReactNode }) {
   // Set only by the multi-role GitHub Pages build (docs/12-deployment-github-pages.md), which
   // publishes one static snapshot per role under sibling paths — a normal SSR deployment has a
   // single live role and no sibling builds to switch to, so the menu stays hidden there.
   const siteRoot = process.env.GREECON_SITE_ROOT;
   const roleName = roleLabel(DEMO_ROLE);
+  // A snapshot has no server to ask as a person types, so quick find is given the demo's sites when the page is made.
+  const sites = await apiGet<SiteRowData[]>("/sites").catch(() => [] as SiteRowData[]);
 
   const tools =
     siteRoot !== undefined ? (
@@ -43,7 +47,7 @@ export function Shell({ children, title, subtitle, action }: { children: ReactNo
     );
 
   return (
-    <Frame audience="client" role={DEMO_ROLE} home="/" title={title} subtitle={subtitle} action={action} tools={tools} banner={<DemoBanner />}>
+    <Frame audience="client" role={DEMO_ROLE} home="/" title={title} subtitle={subtitle} action={action} tools={tools} banner={<DemoBanner />} findExtra={siteEntries(sites)}>
       {children}
     </Frame>
   );

@@ -36,6 +36,8 @@
 #     step), which call Server Actions. The twin shows the same checklist read only.
 #   sites/[siteId]/handover/page.tsx — no Server Action, but a dynamic route needs generateStaticParams
 #     in a static export and must not have it in the live build (same reason as sites/[siteId]/page.tsx).
+#   sites/[siteId]/install-card/page.tsx — no Server Action, but a dynamic route needs generateStaticParams in a static export and must
+#     not have it in the live build (same reason as the handover sheet).
 #   sites/[siteId]/equipment/page.tsx — imports the forms that add and remove equipment and readings and set their limits, which call
 #     Server Actions, and needs generateStaticParams in the static build only. The twin lists the same things, read only.
 #   sites/new/page.tsx      — imports the form that makes a site from a template (a Server Action). The twin says the demo makes none.
@@ -73,6 +75,7 @@ src/app/reports/page.tsx
 src/app/maintenance/page.tsx
 src/app/sites/[siteId]/setup/page.tsx
 src/app/sites/[siteId]/handover/page.tsx
+src/app/sites/[siteId]/install-card/page.tsx
 src/app/sites/[siteId]/equipment/page.tsx
 src/app/sites/new/page.tsx
 src/app/ack/[token]/page.tsx

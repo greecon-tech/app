@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { UserRole, userRoles } from "@greecon/shared";
+import { isSuspendedRefusal, messageOfBody } from "./refusals";
 import { getSession } from "./session";
 
 const API_BASE_URL = process.env.GREECON_API_URL ?? "http://localhost:4000";
@@ -34,6 +35,8 @@ export async function apiGet<T>(path: string, role: DemoRole = DEMO_ROLE): Promi
     // secret was changed) is a signed-out person, not a fault: say so on the sign-in page.
     if (response.status === 401 && !isStaticExport()) redirect("/login?ended=1");
     const detail = await response.text().catch(() => "");
+    // A client that Greecon has suspended: the person is told so, in words, and not shown a page that could not be loaded.
+    if (!isStaticExport() && isSuspendedRefusal(response.status, messageOfBody(detail))) redirect("/login?suspended=1");
     throw new Error(`Greecon API request failed: ${role} ${path} -> ${response.status} ${detail.slice(0, 300)}`);
   }
 

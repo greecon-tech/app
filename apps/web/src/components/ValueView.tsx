@@ -105,7 +105,7 @@ export function ValueSummary({ entries }: { entries: Array<{ siteId: string; sit
           {valueHeadline(entry.value)}
           {entry.value.simulated ? <StatusBadge status="Simulated" /> : null}
           <Link href={`/sites/${entry.siteId}#value`} className="value-summary__more">
-            Details →
+            Details<span className="visually-hidden"> of {entry.siteName}</span> →
           </Link>
         </p>
       ))}

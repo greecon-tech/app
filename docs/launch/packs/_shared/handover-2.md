@@ -1,5 +1,6 @@
 - {{cb}} **Say the two things in the boxes below, in these words:** what Greecon is, and how an alert reaches people.
 - {{cb}} **Leave** the printed sheet, signed; the box's label; and a card with `info@greecon.earth` and your phone. **File** the photographs and the survey form in the shared drive, in a folder named for the customer.
+- {{cb}} **Send the third message on {{ui.install_card_link}}** to the customer's contact the same day, with the handover sheet attached (its Albanian is a draft: have it read first).
 - {{cb}} **Leave the customer's account:** press **{{ui.back_to_console}}** (the banner's button). It returns you to **{{ui.today}}**.
 
 ::: say

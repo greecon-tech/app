@@ -31,6 +31,8 @@ export const MANAGED_ALERT_CATEGORIES: ReadonlySet<AlertCategory> = new Set<Aler
   "water_tank_low",
   "pump_dry_run_risk",
   "battery_constrained",
+  "grid_direction_suspect",
+  "frost_risk",
   "communication_degraded",
   "sensor_quality_degradation"
 ]);
@@ -55,8 +57,14 @@ export interface ConditionState {
 // cost of one level sensor's single bad sample is one message that resolves itself (the platform answers
 // "resolved" only after fifteen minutes of clear readings). If real sites show that costing more than a
 // delay would, it is a decision to take with their numbers (docs/18, open list).
+//
+// A grid meter that exports at night is a meter fitted backwards, not a plant: the readings are taken a few seconds apart, and at dusk
+// the sun can be gone from one reading before the grid has caught up, so it must hold for five minutes. Frost is judged from a slow
+// reading, and one bad sample must not wake a grower: two minutes.
 const ON_DELAY_SECONDS: Partial<Record<StateKey, number>> = {
-  "water.pump.dry_run_risk": 30
+  "water.pump.dry_run_risk": 30,
+  "energy.grid.direction_suspect": 300,
+  "agri.frost_risk": 120
 };
 
 export function alertConditionsFromStates(states: ReadonlyArray<ConditionState>, nowMs?: number): AlertCondition[] {
@@ -111,6 +119,25 @@ export function alertConditionsFromStates(states: ReadonlyArray<ConditionState>,
     });
   }
 
+  if (active("energy.grid.direction_suspect")) {
+    conditions.push({
+      category: "grid_direction_suspect",
+      severity: "warning",
+      title: "The grid meter may be fitted the wrong way round",
+      suggestedAction:
+        "With the sun down, switch on a known load: Grid import must go up. If Grid export goes up instead, turn the meter's current clamps round. Until then the savings shown for this site are wrong."
+    });
+  }
+
+  if (active("agri.frost_risk")) {
+    conditions.push({
+      category: "frost_risk",
+      severity: "critical",
+      title: "Frost: the air at the field has fallen to the frost limit",
+      suggestedAction: "Protect the crop the way you planned for frost: cover it, or start your frost protection. The limit is the one agreed for this field."
+    });
+  }
+
   if (active("system.communication_degraded")) {
     conditions.push({
       category: "communication_degraded",
@@ -141,6 +168,8 @@ const CATEGORY_STATES: Partial<Record<AlertCategory, ReadonlyArray<StateKey>>> =
   water_tank_low: ["water.tank.critical", "water.tank.low"],
   pump_dry_run_risk: ["water.pump.dry_run_risk"],
   battery_constrained: ["energy.battery.constrained"],
+  grid_direction_suspect: ["energy.grid.direction_suspect"],
+  frost_risk: ["agri.frost_risk"],
   communication_degraded: ["system.communication_degraded"],
   sensor_quality_degradation: ["system.sensor_quality_bad"]
 };

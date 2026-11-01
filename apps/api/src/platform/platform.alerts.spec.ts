@@ -124,6 +124,79 @@ describe("alerts follow the facts", () => {
     expect(alertsFor(provisioned.site.id)).toEqual([]);
   });
 
+  it("tells the grower when frost reaches their own limit, and says nothing about frost until they have set one", async () => {
+    const provisioned = await provisionSite(platform, client, [{ canonicalName: "agri.air.temperature.c", unit: "C" }]);
+    const air = provisioned.pointIds["agri.air.temperature.c"] as string;
+
+    // -3.5 C at the field, and no frost limit: the platform says nothing, as with irrigation.
+    await sendReadings(platform, client, provisioned, [{ name: "agri.air.temperature.c", value: -3.5 }]);
+    expect(platform.listDerivedStates(client, provisioned.site.id).map((state) => state.stateKey)).not.toContain("agri.frost_risk");
+    expect(alertsFor(provisioned.site.id)).toEqual([]);
+
+    // The grower's own limit is entered: frost is now true at once, but nobody is woken for a single sample.
+    await platform.updatePoint(air, { thresholdConfig: { frost_below: 1 } }, client);
+    await sendReadings(platform, client, provisioned, [{ name: "agri.air.temperature.c", value: -3.5 }]);
+    expect(platform.listDerivedStates(client, provisioned.site.id).find((state) => state.stateKey === "agri.frost_risk")?.stateValue).toBe(true);
+    expect(alertsFor(provisioned.site.id)).toEqual([]);
+
+    // Three minutes later it is still frost: an Act now alert, in words that say what to do.
+    await platform.refreshAllDerivedStates(Date.now() + 3 * 60_000);
+    const [alert] = alertsFor(provisioned.site.id);
+    expect(alert).toMatchObject({ category: "frost_risk", severity: "critical", status: "open" });
+    expect(alert?.suggestedAction).toContain("Protect the crop");
+
+    // And it clears itself when the air warms.
+    await sendReadings(platform, client, provisioned, [{ name: "agri.air.temperature.c", value: 6.2 }]);
+    expect(alertsFor(provisioned.site.id)[0]?.status).toBe("resolved");
+
+    // A frost limit that cannot be right is refused.
+    await expect(platform.updatePoint(air, { thresholdConfig: { frost_below: 99 } }, client)).rejects.toThrow(/between -30 and 15/);
+  });
+
+  it("calls a grid meter fitted the wrong way round only once energy has gone out of a dark plant for five minutes", async () => {
+    const provisioned = await provisionSite(platform, client, [
+      { canonicalName: "energy.grid.export.kw", unit: "kW" },
+      { canonicalName: "energy.solar.power.kw", unit: "kW" }
+    ]);
+    // Power readings go out of date after five minutes by default; these are allowed to stand for an hour, so that the test can let six minutes pass.
+    for (const id of Object.values(provisioned.pointIds)) await platform.updatePoint(id as string, { thresholdConfig: { max_age_seconds: 3600 } }, client);
+    const night = [
+      { name: "energy.grid.export.kw" as const, value: 0.5 },
+      { name: "energy.solar.power.kw" as const, value: 0 }
+    ];
+    await sendReadings(platform, client, provisioned, night);
+    expect(platform.listDerivedStates(client, provisioned.site.id).find((state) => state.stateKey === "energy.grid.direction_suspect")?.stateValue).toBe(true);
+    expect(alertsFor(provisioned.site.id)).toEqual([]);
+
+    // The next readings, six minutes on, say the same: a Check today alert that says what to do and why it matters.
+    await sendReadings(platform, client, provisioned, night);
+    await platform.refreshAllDerivedStates(Date.now() + 6 * 60_000);
+    const [alert] = alertsFor(provisioned.site.id);
+    expect(alert).toMatchObject({ category: "grid_direction_suspect", severity: "warning", status: "open", title: "The grid meter may be fitted the wrong way round" });
+    expect(alert?.suggestedAction).toContain("turn the meter's current clamps round");
+
+    // Turned the right way round (import at night), the suspicion and the alert go.
+    await sendReadings(platform, client, provisioned, [
+      { name: "energy.grid.export.kw", value: 0 },
+      { name: "energy.solar.power.kw", value: 0 }
+    ]);
+    expect(alertsFor(provisioned.site.id)[0]?.status).toBe("resolved");
+  });
+
+  it("does not call the grid meter backwards in the day, when the sun explains the export", async () => {
+    const provisioned = await provisionSite(platform, client, [
+      { canonicalName: "energy.grid.export.kw", unit: "kW" },
+      { canonicalName: "energy.solar.power.kw", unit: "kW" }
+    ]);
+    for (const id of Object.values(provisioned.pointIds)) await platform.updatePoint(id as string, { thresholdConfig: { max_age_seconds: 3600 } }, client);
+    await sendReadings(platform, client, provisioned, [
+      { name: "energy.grid.export.kw", value: 3 },
+      { name: "energy.solar.power.kw", value: 7.2 }
+    ]);
+    await platform.refreshAllDerivedStates(Date.now() + 10 * 60_000);
+    expect(alertsFor(provisioned.site.id)).toEqual([]);
+  });
+
   it("leaves the demo tenant's own example alerts alone, and keeps tenants apart", async () => {
     const before = platform.listAlerts(DEMO_OWNER).map((alert) => `${alert.id}:${alert.status}`);
     const provisioned = await tankSite();

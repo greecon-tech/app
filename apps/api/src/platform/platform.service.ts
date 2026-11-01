@@ -245,6 +245,8 @@ export interface CreateDeviceInput {
   placementNote?: string;
   /** Where the box reaches the device on the site's network. Modbus devices only. */
   connection?: ModbusConnection;
+  /** The equipment profile it is made from, if any. */
+  profileKey?: string;
 }
 
 export interface CreateGatewayInput {
@@ -1886,6 +1888,22 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
   /** A person says they checked something the platform cannot see, or takes it back. Both are recorded
    * in the audit trail with who and when, because "someone checked the clamps" is only worth
    * something if it can be said who. */
+  /** For setting a site up: a person did something that is not a change of one record, such as asking a box to look at the site's network. It goes in the same
+   * audit trail as every other change, with who and when. */
+  async recordSetupEvent(siteId: string, principal: Principal, event: { eventType: string; reason: string; afterMetadata?: Record<string, unknown> }): Promise<void> {
+    const site = this.requireSite(siteId, principal.tenantId);
+    await this.recordAudit({
+      tenantId: principal.tenantId,
+      userId: principal.userId,
+      eventType: event.eventType,
+      siteId: site.id,
+      entityType: "site_setup",
+      entityId: site.id,
+      ...(event.afterMetadata ? { afterMetadata: event.afterMetadata } : {}),
+      reason: event.reason
+    });
+  }
+
   async setSetupConfirmation(siteId: string, key: string, confirmation: Confirmation | null, principal: Principal): Promise<SiteSetupRecord> {
     if (!hasPermission(principal.role, "site:manage")) {
       throw new ForbiddenException("Action blocked by access policy.");
@@ -2458,7 +2476,8 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       positionX: input.positionX,
       positionY: input.positionY,
       placementNote: input.placementNote,
-      ...(input.connection ? { connection: tidyConnection(input.connection) } : {})
+      ...(input.connection ? { connection: tidyConnection(input.connection) } : {}),
+      ...(input.profileKey ? { profileKey: input.profileKey } : {})
     };
 
     if (this.db.isConfigured()) {
@@ -2532,6 +2551,7 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
     if (connection === null) delete device.connection;
     else if (connection) device.connection = tidyConnection(connection);
     const addressChanged = JSON.stringify(before.connection ?? null) !== JSON.stringify(device.connection ?? null);
+    const profileChanged = (before.profileKey ?? null) !== (device.profileKey ?? null);
 
     if (this.db.isConfigured()) {
       await this.db.query(
@@ -2560,10 +2580,20 @@ export class PlatformService implements OnModuleInit, OnApplicationBootstrap, On
       siteId: device.siteId,
       entityType: "device",
       entityId: device.id,
-      // The address decides what the box reads, so a change of it is recorded as old and new.
-      beforeMetadata: { name: before.name, health: before.health, ...(addressChanged ? { address: before.connection ? describeConnection(before.connection) : null } : {}) },
-      afterMetadata: { name: device.name, health: device.health, ...(addressChanged ? { address: device.connection ? describeConnection(device.connection) : null } : {}) },
-      reason: addressChanged ? `Address of device "${device.name}" changed.` : `Device "${device.name}" updated.`
+      // The address and the equipment profile decide what the box reads, so a change of either is recorded as old and new.
+      beforeMetadata: {
+        name: before.name,
+        health: before.health,
+        ...(addressChanged ? { address: before.connection ? describeConnection(before.connection) : null } : {}),
+        ...(profileChanged ? { profile: before.profileKey ?? null } : {})
+      },
+      afterMetadata: {
+        name: device.name,
+        health: device.health,
+        ...(addressChanged ? { address: device.connection ? describeConnection(device.connection) : null } : {}),
+        ...(profileChanged ? { profile: device.profileKey ?? null } : {})
+      },
+      reason: addressChanged ? `Address of device "${device.name}" changed.` : profileChanged ? `Equipment profile of device "${device.name}" changed.` : `Device "${device.name}" updated.`
     });
 
     return device;
@@ -4208,6 +4238,7 @@ function devicePlacementMetadata(device: Device): Record<string, unknown> {
   if (device.positionX !== undefined) metadata.positionX = device.positionX;
   if (device.positionY !== undefined) metadata.positionY = device.positionY;
   if (device.placementNote !== undefined) metadata.placementNote = device.placementNote;
+  if (device.profileKey !== undefined) metadata.profileKey = device.profileKey;
   return metadata;
 }
 
@@ -4310,7 +4341,7 @@ interface DeviceRow {
   last_seen_utc: string | null;
   firmware_version: string | null;
   secure_identity_status: string;
-  metadata: { positionX?: number; positionY?: number; placementNote?: string } | null;
+  metadata: { positionX?: number; positionY?: number; placementNote?: string; profileKey?: string } | null;
   connection: ModbusConnection | null;
 }
 
@@ -4332,7 +4363,8 @@ function mapDeviceRow(row: DeviceRow): Device {
     positionX: row.metadata?.positionX,
     positionY: row.metadata?.positionY,
     placementNote: row.metadata?.placementNote,
-    ...(row.connection ? { connection: row.connection } : {})
+    ...(row.connection ? { connection: row.connection } : {}),
+    ...(row.metadata?.profileKey ? { profileKey: row.metadata.profileKey } : {})
   };
 }
 

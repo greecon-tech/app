@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EdgeConfig, profileByKey } from "@greecon/shared";
+import { DiscoveryRequest, EdgeConfig, profileByKey } from "@greecon/shared";
+import { DiscoveryTools, realTools } from "./discovery";
 import type { EdgeIdentity } from "./identity";
 import { ModbusTcpReader } from "./modbus/reader";
 import { EdgeRuntime, waitBeforeNext } from "./runtime";
@@ -232,6 +233,224 @@ describe("the box, start to finish", () => {
     expect(modbus.connections()).toBe(0);
     expect(log[log.length - 1]).toBe("info: Greecon edge stopped.");
   }, 15_000);
+
+  describe("finding equipment when a person asks", () => {
+    const request = (id = "find-1"): DiscoveryRequest => ({ id, hosts: [modbus.host], ports: [modbus.port], units: [1, 2] });
+    const quickTools = (): DiscoveryTools => realTools(Date.now, { requestTimeoutMs: 200, connectTimeoutMs: 400 });
+    /** The pretend converter of these tests is on this machine, which a real box would not look at; and a question is asked again at once, not after a pause. */
+    const onThisMachine = { allowLoopback: true, retryPauseMs: 0 };
+
+    beforeEach(() => {
+      // One meter behind the converter, at unit 1, as it answers; the converter says at once that nothing else is there.
+      modbus.removeUnit(2);
+      modbus.setFloat32(1, "input", 0, 231);
+      modbus.setRegister(1, "input", 2, 0);
+      modbus.setAbsentUnits("exception");
+    });
+
+    it("looks at the network when the platform asks, and says what it found, once", async () => {
+      platform.discovery = request();
+      const runtime = newRuntime({ discovery: quickTools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+
+      expect(platform.calls).toContain("POST /edge/discovery");
+      expect(platform.discoveries).toHaveLength(1);
+      const found = platform.discoveries[0];
+      expect(found).toMatchObject({ requestId: "find-1", scanned: { ports: [modbus.port], units: [1, 2] } });
+      expect(found?.hosts).toHaveLength(1);
+      expect(found?.hosts[0]?.units.map((unit) => unit.unit)).toEqual([1]);
+      expect(log.some((line) => line.includes("Looking for equipment on the site's network (request find-1)"))).toBe(true);
+
+      // The platform has the answer and stops asking; and if a late reply still carried the request, the box would not look again.
+      await runtime.runHeartbeat();
+      platform.discovery = request();
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries).toHaveLength(1);
+    });
+
+    it("looks again for a new request", async () => {
+      platform.discovery = request("find-1");
+      const runtime = newRuntime({ discovery: quickTools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+
+      modbus.setFloat32(2, "input", 0, 229);
+      modbus.setRegister(2, "input", 2, 0);
+      platform.discovery = request("find-2");
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries.map((result) => result.requestId)).toEqual(["find-1", "find-2"]);
+      expect(platform.discoveries[1]?.hosts[0]?.units.map((unit) => unit.unit)).toEqual([1, 2]);
+    });
+
+    it("does not start a second search while one is running", async () => {
+      let started = 0;
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const tools = (): DiscoveryTools => {
+        started += 1;
+        const real = quickTools();
+        return { ...real, connects: async (host, port, timeoutMs) => (await gate, real.connects(host, port, timeoutMs)) };
+      };
+      platform.discovery = request();
+      const runtime = newRuntime({ discovery: tools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      await runtime.runHeartbeat();
+      await runtime.runHeartbeat();
+      release();
+      await runtime.whenSearched();
+      expect(started).toBe(1);
+      expect(platform.discoveries).toHaveLength(1);
+    });
+
+    it("sends the result again when the platform could not be reached with it", async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const tools = (): DiscoveryTools => {
+        const real = quickTools();
+        return { ...real, connects: async (host, port, timeoutMs) => (await gate, real.connects(host, port, timeoutMs)) };
+      };
+      platform.discovery = request();
+      const runtime = newRuntime({ discovery: tools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      // The platform goes away while the box is looking, and comes back after it has finished.
+      platform.mode = "down";
+      release();
+      await runtime.whenSearched();
+      expect(platform.discoveries).toHaveLength(0);
+      expect(log.some((line) => line.startsWith("warn: Could not tell the platform what was found on the network"))).toBe(true);
+
+      platform.mode = "normal";
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries).toHaveLength(1);
+      expect(platform.discoveries[0]?.requestId).toBe("find-1");
+    });
+
+    it("reports in often for a few minutes after being asked, because someone is watching", async () => {
+      let nowMs = Date.now();
+      const runtime = newRuntime({ discovery: quickTools, discoveryOptions: onThisMachine, now: () => nowMs });
+      const delay = () => (runtime as unknown as { heartbeatDelayMs(): number }).heartbeatDelayMs();
+      nowMs += 20 * 60_000;
+      expect(delay()).toBe(30_000);
+      platform.discovery = request();
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(delay()).toBe(10_000);
+      nowMs += 6 * 60_000;
+      expect(delay()).toBe(30_000);
+    });
+
+    it("never looks at an address that is not on a private network", async () => {
+      platform.discovery = { id: "find-9", hosts: ["8.8.8.8"] };
+      const runtime = newRuntime({ discovery: quickTools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries[0]?.hosts).toEqual([]);
+      expect(platform.discoveries[0]?.notes).toEqual(["8.8.8.8 is not on a private network, so the box did not look there."]);
+    });
+
+    it("does not look at itself, as a real box is set up: only a desk or a test lets it", async () => {
+      // No discoveryOptions: this is the box as the installer starts it. The address is this machine's own, and the box says so instead of looking.
+      platform.discovery = request("find-self");
+      const runtime = newRuntime({ discovery: quickTools });
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries[0]?.hosts).toEqual([]);
+      expect(platform.discoveries[0]?.notes).toEqual([`${modbus.host} is this box itself, so the box did not look there.`]);
+    });
+
+    it("says so, once, when looking fails, instead of leaving the person waiting and starting again every heartbeat", async () => {
+      let started = 0;
+      const broken = (): DiscoveryTools => {
+        started += 1;
+        return {
+          ...quickTools(),
+          connects: async () => {
+            throw new Error("the network card went away");
+          }
+        };
+      };
+      platform.discovery = request("find-broken");
+      const runtime = newRuntime({ discovery: broken, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries).toHaveLength(1);
+      expect(platform.discoveries[0]).toMatchObject({ requestId: "find-broken", hosts: [], notes: ["The box could not look at the network: the network card went away"] });
+      expect(log.some((line) => line.startsWith("warn: Looking at the network failed: the network card went away"))).toBe(true);
+
+      // The platform has the answer; a late reply that still carried the request does not start it again.
+      platform.discovery = request("find-broken");
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(started).toBe(1);
+      expect(platform.discoveries).toHaveLength(1);
+    });
+
+    it("gives up on a result the platform refuses to take, and looks afresh for the next request", async () => {
+      platform.refuseDiscoveryWith = 400;
+      platform.discovery = request("find-refused");
+      const runtime = newRuntime({ discovery: quickTools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveryPosts).toBe(1);
+      expect(log.some((line) => line.includes("The platform did not accept what was found on the network") && line.includes("It will not be sent again"))).toBe(true);
+
+      // It is still said in every heartbeat reply (the platform never took it), and the box does not post the same result again and again.
+      await runtime.runHeartbeat();
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveryPosts).toBe(1);
+
+      platform.refuseDiscoveryWith = undefined;
+      platform.discovery = request("find-next");
+      await runtime.runHeartbeat();
+      await runtime.whenSearched();
+      expect(platform.discoveries.map((result) => result.requestId)).toEqual(["find-next"]);
+    });
+
+    it("keeps sending a result the platform did not take because it was busy or did not know the box for a moment", async () => {
+      for (const status of [401, 408, 429, 503]) {
+        platform.refuseDiscoveryWith = status;
+        platform.discovery = request(`find-${status}`);
+        const runtime = newRuntime({ discovery: quickTools, discoveryOptions: onThisMachine });
+        await runtime.runHeartbeat();
+        await runtime.whenSearched();
+        expect(platform.discoveryPosts).toBeGreaterThanOrEqual(1);
+        const posted = platform.discoveryPosts;
+        await runtime.runHeartbeat();
+        await runtime.whenSearched();
+        expect(platform.discoveryPosts).toBe(posted + 1);
+
+        platform.refuseDiscoveryWith = undefined;
+        await runtime.runHeartbeat();
+        await runtime.whenSearched();
+        expect(platform.discoveries.map((result) => result.requestId)).toContain(`find-${status}`);
+        platform.discoveries = [];
+        platform.discoveryPosts = 0;
+        await runtime.stop();
+      }
+    });
+
+    it("sends nothing when the box is stopped in the middle of looking, because a half-answer would be taken for the whole one", async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const tools = (): DiscoveryTools => {
+        const real = quickTools();
+        return { ...real, connects: async (host, port, timeoutMs) => (await gate, real.connects(host, port, timeoutMs)) };
+      };
+      platform.discovery = request("find-stopped");
+      const runtime = newRuntime({ discovery: tools, discoveryOptions: onThisMachine });
+      await runtime.runHeartbeat();
+      const stopping = runtime.stop();
+      release();
+      await stopping;
+      expect(platform.discoveryPosts).toBe(0);
+      expect(platform.discoveries).toEqual([]);
+    });
+  });
 
   describe("taking an update", () => {
     const NEW = "9.9.9+newer";

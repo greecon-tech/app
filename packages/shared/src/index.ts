@@ -55,10 +55,15 @@ export * from "./modbus";
 export * from "./edge";
 export * from "./device-profiles";
 export * from "./site-templates";
+export * from "./discovery";
+export * from "./install-card";
 export * from "./setup";
 export * from "./notifications";
 export * from "./acknowledge-link";
 export * from "./fleet";
+export * from "./quick-find";
+export * from "./places";
+export * from "./typed-number";
 
 export const severityLevels = ["info", "watch", "warning", "critical"] as const;
 export type SeverityLevel = (typeof severityLevels)[number];
@@ -262,7 +267,7 @@ export const canonicalPointLabels: Readonly<Record<CanonicalPointName, string>> 
 // the form reads them to show the right fields, and the API reads them to refuse a typo that would
 // otherwise silently do nothing.
 
-export const pointLimitKeys = ["critical_low", "warning_low", "irrigate_below", "dry_run_lpm", "surplus_min_kw", "max_age_seconds"] as const;
+export const pointLimitKeys = ["critical_low", "warning_low", "irrigate_below", "frost_below", "dry_run_lpm", "surplus_min_kw", "max_age_seconds"] as const;
 export type PointLimitKey = (typeof pointLimitKeys)[number];
 
 export interface PointLimitDefinition {
@@ -319,6 +324,16 @@ export const pointLimitDefinitions: readonly PointLimitDefinition[] = [
     appliesTo: ["agri.soil.moisture.percent"],
     min: 0,
     max: 1000,
+    fallback: null
+  },
+  {
+    key: "frost_below",
+    label: "Frost alert at or below",
+    help: "When the air at the field falls to this temperature, an Act now alert opens so that the crop can be protected. It depends on the crop and how far on it is: nobody can set it for the grower, so without it the platform says nothing about frost.",
+    unit: "°C",
+    appliesTo: ["agri.air.temperature.c"],
+    min: -30,
+    max: 15,
     fallback: null
   },
   {
@@ -393,6 +408,8 @@ export const stateKeys = [
   "energy.surplus_available",
   "energy.battery.constrained",
   "agri.irrigation_required",
+  "agri.frost_risk",
+  "energy.grid.direction_suspect",
   "system.communication_degraded",
   "system.sensor_quality_bad"
 ] as const;
@@ -512,6 +529,8 @@ export interface Device {
   /** Where the box at the site reaches this device on the site's network. Absent until someone
    * has entered it: a device without a connection is listed but never read. */
   connection?: ModbusConnection;
+  /** The equipment profile the device was made from, when it was made from one (kept so that the platform knows what to expect of it). */
+  profileKey?: string;
 }
 
 /** How recently a box has been heard from, in words that need no explaining. */
@@ -732,6 +751,8 @@ export interface AlertMessage {
     | "pump_dry_run_risk"
     | "overpressure"
     | "battery_constrained"
+    | "grid_direction_suspect"
+    | "frost_risk"
     | "communication_degraded"
     | "site_offline"
     | "rule_conflict"

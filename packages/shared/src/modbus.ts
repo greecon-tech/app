@@ -9,7 +9,8 @@ export type ModbusDataType = (typeof modbusDataTypes)[number];
 export const modbusWordOrders = ["big", "little"] as const;
 export type ModbusWordOrder = (typeof modbusWordOrders)[number];
 
-export const modbusRegisterTypes = ["holding", "input"] as const;
+/** "discrete" is a digital input read with function 02: one bit, a contact that is open or closed. Reading it never changes anything. */
+export const modbusRegisterTypes = ["holding", "input", "discrete"] as const;
 export type ModbusRegisterType = (typeof modbusRegisterTypes)[number];
 
 /** What a signal's sign means for the reading. A two-way meter reports one signed power; the
@@ -108,7 +109,8 @@ export function validatePointSource(source: unknown): string[] {
   const problems: string[] = [];
 
   if (candidate.kind !== "modbus") problems.push('The kind of source must be "modbus".');
-  if (!modbusRegisterTypes.includes(candidate.registerType as ModbusRegisterType)) problems.push('The register type must be "holding" or "input".');
+  if (!modbusRegisterTypes.includes(candidate.registerType as ModbusRegisterType)) problems.push('The register type must be "holding", "input" or "discrete".');
+  if (candidate.registerType === "discrete" && candidate.dataType !== "uint16") problems.push("A digital input is one bit: its data type must be uint16.");
   if (typeof candidate.address !== "number" || !Number.isInteger(candidate.address) || candidate.address < 0 || candidate.address > 65535) {
     problems.push("The register address must be a whole number from 0 to 65535.");
   }

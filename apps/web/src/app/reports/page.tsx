@@ -5,7 +5,7 @@ import { requirePermission } from "../../lib/access";
 import { apiGet, DEMO_ROLE } from "../../lib/api";
 import { getSession } from "../../lib/session";
 
-export const metadata = { title: "Reports" };
+export const metadata = { title: "Downloads" };
 
 // Rendered on request: the download routes read the person's session.
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const [sites, { problem }] = await Promise.all([apiGet<Array<{ id: string; name: string }>>("/sites"), searchParams]);
 
   return (
-    <Shell title="Reports" subtitle="Your data, as files you can keep.">
+    <Shell title="Downloads" subtitle="Your data, as files you can keep.">
       {problem ? (
         <div className="setup-guidance" role="alert">
           <p>
