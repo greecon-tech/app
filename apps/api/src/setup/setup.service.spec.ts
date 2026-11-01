@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiscoveryResult, GatewayHeartbeat, PROBES, Point, ProbeResult, TelemetryMessage, convertRaw, readModbusValue } from "@greecon/shared";
 import { Principal, edgeDeviceIngestPrincipal } from "../common/principal";
@@ -735,6 +735,33 @@ describe("setting a site up", () => {
       await expect(setup.requestDiscovery(waiting.site.id, {}, owner)).rejects.toThrow(/not online yet/);
     });
 
+    it("says what is wrong with an address that was copied with leading zeros, not just that it is not private", async () => {
+      const { site } = await onlineBox();
+      await expect(setup.requestDiscovery(site.id, { host: "192.168.001.050" }, owner)).rejects.toThrow(/without a leading zero: 192\.168\.1\.50/);
+      await expect(setup.requestDiscovery(site.id, { host: "010.1.1.1" }, owner)).rejects.toThrow(/without a leading zero/);
+      await expect(setup.requestDiscovery(site.id, { host: "8.8.8.8" }, owner)).rejects.toThrow(/not on a private network/);
+    });
+
+    it("writes down who sent the box to look at the customer's network, and what they asked it to look at", async () => {
+      const { site } = await onlineBox();
+      const before = platform.listAudit(owner, site.id).length;
+      await setup.requestDiscovery(site.id, {}, owner);
+      await setup.requestDiscovery(site.id, { host: "192.168.1.60", port: 4001 }, owner, Date.now() + 1000);
+      const asked = platform.listAudit(owner, site.id).filter((entry) => entry.eventType === "setup.discovery_requested");
+      expect(platform.listAudit(owner, site.id).length).toBe(before + 2);
+      expect(asked).toHaveLength(2);
+      expect(asked.every((entry) => entry.userId === owner.userId && entry.siteId === site.id)).toBe(true);
+      expect(asked.map((entry) => entry.afterMetadata)).toEqual(expect.arrayContaining([{ boxes: ["Plant room"] }, { boxes: ["Plant room"], address: "192.168.1.60", port: 4001 }]));
+      expect(asked.find((entry) => entry.afterMetadata?.address)?.reason).toBe('Find equipment requested for "Hotel Adriatik": Plant room was asked to look at the site\'s network at 192.168.1.60:4001.');
+    });
+
+    it("does not write a second line for a press that only showed the search already under way", async () => {
+      const { site } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      await setup.requestDiscovery(site.id, {}, owner, Date.now() + 30_000);
+      expect(platform.listAudit(owner, site.id).filter((entry) => entry.eventType === "setup.discovery_requested")).toHaveLength(1);
+    });
+
     it("is for people who manage devices, and for their own account's site only", async () => {
       const { site } = await onlineBox();
       await expect(setup.requestDiscovery(site.id, {}, { ...owner, role: "viewer" })).rejects.toBeInstanceOf(ForbiddenException);
@@ -757,6 +784,58 @@ describe("setting a site up", () => {
       expect(await setup.recordDiscovery(box, resultFor(second, fullKit()))).toEqual({ recorded: true });
       expect(await setup.recordDiscovery(box, resultFor(second, kitOn("192.168.1.99", [])))).toEqual({ recorded: false });
       expect(platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.connection?.host).toBe("192.168.1.50");
+    });
+
+    it("does not take an answer to a search that the person was already told the box never picked up", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const asked = (await askedOf(box))?.id as string;
+      // The box answers eleven minutes later: the page said "the box did not pick this up" a minute ago, and nothing is filled in behind the person's back.
+      expect(await setup.recordDiscovery(box, resultFor(asked, fullKit()), Date.now() + 11 * 60_000)).toEqual({ recorded: false });
+      expect(platform.listDevices(owner, site.id).every((device) => device.connection === undefined)).toBe(true);
+      expect(setup.discoveryView(site.id, owner, Date.now() + 11 * 60_000).state).toBe("expired");
+    });
+
+    it("refuses an answer that says something was found at an address that is not on a private network", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const asked = (await askedOf(box))?.id as string;
+      await expect(setup.recordDiscovery(box, resultFor(asked, kitOn("8.8.8.8", [[1, meter630(1800)]])))).rejects.toThrow(/not on a private network/);
+      expect(platform.listDevices(owner, site.id).every((device) => device.connection === undefined)).toBe(true);
+    });
+
+    it("keeps what the box found, and says in the platform's log, when it could not fill the addresses in", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const asked = (await askedOf(box))?.id as string;
+      const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+      const update = vi.spyOn(platform, "updateDevice").mockRejectedValueOnce(new Error("the database is not answering"));
+      try {
+        expect(await setup.recordDiscovery(box, resultFor(asked, fullKit()))).toEqual({ recorded: true });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("the database is not answering"));
+      } finally {
+        update.mockRestore();
+        warn.mockRestore();
+      }
+      // The person can still press "Use these addresses".
+      const view = setup.discoveryView(site.id, owner);
+      expect(view.state).toBe("done");
+      expect(view.toApply).toBeGreaterThan(0);
+    });
+
+    it("never gives a device an address the box found anywhere but on a private network, even from a result that got past the check", async () => {
+      const { site, box } = await onlineBox();
+      await setup.requestDiscovery(site.id, {}, owner);
+      const asked = (await askedOf(box))?.id as string;
+      await setup.recordDiscovery(box, resultFor(asked, fullKit()));
+      // Put a public address into what is held, as if the check at the door had been missed, and use everything that was found.
+      const held = (setup as unknown as { searches: Map<string, { result?: DiscoveryResult }> }).searches;
+      for (const search of held.values()) for (const host of search.result?.hosts ?? []) host.host = "8.8.8.8";
+      const grid = platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter");
+      await platform.updateDevice(grid?.id as string, { connection: null }, owner);
+      const used = await setup.applyDiscovery(site.id, owner);
+      expect(used.applied).toEqual([]);
+      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.connection).toBeUndefined();
     });
 
     it("refuses a result that is not one, in words, and a person's session that is not a box", async () => {
@@ -787,20 +866,72 @@ describe("setting a site up", () => {
       expect(used.setup.steps.find((step) => step.key === "addresses")?.status).toBe("done");
     });
 
-    it("reads a meter as the model that is there when it is not the one planned, by that model's registers", async () => {
-      const { site, box } = await onlineBox();
-      await setup.requestDiscovery(site.id, {}, owner);
-      const hosts = kitOn("192.168.1.50", [[1, meter230(900)], [2, meter630(5200)], [3, analogModule], [5, digitalModule]]);
-      await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, hosts));
+    describe("a meter of the other model than the one planned", () => {
+      const otherModel = () => kitOn("192.168.1.50", [[1, meter230(900)], [2, meter630(5200)], [3, analogModule], [5, digitalModule]]);
 
-      const grid = platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter");
-      expect(grid?.profileKey).toBe("eastron-sdm230-grid");
-      const points = platform.listPoints(owner, grid?.id as string);
-      // Total power sits at register 12 on the SDM230, not 52.
-      expect(points.map((point) => point.source?.address)).toEqual([12, 12]);
-      const solar = platform.listDevices(owner, site.id).find((device) => device.name === "Solar meter");
-      expect(solar?.profileKey).toBe("eastron-sdm630-solar");
-      expect(platform.listPoints(owner, solar?.id as string)[0]?.source?.address).toBe(52);
+      it("is not switched when the box says so: only a person saying 'use this address' changes what is read", async () => {
+        const { site, box } = await onlineBox();
+        await setup.requestDiscovery(site.id, {}, owner);
+        await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, otherModel()));
+
+        // What is certain was filled in (the solar meter, the modules), and the grid meter, which would be read by other registers, was left for the person.
+        const devices = platform.listDevices(owner, site.id);
+        const grid = devices.find((device) => device.name === "Grid meter");
+        expect(grid?.connection).toBeUndefined();
+        expect(grid?.profileKey).toBe("eastron-sdm630-grid");
+        expect(devices.find((device) => device.name === "Solar meter")?.connection).toMatchObject({ unitId: 2 });
+        const view = setup.discoveryView(site.id, owner);
+        expect(view.toApply).toBe(1);
+        expect(view.proposals[0]).toMatchObject({ name: "Grid meter", status: "found", useModel: "SDM230" });
+        expect(view.proposals[0]?.message).toContain("single-phase SDM230, not the three-phase SDM630 planned");
+        expect(view.allSet).toBe(false);
+      });
+
+      it("is read as the model that is there once the person says so, by that model's registers, and the change is in the audit trail", async () => {
+        const { site, box } = await onlineBox();
+        await setup.requestDiscovery(site.id, {}, owner);
+        await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, otherModel()));
+        const used = await setup.applyDiscovery(site.id, owner);
+        expect(used.applied).toEqual(["Grid meter"]);
+
+        const grid = platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter");
+        expect(grid).toMatchObject({ profileKey: "eastron-sdm230-grid", connection: { host: "192.168.1.50", unitId: 1 } });
+        // Total power sits at register 12 on the SDM230, not 52.
+        expect(platform.listPoints(owner, grid?.id as string).map((point) => point.source?.address)).toEqual([12, 12]);
+        const solar = platform.listDevices(owner, site.id).find((device) => device.name === "Solar meter");
+        expect(solar?.profileKey).toBe("eastron-sdm630-solar");
+        expect(platform.listPoints(owner, solar?.id as string)[0]?.source?.address).toBe(52);
+
+        // What decides what is read is written down with the old value and the new, as the person who said so.
+        const change = platform.listAudit(owner, site.id).find((entry) => entry.eventType === "device.updated" && entry.afterMetadata?.profile === "eastron-sdm230-grid");
+        expect(change).toMatchObject({ userId: owner.userId, beforeMetadata: { profile: "eastron-sdm630-grid" }, afterMetadata: { profile: "eastron-sdm230-grid" } });
+      });
+
+      it("keeps saying that the meter is not the one planned, so that nobody finds out from the readings", async () => {
+        const { site, box } = await onlineBox();
+        await setup.requestDiscovery(site.id, {}, owner);
+        await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, otherModel()));
+        await setup.applyDiscovery(site.id, owner);
+        const grid = setup.discoveryView(site.id, owner).proposals.find((proposal) => proposal.name === "Grid meter");
+        expect(grid?.status).toBe("already");
+        expect(grid?.message).toContain("Greecon reads it as a single-phase SDM230; the site's plan had a three-phase SDM630.");
+        // The ones that are what was planned say nothing of the kind.
+        expect(setup.discoveryView(site.id, owner).proposals.find((proposal) => proposal.name === "Solar meter")?.message).not.toContain("Greecon reads it as");
+      });
+
+      it("takes the other model's name when the device carried the name of the model it was made from", async () => {
+        const { site, box } = await onlineBox();
+        const { deviceId } = await setup.createDeviceFromProfile({ siteId: site.id, profileKey: "eastron-sdm630-load" }, owner);
+        expect(platform.listDevices(owner, site.id).find((device) => device.id === deviceId)?.name).toBe("Eastron SDM630 on the site's own consumption");
+        await setup.requestDiscovery(site.id, {}, owner);
+        const hosts = kitOn("192.168.1.50", [[1, meter630(1800)], [4, meter230(400)]]);
+        await setup.recordDiscovery(box, resultFor((await askedOf(box))?.id as string, hosts));
+        await setup.applyDiscovery(site.id, owner);
+        const load = platform.listDevices(owner, site.id).find((device) => device.id === deviceId);
+        expect(load).toMatchObject({ name: "Eastron SDM230 on the site's own consumption", profileKey: "eastron-sdm230-load", connection: { unitId: 4 } });
+        // A device a person named themselves keeps their name.
+        expect(platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.profileKey).toBe("eastron-sdm630-grid");
+      });
     });
 
     it("does not guess between two meters it cannot tell apart, and says what to do", async () => {
@@ -827,12 +958,20 @@ describe("setting a site up", () => {
         ["Grid meter", "already"],
         ["Solar meter", "missing"],
         ["Water I/O module", "missing"],
-        // It was found at unit 8, not 5, and it is the only digital module and the only device that wants one: it works, and it was filled in.
-        ["Pump contact module (optional)", "already"]
+        // It was found at unit 8, not 5, and it is the only digital module and the only device that wants one: a likely match, which is offered and not filled in,
+        // because a module at another number may be one of the customer's own that happens to share the cable.
+        ["Pump contact module (optional)", "found"]
       ]);
-      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Pump contact module (optional)")?.connection).toMatchObject({ host: "192.168.1.50", unitId: 8 });
+      expect(view.proposals[3]).toMatchObject({ exact: false, match: { unit: 8 } });
+      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Pump contact module (optional)")?.connection).toBeUndefined();
+      expect(view.toApply).toBe(1);
       expect(view.notes).toEqual(["The converter at 192.168.1.50 stopped answering part way through."]);
       expect(setup.setupView(site.id, owner).steps.find((step) => step.key === "addresses")).toMatchObject({ status: "todo" });
+
+      // Once the person says it is theirs, it is filled in.
+      const used = await setup.applyDiscovery(site.id, owner);
+      expect(used.applied).toEqual(["Pump contact module (optional)"]);
+      expect(platform.listDevices(owner, site.id).find((device) => device.name === "Pump contact module (optional)")?.connection).toMatchObject({ host: "192.168.1.50", unitId: 8 });
     });
 
     it("says nothing was asked, and that a request the box never picked up has gone unanswered", async () => {
@@ -892,11 +1031,29 @@ describe("setting a site up", () => {
     });
 
     it("takes a reading away when there is no such transmitter, so that nothing waits for it for ever", async () => {
-      const { site, moduleId } = await hotelWithModule();
+      const { moduleId } = await hotelWithModule();
       const { setup: view } = await setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.tank.level.percent", range: 5, tankHeight: 4 }, { canonicalName: "water.pressure.bar", range: 10 }, { canonicalName: "water.flow.lpm", notFitted: true }] }, owner);
       expect(pointsOf(moduleId).map((point) => point.canonicalName).sort()).toEqual(["water.pressure.bar", "water.tank.level.percent"]);
       expect(view.steps.find((step) => step.key === "mapping")?.status).toBe("done");
-      expect(site.id).toBeTruthy();
+    });
+
+    it("takes the same transmitter only once, because the one that came last would win without anybody meaning it", async () => {
+      const { moduleId } = await hotelWithModule();
+      await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.pressure.bar", range: 10 }, { canonicalName: "water.pressure.bar", notFitted: true }] }, owner)).rejects.toThrow(/Line pressure is given twice/);
+      expect(pointsOf(moduleId)).toHaveLength(3);
+      expect(pointsOf(moduleId).every((point) => point.source === undefined)).toBe(true);
+    });
+
+    it("sets every transmitter before it takes any away, so that a failure part way does not leave a reading removed for nothing", async () => {
+      const { moduleId } = await hotelWithModule();
+      const update = vi.spyOn(platform, "updatePoint").mockRejectedValueOnce(new Error("the database is not answering"));
+      try {
+        await expect(setup.setRanges(moduleId, { ranges: [{ canonicalName: "water.flow.lpm", notFitted: true }, { canonicalName: "water.pressure.bar", range: 10 }] }, owner)).rejects.toThrow(/not answering/);
+      } finally {
+        update.mockRestore();
+      }
+      // The flow reading is still there: it is only removed after everything that is set has been.
+      expect(pointsOf(moduleId).map((point) => point.canonicalName).sort()).toEqual(["water.flow.lpm", "water.pressure.bar", "water.tank.level.percent"]);
     });
 
     it("checks every answer before using any, and says in words what is wrong with the one that is", async () => {

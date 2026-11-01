@@ -1,6 +1,7 @@
 import { join } from "path";
 import { describe, expect, it, vi } from "vitest";
 import { Pool } from "pg";
+import { DiscoveryResult, PROBES, ProbeResult } from "@greecon/shared";
 import { Principal, edgeDeviceIngestPrincipal } from "../common/principal";
 import { hashGatewaySecret } from "../common/gateway-secret";
 import { DatabaseService } from "../database/database.service";
@@ -115,6 +116,65 @@ describe.skipIf(!testDatabaseUrl)("setting a site up, on a real PostgreSQL", () 
       expect(found.rows).toEqual([{ id: gatewayId, tenant_id: owner.tenantId }]);
       const stored = await pool.query("SELECT secret_hash FROM edge_gateways WHERE id = $1", [gatewayId]);
       expect(stored.rows[0].secret_hash).not.toBe(secret);
+    });
+  }, 120_000);
+
+  it("keeps a meter that was read as the other model, with that model's registers and the record of the change, across a restart", async () => {
+    await inWorld(async ({ start, owner }) => {
+      const running = await start();
+      let siteId = "";
+      let gridId = "";
+      try {
+        const { site } = await running.setup.createSiteFromTemplate({ templateKey: "hotel", name: "Hotel Adriatik", locationName: "Durrës" }, owner);
+        siteId = site.id;
+        const { gatewayId, enrolment } = await running.setup.provisionBox({ siteId: site.id, name: "Plant room" }, owner, API);
+        await running.setup.enrol(enrolment.code, API);
+        const box = edgeDeviceIngestPrincipal(owner.tenantId, gatewayId);
+        const beat = () => running.setup.heartbeat(box, { agentVersion: "0.2.0", uptimeSeconds: 10, sentAtUtc: new Date().toISOString(), bufferDepth: 0, devices: [] });
+        await beat();
+        await running.setup.requestDiscovery(site.id, {}, owner);
+        const asked = (await beat()).discovery;
+
+        // A single-phase meter at unit 1, where a three-phase one was planned: its own total-power register answers, and the three-phase meter's is refused.
+        const words = (value: number): number[] => {
+          const view = new DataView(new ArrayBuffer(4));
+          view.setFloat32(0, value);
+          return [view.getUint16(0), view.getUint16(2)];
+        };
+        const given: Record<string, ProbeResult> = {
+          "eastron-voltage": { key: "eastron-voltage", outcome: "ok", words: words(229) },
+          "eastron-630": { key: "eastron-630", outcome: "refused", code: 2 },
+          "eastron-230": { key: "eastron-230", outcome: "ok", words: words(900) }
+        };
+        const probes = PROBES.map((probe) => given[probe.key] ?? { key: probe.key, outcome: "refused" as const, code: 1 });
+        const result: DiscoveryResult = {
+          requestId: asked?.id as string,
+          startedAtUtc: new Date(Date.now() - 20_000).toISOString(),
+          finishedAtUtc: new Date().toISOString(),
+          scanned: { subnets: ["192.168.1.0/24"], hostsTried: 253, ports: [502], units: [1] },
+          hosts: [{ host: "192.168.1.50", port: 502, units: [{ unit: 1, probes }] }],
+          notes: []
+        };
+        await running.setup.recordDiscovery(box, result);
+        expect(running.platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.connection).toBeUndefined();
+        const used = await running.setup.applyDiscovery(site.id, owner);
+        expect(used.applied).toEqual(["Grid meter"]);
+        gridId = running.platform.listDevices(owner, site.id).find((device) => device.name === "Grid meter")?.id as string;
+      } finally {
+        await running.stop();
+      }
+
+      const again = await start();
+      try {
+        const grid = again.platform.listDevices(owner, siteId).find((device) => device.id === gridId);
+        expect(grid).toMatchObject({ profileKey: "eastron-sdm230-grid", connection: { host: "192.168.1.50", unitId: 1 } });
+        expect(again.platform.listPoints(owner, gridId).map((point) => point.source?.address)).toEqual([12, 12]);
+        const change = again.platform.listAudit(owner, siteId).find((entry) => entry.eventType === "device.updated" && entry.afterMetadata?.profile === "eastron-sdm230-grid");
+        expect(change).toMatchObject({ userId: owner.userId, beforeMetadata: { profile: "eastron-sdm630-grid" } });
+        expect(again.platform.listAudit(owner, siteId).some((entry) => entry.eventType === "setup.discovery_requested" && entry.userId === owner.userId)).toBe(true);
+      } finally {
+        await again.stop();
+      }
     });
   }, 120_000);
 

@@ -76,6 +76,11 @@ describe("PrincipalGuard and the box at a site", () => {
       { method: "POST", path: "/gateways" },
       { method: "GET", path: "/sites/abc/setup" },
       { method: "POST", path: "/commands" },
+      // What a person does while setting a site up: asking a box to look at the network, using what it found, and setting a transmitter's range.
+      { method: "POST", path: "/sites/abc/discovery" },
+      { method: "GET", path: "/sites/abc/discovery" },
+      { method: "POST", path: "/sites/abc/discovery/apply" },
+      { method: "PUT", path: "/devices/abc/ranges" },
       { method: "GET", path: "/edge/install.sh/../config" }
     ]) {
       await expect(new PrincipalGuard(database([{ id: "gw-7", tenant_id: "tenant-1" }])).canActivate(contextFor({ "x-edge-device-token": "box-secret" }, route)), `${route.method} ${route.path}`).rejects.toThrow(UnauthorizedException);

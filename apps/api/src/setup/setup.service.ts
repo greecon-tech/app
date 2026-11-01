@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import {
   CurrencyCode,
   DeviceProposal,
@@ -20,12 +20,14 @@ import {
   ModbusConnection,
   NotificationContact,
   Point,
+  PointSource,
   SetupView,
   Site,
   SiteTemplate,
   TemplateDevice,
   describeConnection,
   describeIdentity,
+  describeModel,
   describeScan,
   describeSource,
   expectationOf,
@@ -34,15 +36,16 @@ import {
   isPrivateAddress,
   limitsFor,
   manualSetupSteps,
+  meterModelOf,
   profileByKey,
   profileForModel,
   proposeAssignments,
   rangeProblem,
   sourceFromRange,
   templateByKey,
-  unitsFound,
   validateDiscoveryResult,
-  validateHeartbeat
+  validateHeartbeat,
+  validatePointSource
 } from "@greecon/shared";
 import { Principal } from "../common/principal";
 import { PlatformService } from "../platform/platform.service";
@@ -120,6 +123,7 @@ export interface RangeEntry {
  * decides the order and, when a step fails, puts back what the earlier ones made. */
 @Injectable()
 export class SetupService {
+  private readonly logger = new Logger(SetupService.name);
   private readonly searches = new Map<string, Search>();
 
   constructor(
@@ -377,6 +381,8 @@ export class SetupService {
     if (reachable.length === 0) throw new ConflictException("The box is not online yet, so it cannot look at the network. Wait until the box shows as online, then try again.");
     const host = input.host?.trim() || undefined;
     if (host && !isPrivateAddress(host)) {
+      // "192.168.001.050" is how an address looks when it is copied from a spreadsheet or a router's table: each part must be written without a leading zero.
+      if (/(^|\.)0\d/.test(host)) throw new BadRequestException("Write each part of the address without a leading zero: 192.168.1.50, not 192.168.001.050.");
       throw new BadRequestException("That address is not on a private network. Give the address the converter has on the site's own network, for example 192.168.1.50.");
     }
     const port = input.port !== undefined && Number.isInteger(input.port) && input.port >= 1 && input.port <= 65535 ? input.port : undefined;
@@ -384,10 +390,20 @@ export class SetupService {
     const particular = host !== undefined || port !== undefined;
 
     this.forgetOldSearches(nowMs);
+    const started: string[] = [];
     for (const box of reachable) {
       const existing = this.searches.get(box.id);
       if (!particular && existing && !existing.result && nowMs - existing.requestedAtMs < SEARCH_REPEAT_AFTER_MS) continue;
       this.searches.set(box.id, { request: { id: randomUUID(), ...(host ? { hosts: [host] } : {}), ...(port !== undefined ? { ports: [port] } : {}) }, requestedAtMs: nowMs, requestedBy: principal });
+      started.push(box.name);
+    }
+    // A box is sent looking at a customer's network by a person pressing a button, so who pressed it and what they asked for is written down like any other change.
+    if (started.length > 0) {
+      await this.platform.recordSetupEvent(siteId, principal, {
+        eventType: "setup.discovery_requested",
+        reason: `Find equipment requested for "${detail.site.name}": ${started.join(", ")} ${started.length === 1 ? "was" : "were"} asked to look at the site's network${host ? ` at ${host}${port !== undefined ? `:${port}` : ""}` : port !== undefined ? ` on port ${port}` : ""}.`,
+        afterMetadata: { boxes: started, ...(host ? { address: host } : {}), ...(port !== undefined ? { port } : {}) }
+      });
     }
     return this.discoveryView(siteId, principal, nowMs);
   }
@@ -425,6 +441,13 @@ export class SetupService {
           ...expectationOf(device, record.templateKey)
         }));
       const proposed = proposeAssignments(result.hosts, expected);
+      // A meter that was switched to the other model stays said: the site's plan had one model, and the device is read as the other.
+      for (const proposal of proposed.proposals) {
+        const device = detail.devices.find((candidate) => candidate.id === proposal.deviceId);
+        const planned = device ? expectationOf({ name: device.name, deviceType: device.deviceType }, record.templateKey).meterModel : undefined;
+        const actual = meterModelOf(device?.profileKey);
+        if (planned && actual && planned !== actual && !proposal.useModel) proposal.message += ` Greecon reads it as a ${describeModel(actual)}; the site's plan had a ${describeModel(planned)}.`;
+      }
       proposals.push(...proposed.proposals);
       unclaimed.push(...proposed.unclaimed.map((found) => ({ host: found.host, port: found.port, unit: found.unit, seen: describeIdentity(found.identity) })));
       notes.push(...result.notes, ...proposed.notes);
@@ -455,20 +478,34 @@ export class SetupService {
     const search = this.searches.get(gatewayId);
     // A result for a search that has been replaced, or one already recorded, is thanked and put aside: the box need not send it again.
     if (!search || search.request.id !== result.requestId || search.result) return { recorded: false };
+    // A search the person has already been told the box never picked up is not answered after that: nothing is filled in when they have stopped looking.
+    if (nowMs - search.requestedAtMs >= SEARCH_WAITS_FOR_MS) return { recorded: false };
     search.result = result;
     const gateway = this.platform.findGateway(gatewayId, principal.tenantId, nowMs);
-    if (gateway) await this.applyFound(gateway.siteId, search.requestedBy, "new", nowMs).catch(() => undefined);
+    if (gateway) {
+      try {
+        await this.applyFound(gateway.siteId, search.requestedBy, "new", nowMs);
+      } catch (error) {
+        // What the box found is kept, and "Use these addresses" is still there: the person is not told it failed, but the people who run the platform can see it did.
+        this.logger.warn(`Equipment was found for site ${gateway.siteId} but its addresses could not be filled in: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     return { recorded: true };
   }
 
-  /** "Use these addresses": every device that was found at an address other than the one it has is set to the one it was found at. */
+  /** "Use these addresses": every device that was found at an address other than the one it has is set to the one it was found at, and a meter of
+   * the other model than the one planned is read as the model that is there. This is what a person pressed the button to say. */
   async applyDiscovery(siteId: string, principal: Principal, nowMs: number = Date.now()): Promise<{ applied: string[]; discovery: DiscoveryView; setup: SetupView }> {
     if (!hasPermission(principal.role, "device:manage")) throw new ForbiddenException("Action blocked by access policy.");
     const { applied } = await this.applyFound(siteId, principal, "all", nowMs);
     return { applied, discovery: this.discoveryView(siteId, principal, nowMs), setup: this.setupView(siteId, principal, nowMs) };
   }
 
-  /** Sets each device the box found to where it found it. `new` leaves a device that already has an address alone. */
+  /** Sets each device the box found to where it found it.
+   *
+   * `new` is what happens when the box's answer arrives, with nobody pressing anything: it fills in only what cannot be a guess. That is a device that has no address yet,
+   * found at the unit number the kit gives it (a match that is only a suggestion waits for a person), as the model that was planned (a different model waits for a
+   * person, because it changes what is read). `all` is a person saying "use these". */
   private async applyFound(siteId: string, principal: Principal, mode: "new" | "all", nowMs: number): Promise<{ applied: string[] }> {
     const view = this.discoveryView(siteId, principal, nowMs);
     const record = this.platform.siteSetupRecord(siteId, principal);
@@ -477,26 +514,40 @@ export class SetupService {
     for (const proposal of view.proposals) {
       const device = devices.get(proposal.deviceId);
       if (proposal.status !== "found" || !proposal.match || !device) continue;
-      if (mode === "new" && device.connection) continue;
-      await this.platform.updateDevice(device.id, { connection: { kind: "modbus_tcp", host: proposal.match.host, port: proposal.match.port, unitId: proposal.match.unit } }, principal);
-      if (proposal.useModel) await this.readAsModel(device.id, proposal.useModel, record.templateKey, principal);
+      if (mode === "new" && (device.connection || proposal.exact !== true || proposal.useModel)) continue;
+      // A box only looks at private addresses, so an answer from anywhere else is not believed, whoever says it.
+      if (!isPrivateAddress(proposal.match.host)) continue;
+      // Worked out and checked first, so that a device is not left with its new address and half of its old readings.
+      const model = proposal.useModel ? this.planModel(device.id, proposal.useModel, record.templateKey, principal) : undefined;
+      await this.platform.updateDevice(
+        device.id,
+        { connection: { kind: "modbus_tcp", host: proposal.match.host, port: proposal.match.port, unitId: proposal.match.unit }, ...(model ? { profileKey: model.profileKey, ...(model.name ? { name: model.name } : {}) } : {}) },
+        principal
+      );
+      for (const change of model?.points ?? []) await this.platform.updatePoint(change.pointId, { source: change.source }, principal);
       applied.push(device.name);
     }
     return { applied };
   }
 
-  /** A meter of the other model is there than the one planned: the device is read as the one that is there, by the other model's registers. */
-  private async readAsModel(deviceId: string, model: "SDM230" | "SDM630", templateKey: string | undefined, principal: Principal): Promise<void> {
+  /** A meter of the other model is there than the one planned: what the device would be read as, by the other model's registers. Nothing is changed here, and every
+   * register is checked, so that it is all done or none of it is. A device that carries its profile's own name takes the other profile's. */
+  private planModel(deviceId: string, model: "SDM230" | "SDM630", templateKey: string | undefined, principal: Principal): { profileKey: string; name?: string; points: Array<{ pointId: string; source: PointSource }> } | undefined {
     const device = this.platform.listDevices(principal).find((candidate) => candidate.id === deviceId);
-    if (!device) return;
+    if (!device) return undefined;
     const current = device.profileKey ?? expectationOf(device, templateKey).profileKey;
     const profile = current ? profileByKey(profileForModel(current, model) ?? "") : undefined;
-    if (!profile) return;
-    await this.platform.updateDevice(device.id, { profileKey: profile.key }, principal);
+    if (!profile) return undefined;
+    const points: Array<{ pointId: string; source: PointSource }> = [];
     for (const point of this.platform.listPoints(principal, device.id)) {
       const known = profile.points.find((candidate) => candidate.canonicalName === point.canonicalName);
-      if (known?.source) await this.platform.updatePoint(point.id, { source: known.source }, principal);
+      if (!known?.source) continue;
+      const problems = validatePointSource(known.source);
+      if (problems.length > 0) throw new BadRequestException(`${known.label}: ${problems.join(" ")}`);
+      points.push({ pointId: point.id, source: known.source });
     }
+    const was = current ? profileByKey(current) : undefined;
+    return { profileKey: profile.key, ...(was && device.name === was.name ? { name: profile.name } : {}), points };
   }
 
   // ---- The ranges on the transmitters' labels --------------------------------------------------------
@@ -513,21 +564,28 @@ export class SetupService {
     const entries = (body as { ranges?: unknown } | null)?.ranges;
     if (!Array.isArray(entries) || entries.length === 0 || entries.length > 8) throw new BadRequestException("Give the range of at least one transmitter.");
     const points = this.platform.listPoints(principal, device.id);
+    const given = new Set<string>();
     const plan = entries.map((entry: unknown) => {
       const asked = (typeof entry === "object" && entry !== null ? entry : {}) as Partial<RangeEntry>;
       const known = profile.points.find((candidate) => candidate.canonicalName === asked.canonicalName && candidate.range !== undefined);
       if (!known?.range) throw new BadRequestException(`This equipment has no reading called "${String(asked.canonicalName)}" that is set from a range.`);
+      // The same transmitter twice would be set by the first and then by the second, or removed and then set: whichever came last would win without anybody meaning it.
+      if (given.has(known.canonicalName)) throw new BadRequestException(`${known.label} is given twice. Give each transmitter once.`);
+      given.add(known.canonicalName);
       const point = points.find((candidate) => candidate.canonicalName === asked.canonicalName);
       if (!point) throw new BadRequestException(`${known.label} has been taken off this device.`);
       if (asked.notFitted === true) return { point, remove: true as const };
       const problem = rangeProblem(known.range, asked);
       if (problem) throw new BadRequestException(`${known.label}: ${problem}`);
-      return { point, remove: false as const, source: sourceFromRange(known.range, { range: asked.range as number, ...(asked.tankHeight !== undefined ? { tankHeight: asked.tankHeight } : {}) }) };
+      const source = sourceFromRange(known.range, { range: asked.range as number, ...(asked.tankHeight !== undefined ? { tankHeight: asked.tankHeight } : {}) });
+      // Checked here, with the rest of the answers, so that a register that is refused does not leave the ones before it changed.
+      const sourceProblems = validatePointSource(source);
+      if (sourceProblems.length > 0) throw new BadRequestException(`${known.label}: ${sourceProblems.join(" ")}`);
+      return { point, remove: false as const, source };
     });
-    for (const step of plan) {
-      if (step.remove) await this.platform.deletePoint(step.point.id, principal);
-      else await this.platform.updatePoint(step.point.id, { source: step.source }, principal);
-    }
+    // Settings first and removals last: a failure part way leaves every transmitter that is there with a scale, and none taken away on the strength of a half-done answer.
+    for (const step of plan) if (!step.remove) await this.platform.updatePoint(step.point.id, { source: step.source }, principal);
+    for (const step of plan) if (step.remove) await this.platform.deletePoint(step.point.id, principal);
     return { setup: this.setupView(device.siteId, principal, nowMs) };
   }
 
