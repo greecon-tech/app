@@ -89,7 +89,9 @@ greecon-edge status        how the box is; exits 1 if the platform has not heard
 greecon-edge modbus-test --host H --unit N --type input|holding|discrete --address A --data-type T [--word-order big|little]
                            reads one register and prints the raw numbers and the value (address counted from zero)
 greecon-edge find [--host H] [--port P] [--unit N]
-                           looks at the network for converters and what answers behind them (reads only), as Find equipment does
+                           looks at the network for converters and what answers behind them (reads only), as Find equipment does.
+                           By hand at the box it may be pointed at the box itself; a box that runs as a service may not
+                           (GREECON_DISCOVERY_ALLOW_LOOPBACK=1 allows it on a desk, and the installer never sets it)
 greecon-edge enrol --api URL --code C    (the installer runs this)
 greecon-edge version
 journalctl -u greecon-edge -n 50 --no-pager     what it has been saying

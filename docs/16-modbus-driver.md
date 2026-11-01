@@ -81,7 +81,9 @@ software. The SDM230's serial speed differs between versions; Greecon sets it to
 `apps/edge-agent/src/discovery.ts` is what the box does when a person presses **Find equipment**: it opens a connection to port 502 (or the one asked) on the private
 addresses of its own network, asks each unit 1 to 10 up to six read-only questions (`PROBES` in `packages/shared/src/discovery.ts`: function 02, 03 and 04, never a write),
 and sends what answered to the platform, which recognises it by what each unit positively said. A converter's own exceptions 10 and 11 mean "nothing answered me" and are treated
-as silence; any other exception means a device is there. `greecon-edge find` does it by hand. How it decides, and why it is safe, is in [30](30-guided-setup.md), section 4.
+as silence; any other exception means a device is there. A question a unit that is there leaves unanswered, or answers "busy" (exception 6) or "device failure" (4), is asked again, twice at most;
+the box does not look at itself (127.x, 169.254.x) unless it is told it may (`GREECON_DISCOVERY_ALLOW_LOOPBACK=1` for a desk or a test; `greecon-edge find` at the box always may), and what the converter
+sees is function codes 2, 3 and 4 and no other. `greecon-edge find` does it by hand. How it decides, and why it is safe, is in [30](30-guided-setup.md), section 4.
 
 ## What it does not do
 

@@ -7,7 +7,7 @@ judgement, not facts**. None has been read by a lawyer, an electrical engineer o
 the two modules in section 3 have been tested against a pretend module and not yet against real hardware (section 8).
 
 Read with [02 Project manager manual](launch/02-project-manager-manual.md), [03 Hardware and wiring](launch/03-hardware-and-wiring.md),
-[27 Launch decisions](27-launch-decisions.md) (L20 to L23) and [18 Reality audit](18-reality-audit.md) (findings 97 to 102).
+[27 Launch decisions](27-launch-decisions.md) (L20 to L23) and [18 Reality audit](18-reality-audit.md) (findings 97 to 111).
 
 ## 1. The problem
 
@@ -60,18 +60,29 @@ copied across sections and do not always match their labels. **No real module ha
 
 When a person presses **Find equipment** the platform asks the box, in its next heartbeat reply, to look. The box:
 
-1. Works out which networks it is on, and keeps only **private** ones (10.x, 172.16 to 31, 192.168.x, link-local), never wider than 254 addresses,
-   never its own address, never anything on a public address. Or, if a person gave one, that one address (private only) and optionally one port.
-2. Tries to open a connection to **port 502** on each (64 at a time, 0.6 seconds each); about three seconds for a whole network.
+1. Works out which networks it is on, and keeps only **private** ones (10.x, 172.16 to 31, 192.168.x), never wider than 254 addresses, never its
+   own address, never anything on a public address. Or, if a person gave one, that one address (private only, written without leading zeros) and
+   optionally one port. **It does not look at itself** (127.x, or the 169.254.x a machine gives itself when it has no network): a request for that is
+   answered with "this box itself, so the box did not look there". A desk or a test lets it (`GREECON_DISCOVERY_ALLOW_LOOPBACK=1`, or `greecon-edge find`
+   by hand at the box); the installer never sets it.
+2. Tries to open a connection to **port 502** (or the one given) on each, **24 at a time**, 0.6 seconds each: about six seconds for a whole /24, without
+   looking like a flood to the customer's own equipment.
 3. Behind each address that answered, asks **unit numbers 1 to 10** up to six **read-only** questions: function 02 (digital inputs), 03 (one holding
    register) and 04 (input registers), never a write. The first three questions are one register that every unit of each family has ("presence"):
    a unit that answers none of them, not even with a refusal, is not there and is not asked the rest, because a converter waits out its serial timeout
    for every question to a unit that is absent. An exception from the converter itself (10, 11: "nothing answered me") is treated as silence;
    an exception from a device (illegal function, illegal address) means a device is there.
-4. Gives up on its own after 90 seconds and says the answer may be incomplete. It runs once for each request, and sends the result again if the
-   platform could not be reached; the heartbeat is every 10 seconds for five minutes after a request, so the person is not left waiting.
+4. **Asks again** (twice at most, after a quarter of a second) any other question that a unit which is there left unanswered, or answered "busy" or
+   "device failure" (exceptions 6 and 4): what a meter is is decided by what it says, and one lost answer on a serial line must not decide it. The
+   presence questions are asked once, so that ruling out an absent unit stays cheap. A question a device refused plainly ("no such register") is not asked again.
+5. Gives up on its own after 90 seconds and says the answer may be incomplete. It runs once for each request. A box that is **stopped** in the middle ends
+   the search at once and sends **nothing** (a half-answer would be believed as the whole one: the platform asks again after the restart). A search that
+   **fails** is reported as the answer, with a note in words, so that the person is told and the box does not start again every heartbeat. The result is sent
+   again when the platform could not be reached or was busy (401, 408, 429, 5xx); one the platform **refuses** (any other 4xx) is not sent again. The heartbeat is every
+   10 seconds for five minutes after a request, so the person is not left waiting.
 
-`greecon-edge find` does the same by hand at the box (`greecon-edge find --host 192.168.1.50 --port 502`), for a desk and for support.
+`greecon-edge find` does the same by hand at the box (`greecon-edge find --host 192.168.1.50 --port 502`), for a desk and for support, and shows what the
+converter saw: the same box is never asked to do anything but read, and the tests prove it on the wire (the converter sees function codes 2, 3 and 4, and no other).
 
 ### 4.2 How the platform decides what answered
 
@@ -80,9 +91,15 @@ zeros:
 
 - A **Waveshare module** is a unit whose address register (0x4000) holds **the number it was asked at**. If its input channels read it is the 4 to
   20 mA module; if its inputs read it is the digital module.
-- An **Eastron meter** is a unit whose first-phase voltage (input registers 0 and 1) is a **mains voltage** (80 to 300 V) and whose total-power register
-  holds a number that can be a power. A meter at zero volts is not recognised, which is true to what a meter that is not powered would say anyway.
+- An **Eastron meter** is a unit whose first-phase voltage (input registers 0 and 1) is a **mains voltage** (80 to 480 V: 110 to 400 V systems, a line-to-line
+  reading included) and whose total-power register holds a number that can be a power. A meter at zero volts is not recognised, which is true to what a meter that
+  is not powered would say anyway.
 - Anything else that answers is listed as "something answers that Greecon does not recognise".
+- **Units that said exactly the same words are not different devices.** A converter in a mode that fixes the unit number answers every number as the one device
+  behind it, and taking those for the grid meter and the solar meter would show one meter's readings as both. None of them is believed; the page says the converter
+  must be in Modbus TCP to RTU (gateway) mode.
+- **A refusal is not always "no such register".** Only exceptions 1, 2 and 3 say plainly that a device does not have it; 4 (device failure) and 6 (busy) are a device
+  that could not say, and an older box's refusal without a code is read as plain. Which model a meter is rests on this (section 4.3).
 
 ### 4.3 How it is matched, and when it refuses
 
@@ -93,12 +110,23 @@ kind is left and only one device wants it, that one at whatever number it was le
   meter: every figure of the site would be wrong and look right. Each is marked "Not sure which", with what to do (give each its own number; or enter the
   address by hand). Nothing is changed for them.
 - **Two of a kind at numbers that are not the kit's** are marked the same way.
-- **A single-phase meter where a three-phase one was planned** (the SDM630's total-power register is refused, the SDM230's answers): the device is read as the
-  single-phase meter, the register changes from 52 to 12, and the page says so. Where both registers answer, the **planned model is kept**: an SDM630 fitted
-  where an SDM230 was planned reads phase one's power until the commissioning comparison with the meter's own display finds it, and the card says which
-  model to fit (section 8).
-- Addresses are filled in **at once, as the person who pressed the button** (it is in the audit trail under their name), **only for devices that have no
-  address yet**. A device that already has a different address keeps it until the person presses **Use this address**.
+- **A single-phase meter where a three-phase one was planned** (the SDM630's total-power register is **plainly refused**, the SDM230's answers): the page offers to
+  read it as the single-phase meter, and says so in words ("It is a single-phase SDM230, not the three-phase SDM630 planned. If you use this address, Greecon reads it
+  as a single-phase SDM230."). **Only a person pressing "Use this address" switches it**: what is read from the meter changes (the register goes from 52 to 12), so
+  the box's say-so is not enough. The switch is made all at once or not at all (every register is checked before any is changed); a device that carried its model's own name takes the
+  other model's name (a name a person gave is kept); the audit trail records the old and the new profile under the person's name; and the setup page **keeps saying**
+  "Greecon reads it as a single-phase SDM230; the site's plan had a three-phase SDM630" so that nobody finds it out from the readings. Where the planned model's register
+  merely **did not answer** (not refused), the page says it is not sure and to look again: one missed answer must not turn a three-phase meter into a single-phase one. Where
+  both registers answer, the **planned model is kept**: an SDM630 fitted where an SDM230 was planned reads phase one's power until the commissioning comparison with the
+  meter's own display finds it, and the card says which model to fit (section 8).
+- Addresses are filled in **at once, as the person who pressed the button** (it is in the audit trail under their name), and **only where nothing can be a guess**:
+  a device that has **no address yet**, found **at the number the kit gives it** (an exact match), **as the model that was planned**. Everything else is **offered**, with the
+  reason, and filled in only when the person presses **Use this address** (or "Use these N addresses"): a device that already has a different address, a unit found at
+  another number than the kit's (it may be a meter of the customer's own that happens to share the cable), and a different model. An address the box reports that is not on a
+  private network is refused at the door, and never written to a device.
+- A result that arrives after the person was told "the box did not pick this up" (ten minutes) is not taken: nothing is filled in behind the back of someone who has stopped
+  looking. If filling the addresses in fails, what the box found is kept, "Use these addresses" is still there, and the platform's log says why.
+- Asking the box to look is **written in the audit trail** like any other change: who pressed the button, which box, and the address or port if one was given.
 - A device the site does not have is taken off the list with one press; the message for an optional device that was not found says so.
 
 The result is kept in the platform's memory for the minutes it is useful (not in the database, so no migration): a restart in that minute loses it and the
@@ -109,7 +137,8 @@ person presses the button again. A request the box never picked up shows as "did
 The question a customer's network administrator will ask. The answers, which the card's second message gives in the same words:
 
 - The box looks **only when a person presses the button**, for about a minute, and at **private addresses on its own network only**; a request for a
-  public address is refused by the box itself, whoever asked.
+  public address, or for the box itself, is refused by the box itself, whoever asked (and a spelling such as `010.1.1.1`, which the system's resolver would read as
+  the public 8.1.1.1, is refused too, with a sentence that says to write each part without a leading zero).
 - It tries **one port** (502, or the one a person gave) and **only reads**. It never writes to anything, so it cannot change a meter or a module.
 - It sends **nothing about the customer's network to anyone but Greecon**, and only what answered on port 502 (an address, a unit number and the answers to
   the questions). It does not keep a list of the network's other machines.
@@ -122,12 +151,17 @@ costs one round of readings. Looking is manual and normally happens before readi
 
 A 4 to 20 mA transmitter is the same everywhere; only its range differs, and it is printed on its label. The page asks, in the label's words:
 
-- **Level transmitter**: the range on the label (say 0 to 5 m) and **how tall the tank is inside**. The platform makes the level a **percentage of the
-  tank**: 4 mA is empty, and a full 4 m tank in a 0 to 5 m transmitter is 16.8 mA, which reads 100. A transmitter shorter than the tank is refused in words
+- **Level transmitter**: the range on the label and **its unit, metres or bar** (a level transmitter is often a pressure sensor at the bottom of the tank, and its label
+  says bar: one bar holds up 10.197 metres of water, and the page shows the conversion before it is saved), and **how tall the tank is inside**. The platform makes the level
+  a **percentage of the tank**: 4 mA is empty, and a full 4 m tank in a 0 to 5 m transmitter is 16.8 mA, which reads 100. A transmitter shorter than the tank is refused in words
   ("it cannot see the top of the water. Fit a transmitter with a longer range").
 - **Pressure** and **flow**: the top of the range.
-- **Not fitted at this site**: the reading is taken away, so that nothing waits for it. (Without a flow meter, "the pump runs but no water flows" cannot be
-  raised; the handover says so.)
+- **Numbers are read as people write them**: "2,5" is 2.5, as it is typed on a phone set to Albanian, and an empty field is never a range of zero.
+- **Not fitted at this site**: the reading is taken away, so that nothing waits for it. Because this removes the reading **and its history** and cannot be put back, the page asks
+  first. (Without a flow meter, "the pump runs but no water flows" cannot be raised; the handover says so.)
+
+The answers are all checked before any is used (a transmitter given twice is refused, and every register is validated), the settings are made first and the removals last, so that a
+failure part way leaves every transmitter that is there with its scale and nothing taken away on the strength of a half-done answer.
 
 The arithmetic is a straight line from 4000 to 20000 microamps to zero to the range (`sourceFromRange`), checked in the tests against the numbers a person
 would calculate. A tank level may read up to five points over 100 or under 0 without being called impossible (a transmitter's tolerance, a tank measured a few
@@ -172,6 +206,10 @@ as a draft to be read by someone who writes Albanian every day before it is sent
 6. **The request and the answer are kept in memory** (section 4.3).
 7. **The Albanian drafts are drafts.**
 8. **The address of a converter can change** (the router gives it a new one). The setup page says to press Find equipment again, and the guides say to ask the customer for a reservation.
+9. **A converter in the wrong mode** (one that fixes the unit number) is detected only when two units give exactly the same answers; one meter alone behind such a converter looks
+   like a meter at whatever number it is asked at. The install card says the converter's mode, and the first reading is compared with the meter's display.
+10. **A converter that tolerates one connection**, or is slow, may give a question no answer on the first try: the box asks again, but a converter that is overwhelmed can still make a
+    unit look absent. The page says what to check and the next look is a button away.
 
 ## 9. What was considered and not done
 
@@ -186,12 +224,15 @@ as a draft to be read by someone who writes Albanian every day before it is sent
 
 ## 10. How it is tested
 
-- `packages/shared`: recognition (what each kind of unit says, and what must not be taken for a meter), matching (every refusal to guess), the ranges' arithmetic, the card
-  (no two devices on one number for any kind of site, no secrets in messages), the equipment profiles.
+- `packages/shared`: recognition (what each kind of unit says, and what must not be taken for a meter), matching (every refusal to guess, echoes, a missed answer against a plain
+  refusal), the ranges' arithmetic and the unit of a level label, typed numbers, the card (no two devices on one number for any kind of site, no secrets in messages), the equipment
+  profiles.
 - `apps/edge-agent`: the box reads digital inputs; the search against a **real converter on a real socket** with a meter, the 4 to 20 mA module and the pump module, silent and
-  excepting units, the box's heartbeat asking it, and the result sent again if the platform was down.
-- `apps/api`: asking, answering, applying (as the person who asked, only where there is no address), the single-phase meter, the ranges, the two new steps, other accounts refused,
-  and the approved model surviving a restart on PostgreSQL.
+  excepting units, a question asked again, the box refusing itself, **what the converter saw on the wire (function codes 2, 3 and 4 only)**, the box's heartbeat asking it, a failed search
+  reported once, a refused result not sent again, a stopped box sending nothing, and the result sent again if the platform was down.
+- `apps/api`: asking (and the audit line), answering, applying (as the person who asked, only where nothing can be a guess), the single-phase meter offered and switched only on a person's
+  say-so with its audit and its persistent note, the ranges (all or nothing, in order), the two new steps, other accounts refused, the box's credential refused on every person's route, and the
+  approved model and the switch surviving a restart on PostgreSQL.
 - `scripts/smoke-sites.mjs`: the **real installer and the real box** against the pretend kit for each kind of site, with typed addresses only for what Greecon does not know.
 - `scripts/e2e/pm-e2e.cjs` and `scripts/e2e/guided-setup.cjs`: the project manager's whole job in a browser, once with the box played by calls and once with the real box finding the kit,
   a module that goes silent, and a device the site does not have.
