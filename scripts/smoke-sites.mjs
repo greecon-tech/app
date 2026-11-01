@@ -62,6 +62,8 @@ const KINDS = [
     siteName: "Vila Mare solar plant",
     place: "Vlorë",
     found: { "Grid meter": 1, "Solar meter": 2, "Load meter (optional)": 4 },
+    // Found, but not what the template plans: it is offered, and the project manager says whether to use it.
+    switches: { "Grid meter": "SDM230" },
     typed: { "Battery system (optional)": 8 },
     // The plant is sending 3 kW to the grid (negative power at the grid meter) while it makes 7.2 and the site uses 4.2; a battery at 55 % charging at 1.5 kW.
     // It is a single-phase plant: the grid meter is an SDM230, not the SDM630 the template plans, and the box finds that out.
@@ -154,7 +156,8 @@ async function site(kind, admin, workDir) {
     ok(install.status === 0, "the installer finishes");
     if (install.status !== 0) say(install.stdout + install.stderr);
     equipment = await startKit(kind.kit());
-    box = spawn(join(root, "usr/local/bin/greecon-edge"), ["run"], { env: { ...env, STATE_DIRECTORY: stateDir }, stdio: ["ignore", "pipe", "pipe"] });
+    // The pretend kit is on this machine, which a real box does not look at (it looks at the site's network): this is a desk, and says so.
+    box = spawn(join(root, "usr/local/bin/greecon-edge"), ["run"], { env: { ...env, STATE_DIRECTORY: stateDir, GREECON_DISCOVERY_ALLOW_LOOPBACK: "1" }, stdio: ["ignore", "pipe", "pipe"] });
     let boxLog = "";
     box.stdout.on("data", (chunk) => (boxLog += chunk));
     box.stderr.on("data", (chunk) => (boxLog += chunk));
@@ -178,11 +181,24 @@ async function site(kind, admin, workDir) {
       show("discovery", discovery.proposals.map((proposal) => `${proposal.name}:${proposal.status}`));
       for (const [name, unit] of Object.entries(kind.found)) {
         const proposal = discovery.proposals.find((entry) => entry.name === name);
-        ok(proposal?.status === "already" && proposal.match?.unit === unit, `${name} was found at unit ${unit} and its address filled in (${proposal?.status}: ${proposal?.message})`);
+        const model = kind.switches?.[name];
+        if (model) {
+          // A meter of the other model is offered, not switched: what is read from it changes, so a person says so.
+          ok(proposal?.status === "found" && proposal.useModel === model && proposal.match?.unit === unit, `${name} was found at unit ${unit} as an ${model}, and is offered, not switched (${proposal?.status}: ${proposal?.message})`);
+          const waiting = (await call("GET", `/devices?siteId=${siteId}`, { token: owner })).json.find((entry) => entry.name === name);
+          ok(waiting?.connection === undefined && waiting.profileKey?.includes("sdm630"), `${name} is left as planned until the project manager says to use it (${waiting?.profileKey})`);
+        } else {
+          ok(proposal?.status === "already" && proposal.match?.unit === unit, `${name} was found at unit ${unit} and its address filled in (${proposal?.status}: ${proposal?.message})`);
+        }
       }
       for (const name of Object.keys(kind.typed)) {
         ok(discovery.proposals.find((entry) => entry.name === name)?.status === "by-hand", `${name}, which Greecon does not know, is left to be addressed by hand`);
       }
+    }
+    // The project manager presses "Use this address" for what was offered.
+    if (kind.switches) {
+      const used = await call("POST", `/sites/${siteId}/discovery/apply`, { token: owner });
+      ok(used.status === 201 && Object.keys(kind.switches).every((name) => used.json.applied?.includes(name)), `"Use this address" is pressed for ${Object.keys(kind.switches).join(", ")} (${used.status} ${used.text.slice(0, 120)})`);
     }
     const filledIn = (await call("GET", `/devices?siteId=${siteId}`, { token: owner })).json;
     for (const [name, unit] of Object.entries(kind.found)) {

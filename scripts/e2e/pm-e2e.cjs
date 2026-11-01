@@ -192,12 +192,12 @@ async function boxCall(secret, method, path, body) {
   const ranges = mapping.getByRole("form", { name: "Transmitter ranges for Water I/O module" });
   ok("it asks for the range on each transmitter's label, in the label's words", (await ranges.innerText()).includes("Level transmitter") && (await ranges.innerText()).includes("Pressure transmitter") && (await ranges.innerText()).includes("Flow meter"));
   ok("and the meters and the pump contact, which Greecon knows, say so and ask for nothing", (await mapping.innerText()).includes("Greecon knows this equipment"));
-  await ranges.getByLabel("Range on the label (m)").fill("3");
-  await ranges.getByLabel("How tall the tank is inside (m)").fill("4");
+  await ranges.getByLabel("Range on the label").fill("3");
+  await ranges.getByLabel("How tall the tank is inside").fill("4");
   await ranges.getByRole("button", { name: "Save the ranges" }).click();
   const tooShort = await ranges.getByRole("alert").innerText();
   ok("a transmitter shorter than the tank is refused in words", tooShort.includes("cannot see the top of the water"), tooShort);
-  await ranges.getByLabel("Range on the label (m)").fill("5");
+  await ranges.getByLabel("Range on the label").fill("5");
   await ranges.getByLabel("Top of the range (bar)").fill("10");
   await ranges.getByLabel("Top of the range (lpm)").fill("200");
   await ranges.getByRole("button", { name: "Save the ranges" }).click();

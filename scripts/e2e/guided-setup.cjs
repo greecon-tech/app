@@ -75,7 +75,12 @@ const until = async (description, probe, timeoutMs = 120_000, everyMs = 1000) =>
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (error) => errors.push(String(error)));
-    page.on("dialog", (dialog) => dialog.accept());
+    // Every question the page asks (taking something away, removing a device) is answered yes, and what was asked is kept to be checked.
+    const asked = [];
+    page.on("dialog", (dialog) => {
+      asked.push(dialog.message());
+      void dialog.accept();
+    });
     await signIn(page, owner, false);
     await page.goto(`${base}/sites/${siteId}/setup`, { waitUntil: "networkidle" });
 
@@ -99,7 +104,8 @@ const until = async (description, probe, timeoutMs = 120_000, everyMs = 1000) =>
     const env = { ...process.env, GREECON_ROOT: root, GREECON_SKIP_SYSTEM: "1", GREECON_NODE: process.execPath, GREECON_API_URL: api };
     const install = spawnSync("bash", ["-s", "--", code], { input: served, env, encoding: "utf8" });
     ok("the platform's own installer finishes on the box", install.status === 0, install.status === 0 ? "" : (install.stdout + install.stderr).slice(-300));
-    box = spawn(join(root, "usr/local/bin/greecon-edge"), ["run"], { env: { ...env, STATE_DIRECTORY: stateDir }, stdio: ["ignore", "pipe", "pipe"] });
+    // The pretend kit is on this machine, which a real box does not look at: this is a desk, and says so.
+    box = spawn(join(root, "usr/local/bin/greecon-edge"), ["run"], { env: { ...env, STATE_DIRECTORY: stateDir, GREECON_DISCOVERY_ALLOW_LOOPBACK: "1" }, stdio: ["ignore", "pipe", "pipe"] });
     let boxLog = "";
     box.stdout.on("data", (chunk) => (boxLog += chunk));
     box.stderr.on("data", (chunk) => (boxLog += chunk));
@@ -138,11 +144,21 @@ const until = async (description, probe, timeoutMs = 120_000, everyMs = 1000) =>
     const mapping = page.locator("#step-mapping");
     if (!(await mapping.evaluate((element) => element.open))) await mapping.locator("summary").first().click();
     const ranges = mapping.getByRole("form", { name: "Transmitter ranges for Water I/O module" });
-    await ranges.getByLabel("Range on the label (m)").fill("5");
-    await ranges.getByLabel("How tall the tank is inside (m)").fill("4");
+    // A level transmitter's label may be in bar (a pressure sensor at the bottom of the tank), and a person in Albania types a decimal comma: both are understood.
+    const levelField = ranges.locator("fieldset", { hasText: "Level transmitter" });
+    await levelField.getByLabel("Range on the label").fill("0,5");
+    await levelField.getByLabel("Unit on the label").selectOption("bar");
+    ok("a range typed in bar, with a decimal comma, is turned into metres of water in front of the person", (await levelField.innerText()).includes("0.5 bar holds up 5.0985 metres of water"));
+    await levelField.getByLabel("Unit on the label").selectOption("m");
+    await levelField.getByLabel("Range on the label").fill("5");
+    await ranges.getByLabel("How tall the tank is inside").fill("4");
     await ranges.getByLabel("Top of the range (bar)").fill("10");
     await ranges.locator("fieldset", { hasText: "Flow meter" }).getByLabel("Not fitted at this site").check();
+    // Taking a reading away cannot be put back, so the page asks first.
     await ranges.getByRole("button", { name: "Save the ranges" }).click();
+    await page.waitForFunction(() => document.querySelector("#step-mapping")?.textContent?.includes("Saved."), null, { timeout: 15_000 });
+    const takeAway = asked.find((message) => /Take away pump flow/i.test(message));
+    ok("taking the flow reading away is asked about first, and says its history goes too", Boolean(takeAway) && takeAway.includes("history"), asked.join(" | "));
     await ranges.getByText("Saved.").waitFor();
     await page.waitForFunction(() => document.querySelector("#step-mapping summary")?.textContent?.includes("Done"), null, { timeout: 30_000 });
     ok("with the two ranges given and the flow meter taken off, every reading is tied to a register", true);
