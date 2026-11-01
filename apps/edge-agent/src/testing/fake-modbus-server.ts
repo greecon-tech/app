@@ -19,6 +19,8 @@ export interface FakeModbusServer {
   port: number;
   /** Requests answered or refused so far, including those for a unit that does not exist. */
   requests: number;
+  /** Every function code a client has used, as a set: a box that only reads uses 2, 3 and 4 and nothing else. */
+  functionCodesSeen(): number[];
   setRegister(unit: number, type: "holding" | "input", address: number, value: number): void;
   /** A digital input: a contact that is closed (1) or open (0). */
   setDiscrete(unit: number, address: number, value: 0 | 1): void;
@@ -46,6 +48,7 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
   const sockets = new Set<Socket>();
   let delayMs = 0;
   const state = { requests: 0 };
+  const functionCodes = new Set<number>();
 
   const respond = (socket: Socket, frame: Buffer) => {
     const send = () => {
@@ -60,6 +63,7 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
     const transaction = request.subarray(0, 2);
     const unitId = request.readUInt8(6);
     const functionCode = request.readUInt8(7);
+    functionCodes.add(functionCode);
     const unit = table.get(unitId);
 
     const frame = (pdu: Buffer): Buffer => {
@@ -141,6 +145,7 @@ export async function startFakeModbusServer(units: number[] = [1]): Promise<Fake
     get requests() {
       return state.requests;
     },
+    functionCodesSeen: () => [...functionCodes].sort((a, b) => a - b),
     setRegister: (unit, type, address, value) => void registersOf(unit, type).set(address, value & 0xffff),
     setDiscrete: (unit, address, value) => void unitOf(unit).discrete.set(address, value),
     setAbsentUnits: (behaviour) => {

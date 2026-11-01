@@ -24,6 +24,10 @@ export interface FakePlatform {
   discovery?: DiscoveryRequest;
   /** What the box found, in the order it said so. */
   discoveries: DiscoveryResult[];
+  /** Answer what the box found with this status instead of taking it (for a platform that does not accept it). */
+  refuseDiscoveryWith?: number;
+  /** How many times the box has posted what it found, whether it was taken or not. */
+  discoveryPosts: number;
   /** The code that enrols a box, and what it is given for it. */
   enrolCode: string;
   /** The software the platform offers, if any. `checksum` can be made wrong on purpose. */
@@ -43,6 +47,7 @@ export async function startFakePlatform(config: EdgeConfig, credential = "box-se
     latestAgentVersion: "0.0.0+source",
     updateAvailable: false,
     discoveries: [],
+    discoveryPosts: 0,
     enrolCode: "GRC-ABCD-EFGH-JKLM",
     close: async () => undefined
   };
@@ -88,6 +93,8 @@ export async function startFakePlatform(config: EdgeConfig, credential = "box-se
         });
       }
       if (route === "POST /edge/discovery") {
+        state.discoveryPosts += 1;
+        if (state.refuseDiscoveryWith) return json(response, state.refuseDiscoveryWith, { message: "That is not a result." });
         const result = body as DiscoveryResult;
         state.discoveries.push(result);
         if (state.discovery?.id === result.requestId) state.discovery = undefined;

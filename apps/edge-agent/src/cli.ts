@@ -81,6 +81,7 @@ async function run(env: Record<string, string | undefined>): Promise<number> {
     stateDir: stateDirectory(env),
     log,
     updateHome: env.GREECON_EDGE_HOME,
+    discoveryOptions: { allowLoopback: env.GREECON_DISCOVERY_ALLOW_LOOPBACK === "1" },
     ...(Number.isInteger(queued) && queued >= 1000 && queued <= 1_000_000 ? { bufferMaxMessages: queued } : {})
   });
   const bridge = env.MQTT_URL ? startMqttBridge(env.MQTT_URL, identity, runtime.outbox, log) : undefined;
@@ -199,7 +200,8 @@ async function findCommand(args: string[]): Promise<number> {
     const result = await runDiscovery(
       { id: "by-hand", ...(values.host ? { hosts: values.host } : {}), ...(values.port ? { ports: values.port.map(Number) } : {}), ...(values.unit ? { units: values.unit.map(Number) } : {}) },
       tools,
-      { log }
+      // At the box, by hand, a person may point it at the box itself: it is their own action, on their own machine.
+      { log, allowLoopback: true }
     );
     out(`Looked at ${result.scanned.hostsTried} address(es)${result.scanned.subnets.length > 0 ? ` on ${result.scanned.subnets.join(", ")}` : ""}, unit(s) ${result.scanned.units.join(", ")}.`);
     if (result.hosts.length === 0) out("No Modbus converter answered.");

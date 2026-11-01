@@ -27,6 +27,8 @@ import { ModbusReadError, ModbusTcpReader } from "./modbus/reader";
 export interface Answer {
   outcome: ProbeOutcome;
   words?: number[];
+  /** For a refusal: the Modbus exception code (see ProbeResult). */
+  code?: number;
   /** The converter itself stopped answering: nothing behind it is worth asking this time. */
   converterGone?: boolean;
 }
@@ -53,10 +55,18 @@ export interface DiscoveryOptions {
   budgetMs?: number;
   /** Most addresses looked at, however large the network. */
   maxAddresses?: number;
+  /** Ask a question again, up to twice, when a unit that is there said nothing or said it was busy: one missed answer must not decide what a meter is. */
+  retryPauseMs?: number;
+  /** Ends the search at once (the box is stopping). */
+  shouldStop?: () => boolean;
+  /** Look at this machine itself and at link-local addresses when asked to. Off on a real box: it is for a desk, a test, and a person at the box. */
+  allowLoopback?: boolean;
   log?: { info(message: string): void; warn(message: string): void };
 }
 
-const DEFAULTS = { connectTimeoutMs: 600, concurrency: 64, convertersAtOnce: 4, budgetMs: 90_000, maxAddresses: 512 };
+// 24 connections at once: a whole /24 in a few seconds without looking like a flood to the customer's own equipment.
+const DEFAULTS = { connectTimeoutMs: 600, concurrency: 24, convertersAtOnce: 4, budgetMs: 90_000, maxAddresses: 512, retryPauseMs: 250 };
+const RETRIES = 2;
 const MAX_PORTS = 4;
 const MAX_UNITS = 32;
 const MAX_REQUESTED_HOSTS = 16;
@@ -110,15 +120,20 @@ export function subnetsOf(interfaces: ReturnType<DiscoveryTools["interfaces"]>, 
   });
 }
 
-/** What was asked, kept to what the box is willing to do whoever asked: private addresses, a few ports and unit numbers. */
-export function sanitise(request: DiscoveryRequest): { hosts: string[]; refused: string[]; ports: number[]; units: number[] } {
+/** This machine itself, or an address a machine gives itself when it has no network: not part of anybody's site network. */
+const isThisMachine = (host: string): boolean => host.startsWith("127.") || host.startsWith("169.254.");
+
+/** What was asked, kept to what the box is willing to do whoever asked: private addresses (not this box itself, unless it is allowed), a few ports and
+ * unit numbers. `refused` is every address it will not look at; `itself` is those of them that are this machine. */
+export function sanitise(request: DiscoveryRequest, allowLoopback = false): { hosts: string[]; refused: string[]; itself: string[]; ports: number[]; units: number[] } {
   const wanted = Array.isArray(request.hosts) ? request.hosts.filter((host) => typeof host === "string").slice(0, MAX_REQUESTED_HOSTS) : [];
-  const hosts = wanted.filter((host) => isPrivateAddress(host));
+  const willing = (host: string) => isPrivateAddress(host) && (allowLoopback || !isThisMachine(host));
   const ports = (Array.isArray(request.ports) ? request.ports : DEFAULT_DISCOVERY_PORTS).filter((port) => Number.isInteger(port) && port >= 1 && port <= 65535).slice(0, MAX_PORTS);
   const units = (Array.isArray(request.units) ? request.units : DEFAULT_DISCOVERY_UNITS).filter((unit) => Number.isInteger(unit) && unit >= 0 && unit <= 247).slice(0, MAX_UNITS);
   return {
-    hosts,
-    refused: wanted.filter((host) => !isPrivateAddress(host)),
+    hosts: wanted.filter(willing),
+    refused: wanted.filter((host) => !willing(host)),
+    itself: wanted.filter((host) => isPrivateAddress(host) && isThisMachine(host) && !allowLoopback),
     ports: ports.length > 0 ? ports : DEFAULT_DISCOVERY_PORTS,
     units: units.length > 0 ? units : DEFAULT_DISCOVERY_UNITS
   };
@@ -142,19 +157,31 @@ async function inBatches<T, R>(items: readonly T[], limit: number, work: (item: 
 
 /** The questions to a unit, the presence ones first (a register every unit of its family has). A unit that answers none of those, a
  * refusal included, is not there, and is not asked the rest: a converter waits out its serial timeout for every question to a unit that
- * is absent, and ten absent units would otherwise take minutes. */
-async function askUnit(tools: DiscoveryTools, host: string, port: number, unit: number): Promise<{ result: DiscoveredUnit; converterGone: boolean }> {
+ * is absent, and ten absent units would otherwise take minutes. Once a unit is known to be there, a question it does not answer, or answers
+ * that it is busy, is asked again (twice at most): what a meter is decided by what it says, and a missed answer says nothing. */
+async function askUnit(tools: DiscoveryTools, host: string, port: number, unit: number, settings: { retryPauseMs: number; shouldStop?: () => boolean }): Promise<{ result: DiscoveredUnit; converterGone: boolean }> {
   const probes: ProbeResult[] = [];
   let answered = false;
+  const couldNotSay = (answer: Answer) => answer.outcome === "silent" || (answer.outcome === "refused" && (answer.code === 4 || answer.code === 6));
   for (const probe of PROBES) {
-    if (!probe.presence && !answered) {
-      for (const rest of PROBES.filter((candidate) => !candidate.presence)) probes.push({ key: rest.key, outcome: "silent" });
+    // Not asked: nothing is there (no presence question was answered), or the box is stopping. Either way the rest are recorded as unanswered.
+    if ((!probe.presence && !answered) || settings.shouldStop?.()) {
+      for (const rest of PROBES.slice(probes.length)) probes.push({ key: rest.key, outcome: "silent" });
       break;
     }
-    const answer = await tools.ask(host, port, unit, probe.read);
+    let answer = await tools.ask(host, port, unit, probe.read);
+    for (let attempt = 0; !probe.presence && attempt < RETRIES && !answer.converterGone && couldNotSay(answer) && !settings.shouldStop?.(); attempt += 1) {
+      if (settings.retryPauseMs > 0) await new Promise((resolve) => setTimeout(resolve, settings.retryPauseMs));
+      answer = await tools.ask(host, port, unit, probe.read);
+    }
     if (answer.converterGone) return { result: { unit, probes }, converterGone: true };
     if (answer.outcome !== "silent") answered = true;
-    probes.push({ key: probe.key, outcome: answer.outcome, ...(answer.outcome === "ok" && answer.words ? { words: answer.words } : {}) });
+    probes.push({
+      key: probe.key,
+      outcome: answer.outcome,
+      ...(answer.outcome === "ok" && answer.words ? { words: answer.words } : {}),
+      ...(answer.outcome === "refused" && answer.code !== undefined ? { code: answer.code } : {})
+    });
   }
   return { result: { unit, probes }, converterGone: false };
 }
@@ -166,8 +193,8 @@ export async function runDiscovery(request: DiscoveryRequest, tools: DiscoveryTo
   const startedMs = tools.now();
   const deadline = startedMs + settings.budgetMs;
   const notes: string[] = [];
-  const asked = sanitise(request);
-  const late = () => tools.now() >= deadline;
+  const asked = sanitise(request, settings.allowLoopback === true);
+  const late = () => tools.now() >= deadline || settings.shouldStop?.() === true;
   settings.log?.info(`Looking for equipment on the site's network (request ${request.id}).`);
 
   // 1. Which addresses to look at: the ones the person gave, or everything on the box's own network.
@@ -175,7 +202,9 @@ export async function runDiscovery(request: DiscoveryRequest, tools: DiscoveryTo
   let candidates: string[];
   if (asked.hosts.length > 0 || (request.hosts?.length ?? 0) > 0) {
     candidates = asked.hosts;
-    if (asked.refused.length > 0) notes.push(`${asked.refused.join(", ")} ${asked.refused.length === 1 ? "is" : "are"} not on a private network, so the box did not look there.`);
+    const elsewhere = asked.refused.filter((host) => !asked.itself.includes(host));
+    if (elsewhere.length > 0) notes.push(`${elsewhere.join(", ")} ${elsewhere.length === 1 ? "is" : "are"} not on a private network, so the box did not look there.`);
+    if (asked.itself.length > 0) notes.push(`${asked.itself.join(", ")} ${asked.itself.length === 1 ? "is" : "are"} this box itself, so the box did not look there.`);
   } else {
     subnets = subnetsOf(tools.interfaces(), settings.maxAddresses);
     candidates = subnets.flatMap((subnet) => subnet.hosts);
@@ -208,7 +237,7 @@ export async function runDiscovery(request: DiscoveryRequest, tools: DiscoveryTo
         cutShort = true;
         break;
       }
-      const { result, converterGone } = await askUnit(tools, target.host, target.port, number);
+      const { result, converterGone } = await askUnit(tools, target.host, target.port, number, { retryPauseMs: settings.retryPauseMs, shouldStop: settings.shouldStop });
       if (result.probes.some((probe) => probe.outcome !== "silent")) units.push(result);
       if (converterGone) {
         notes.push(`The converter at ${target.host} stopped answering part way through.`);
@@ -218,7 +247,7 @@ export async function runDiscovery(request: DiscoveryRequest, tools: DiscoveryTo
     return { host: target.host, port: target.port, units };
   });
 
-  if (cutShort) notes.push(`The search was stopped after ${Math.round(settings.budgetMs / 1000)} seconds, so it may be incomplete. Find the equipment again.`);
+  if (cutShort && !settings.shouldStop?.()) notes.push(`The search was stopped after ${Math.round(settings.budgetMs / 1000)} seconds, so it may be incomplete. Find the equipment again.`);
   const finishedMs = tools.now();
   const found = hosts.reduce((total, host) => total + host.units.length, 0);
   settings.log?.info(`Looked at ${targets.length} address(es): ${hosts.length} converter(s) answered, ${found} unit(s) behind them.`);
@@ -265,7 +294,7 @@ export function realTools(now: () => number = Date.now, waits: { requestTimeoutM
       } catch (error) {
         if (error instanceof ModbusReadError) {
           if (error.converterUnreachable) return { outcome: "silent", converterGone: true };
-          if (error.kind === "refused" && !(error.modbusCode !== undefined && GATEWAY_EXCEPTIONS.has(error.modbusCode))) return { outcome: "refused" };
+          if (error.kind === "refused" && !(error.modbusCode !== undefined && GATEWAY_EXCEPTIONS.has(error.modbusCode))) return { outcome: "refused", ...(error.modbusCode !== undefined ? { code: error.modbusCode } : {}) };
         }
         return { outcome: "silent" };
       }

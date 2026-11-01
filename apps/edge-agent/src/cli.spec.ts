@@ -207,6 +207,8 @@ describe("the commands a person uses at the box", () => {
       expect(said()).toContain(`${server.host}:${server.port}`);
       expect(said()).toContain("unit 1: an Eastron meter, reading 2.50 kW at 231 V");
       expect(said()).not.toContain("unit 2");
+      // Whoever runs it at the box can be sure it only reads: the converter saw no other kind of request.
+      expect(server.functionCodesSeen().every((code) => [2, 3, 4].includes(code))).toBe(true);
     });
 
     it("exits with 1 and says so when nothing answers", async () => {

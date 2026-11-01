@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { DiscoveryRequest, DiscoveryResult, DriverDeviceStatus, EdgeConfig, GatewayHeartbeat, HEARTBEAT_INTERVAL_SECONDS } from "@greecon/shared";
 import type { TelemetryMessage } from "@greecon/shared";
-import { DiscoveryTools, realTools, runDiscovery } from "./discovery";
+import { DiscoveryOptions, DiscoveryTools, realTools, runDiscovery } from "./discovery";
 import { EdgeIdentity } from "./identity";
 import { DevicePoller } from "./modbus/poller";
 import { ModbusTcpReader, RegisterReader } from "./modbus/reader";
@@ -46,6 +46,8 @@ export interface RuntimeOptions {
   updateClock?: () => number;
   /** How the box looks at the network when asked to; replaced in tests, where a real search would look at the machine's own network. */
   discovery?: () => DiscoveryTools;
+  /** How it behaves while it looks (GREECON_DISCOVERY_ALLOW_LOOPBACK=1 lets it look at this machine, for a desk or a test). */
+  discoveryOptions?: Pick<DiscoveryOptions, "allowLoopback" | "retryPauseMs" | "connectTimeoutMs">;
 }
 
 /** What `greecon-edge status` shows, and what the installer waits on. */
@@ -96,6 +98,8 @@ export class EdgeRuntime {
   private lastConfigProblem = "";
   private timers: Array<NodeJS.Timeout> = [];
   private running = false;
+  /** Set when the box is asked to stop, and never cleared: a search that is running must end, and its half-answer must not be sent as if it were all. */
+  private stopping = false;
   private cycling: Promise<void> | undefined;
   private beating: Promise<void> | undefined;
   /** The search for equipment that is running now, the result of the last one that has not reached the platform yet, and the last one that has. */
@@ -162,6 +166,7 @@ export class EdgeRuntime {
 
   async stop(): Promise<void> {
     this.running = false;
+    this.stopping = true;
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
     await Promise.allSettled([this.cycling, this.beating, this.discovering, this.outbox.drain()]);
@@ -281,7 +286,7 @@ export class EdgeRuntime {
    * for one request: it is started once, and a result that did not get through is sent again. */
   private consider(request: DiscoveryRequest): void {
     this.watchedUntilMs = this.now() + WATCHED_AFTER_REQUEST_MS;
-    if (request.id === this.lastDeliveredId || this.discovering) return;
+    if (request.id === this.lastDeliveredId || this.discovering || this.stopping) return;
     // Finished, and the platform did not get it: send it again, without looking again.
     const work = this.discoveryResult?.requestId === request.id ? this.deliver() : this.discover(request);
     this.discovering = work.finally(() => {
@@ -292,13 +297,27 @@ export class EdgeRuntime {
   private async discover(request: DiscoveryRequest): Promise<void> {
     const tools = (this.options.discovery ?? (() => realTools(this.now)))();
     try {
-      this.discoveryResult = await runDiscovery(request, tools, { log: this.options.log });
-      await this.deliver();
+      const result = await runDiscovery(request, tools, { ...this.options.discoveryOptions, log: this.options.log, shouldStop: () => this.stopping });
+      // A box that is stopping has only part of an answer, and a platform told that as if it were all would believe it: it asks again after the restart.
+      if (this.stopping) return;
+      this.discoveryResult = result;
     } catch (error) {
-      this.options.log.warn(`Looking at the network failed: ${error instanceof Error ? error.message : String(error)}`);
+      // The platform asks in every heartbeat until it has an answer, so a search that fails says so, once, as the answer: the person is told, and the box does not start again.
+      const reason = error instanceof Error ? error.message : String(error);
+      this.options.log.warn(`Looking at the network failed: ${reason}`);
+      const at = new Date(this.now()).toISOString();
+      this.discoveryResult = {
+        requestId: request.id,
+        startedAtUtc: at,
+        finishedAtUtc: at,
+        scanned: { subnets: [], hostsTried: 0, ports: [], units: [] },
+        hosts: [],
+        notes: [`The box could not look at the network: ${reason}`.slice(0, 300)]
+      };
     } finally {
       await tools.close().catch(() => undefined);
     }
+    await this.deliver();
   }
 
   private async deliver(): Promise<void> {
@@ -311,6 +330,15 @@ export class EdgeRuntime {
       this.lastDeliveryProblem = "";
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
+      // A platform that refuses what the box says (it is not in a form it accepts) will refuse it again: it is not sent again, and the person's next press looks afresh.
+      // A platform that cannot be reached, or is busy, or does not know the box for a moment, is tried again with the next heartbeat.
+      const status = error instanceof PlatformError ? error.status : undefined;
+      if (status !== undefined && status >= 400 && status < 500 && ![401, 408, 429].includes(status)) {
+        this.options.log.warn(`The platform did not accept what was found on the network: ${reason}. It will not be sent again.`);
+        this.lastDeliveredId = result.requestId;
+        this.discoveryResult = undefined;
+        return;
+      }
       if (reason !== this.lastDeliveryProblem) {
         this.lastDeliveryProblem = reason;
         this.options.log.warn(`Could not tell the platform what was found on the network: ${reason}. It will be sent again.`);

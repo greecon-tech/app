@@ -46,7 +46,17 @@ describe("which networks the box is willing to look at", () => {
 
 describe("what the box is willing to be asked", () => {
   it("looks only at private addresses, and says which it refused", () => {
-    expect(sanitise({ id: "r", hosts: ["192.168.1.60", "8.8.8.8", "10.0.0.2", "not an address"] })).toMatchObject({ hosts: ["192.168.1.60", "10.0.0.2"], refused: ["8.8.8.8", "not an address"] });
+    expect(sanitise({ id: "r", hosts: ["192.168.1.60", "8.8.8.8", "10.0.0.2", "not an address"] })).toMatchObject({ hosts: ["192.168.1.60", "10.0.0.2"], refused: ["8.8.8.8", "not an address"], itself: [] });
+  });
+
+  it("does not look at this box itself, or at an address a machine gives itself, unless it is allowed to (a desk, a test)", () => {
+    const request = { id: "r", hosts: ["127.0.0.1", "169.254.7.7", "192.168.1.60"] };
+    expect(sanitise(request)).toMatchObject({ hosts: ["192.168.1.60"], refused: ["127.0.0.1", "169.254.7.7"], itself: ["127.0.0.1", "169.254.7.7"] });
+    expect(sanitise(request, true)).toMatchObject({ hosts: ["127.0.0.1", "169.254.7.7", "192.168.1.60"], refused: [], itself: [] });
+  });
+
+  it("does not take a public address spelled so that a private check might read it as private", () => {
+    expect(sanitise({ id: "r", hosts: ["010.1.1.1", "192.168.001.5", "0x0a.1.1.1", "10.1.1"] }).hosts).toEqual([]);
   });
 
   it("uses the usual port and the kit's unit numbers unless told, and keeps to sensible ones when told", () => {
@@ -99,13 +109,18 @@ const meter = (watts: number): Record<string, Answer> => ({
   "module-address": { outcome: "refused" }
 });
 
+/** No pause between a question and the same question asked again, so that a test does not wait for a real converter's patience. */
+const quick = { retryPauseMs: 0 };
+/** A search that is allowed to look at this machine, because the pretend converter of a test listens on it. */
+const onThisMachine = { ...quick, allowLoopback: true };
+
 describe("looking at the network", () => {
   it("tries every address on the box's own network, and asks only the converters that answered", async () => {
     const network = pretendNetwork({
       open: ["192.168.1.50"],
       units: { "192.168.1.50": { 1: meter(2000) } }
     });
-    const result = await runDiscovery({ id: "r-1" }, network.tools);
+    const result = await runDiscovery({ id: "r-1" }, network.tools, quick);
     expect(network.connects).toHaveLength(253);
     expect(new Set(network.asked.map((entry) => entry.host))).toEqual(new Set(["192.168.1.50"]));
     expect(result).toMatchObject({ requestId: "r-1", scanned: { subnets: ["192.168.1.0/24"], hostsTried: 253, ports: [502], units: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }, notes: [] });
@@ -117,7 +132,7 @@ describe("looking at the network", () => {
 
   it("asks a unit that answers none of the three presence questions nothing more, because nothing is there", async () => {
     const network = pretendNetwork({ open: ["192.168.1.50"] });
-    const result = await runDiscovery({ id: "r-1" }, network.tools);
+    const result = await runDiscovery({ id: "r-1" }, network.tools, quick);
     // Ten units, three questions each: all six would be sixty, and a converter waits out its serial timeout for every one.
     expect(network.asked).toHaveLength(30);
     expect(new Set(network.asked.map((entry) => entry.probe))).toEqual(new Set(PROBES.filter((probe) => probe.presence).map((probe) => probe.key)));
@@ -126,8 +141,17 @@ describe("looking at the network", () => {
 
   it("asks every question of a unit that answers any of the presence ones, and says which went unanswered", async () => {
     const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 3: { "analog-channels": { outcome: "ok", words: [12000, 8000, 4000] }, "module-address": { outcome: "ok", words: [3] } } } } });
-    const result = await runDiscovery({ id: "r-1", units: [3] }, network.tools);
-    expect(network.asked.map((entry) => entry.probe)).toEqual(PROBES.map((probe) => probe.key));
+    const result = await runDiscovery({ id: "r-1", units: [3] }, network.tools, quick);
+    // Each question the unit left unanswered was asked three times in all (once, and again twice: one missed answer decides nothing).
+    const times = (key: string) => network.asked.filter((entry) => entry.probe === key).length;
+    expect(PROBES.map((probe) => [probe.key, times(probe.key)])).toEqual([
+      ["eastron-voltage", 1],
+      ["analog-channels", 1],
+      ["digital-inputs", 1],
+      ["eastron-630", 3],
+      ["eastron-230", 3],
+      ["module-address", 1]
+    ]);
     expect(result.hosts[0]?.units[0]?.probes.map((probe) => [probe.key, probe.outcome])).toEqual([
       ["eastron-voltage", "silent"],
       ["analog-channels", "ok"],
@@ -141,21 +165,93 @@ describe("looking at the network", () => {
 
   it("asks a unit that only refuses the rest too, because only equipment that is there can refuse", async () => {
     const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 8: { "digital-inputs": { outcome: "refused" } } } } });
-    const result = await runDiscovery({ id: "r-1", units: [8] }, network.tools);
-    expect(network.asked).toHaveLength(PROBES.length);
+    const result = await runDiscovery({ id: "r-1", units: [8] }, network.tools, quick);
+    // The three presence questions, then the other three, each asked three times because the unit said nothing to them.
+    expect(network.asked).toHaveLength(3 + 3 * 3);
+    expect(new Set(network.asked.map((entry) => entry.probe))).toEqual(new Set(PROBES.map((probe) => probe.key)));
     expect(result.hosts[0]?.units.map((unit) => unit.unit)).toEqual([8]);
   });
 
   it("finds a device that stays silent on a register it does not have, by the registers it does", async () => {
     // A cheap module that ignores the meter's registers and the digital inputs, and answers only its own: the unit is there all the same.
     const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 3: { "analog-channels": { outcome: "ok", words: [4000, 4000, 4000] }, "module-address": { outcome: "ok", words: [3] } } } } });
-    const result = await runDiscovery({ id: "r-1", units: [3] }, network.tools);
+    const result = await runDiscovery({ id: "r-1", units: [3] }, network.tools, quick);
     expect(identifyUnit(result.hosts[0]!.units[0]!.probes, 3).family).toBe("analog-module");
+  });
+
+  describe("a unit that is there but does not answer a question the first time", () => {
+    /** A converter that loses the first answer to each question that is not a presence one, as a serial line does now and then, and answers it the second time. */
+    const losesFirstAnswers = (answers: Record<string, Answer>, first: Answer) => {
+      const asks = new Map<string, number>();
+      const network = pretendNetwork({ open: ["192.168.1.50"] });
+      const tools: DiscoveryTools = {
+        ...network.tools,
+        ask: async (host, port, unit, read) => {
+          const key = PROBES.find((probe) => probe.read.registerType === read.registerType && probe.read.address === read.address && probe.read.count === read.count)?.key ?? "unknown";
+          network.asked.push({ host, unit, probe: key });
+          const count = (asks.get(key) ?? 0) + 1;
+          asks.set(key, count);
+          void port;
+          const presence = PROBES.find((probe) => probe.key === key)?.presence === true;
+          return count === 1 && !presence && key in answers ? first : (answers[key] ?? { outcome: "silent" });
+        }
+      };
+      return { network, tools };
+    };
+
+    it("asks it again, so that one lost answer does not decide what a meter is", async () => {
+      const { network, tools } = losesFirstAnswers(meter(2000), { outcome: "silent" });
+      const result = await runDiscovery({ id: "r-8", units: [1] }, tools, quick);
+      const probes = result.hosts[0]?.units[0]?.probes ?? [];
+      expect(probes.find((probe) => probe.key === "eastron-630")?.outcome).toBe("ok");
+      expect(probes.find((probe) => probe.key === "eastron-230")?.outcome).toBe("ok");
+      // The three presence questions are asked once each: a unit that is not there must stay cheap to rule out.
+      expect(network.asked.filter((entry) => entry.probe === "eastron-voltage")).toHaveLength(1);
+      expect(identifyUnit(probes, 1)).toMatchObject({ family: "eastron-meter" });
+    });
+
+    it("asks it again when it said it was busy, and takes the answer that comes", async () => {
+      const { tools } = losesFirstAnswers(meter(2000), { outcome: "refused", code: 6 });
+      const result = await runDiscovery({ id: "r-9", units: [1] }, tools, quick);
+      const probes = result.hosts[0]?.units[0]?.probes ?? [];
+      expect(probes.find((probe) => probe.key === "eastron-630")).toMatchObject({ outcome: "ok" });
+      expect(probes.find((probe) => probe.key === "eastron-630")?.code).toBeUndefined();
+    });
+
+    it("does not ask again when it said plainly that it does not have the register", async () => {
+      const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 1: { ...meter(2000), "eastron-230": { outcome: "refused", code: 2 } } } } });
+      const result = await runDiscovery({ id: "r-10", units: [1] }, network.tools, quick);
+      expect(network.asked.filter((entry) => entry.probe === "eastron-230")).toHaveLength(1);
+      expect(result.hosts[0]?.units[0]?.probes.find((probe) => probe.key === "eastron-230")).toEqual({ key: "eastron-230", outcome: "refused", code: 2 });
+    });
+
+    it("says what it was told in the end when it keeps being busy, so that the platform can tell a busy meter from one without the register", async () => {
+      const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 1: { ...meter(2000), "eastron-230": { outcome: "refused", code: 6 } } } } });
+      const result = await runDiscovery({ id: "r-11", units: [1] }, network.tools, quick);
+      expect(network.asked.filter((entry) => entry.probe === "eastron-230")).toHaveLength(3);
+      expect(result.hosts[0]?.units[0]?.probes.find((probe) => probe.key === "eastron-230")).toEqual({ key: "eastron-230", outcome: "refused", code: 6 });
+    });
+
+    it("does not ask again once the box is stopping", async () => {
+      const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 1: meter(2000) } } });
+      let stopping = false;
+      const tools: DiscoveryTools = {
+        ...network.tools,
+        ask: async (host, port, unit, read) => {
+          const answer = await network.tools.ask(host, port, unit, read);
+          if (network.asked.length >= 4) stopping = true;
+          return network.asked.length === 4 ? { outcome: "silent" } : answer;
+        }
+      };
+      await runDiscovery({ id: "r-12", units: [1] }, tools, { ...quick, shouldStop: () => stopping });
+      // The fourth question (the first that is not a presence one) got no answer; the box was stopping, so it was not asked again.
+      expect(network.asked).toHaveLength(4);
+    });
   });
 
   it("looks at the addresses it was given, and nothing else", async () => {
     const network = pretendNetwork({ open: ["192.168.1.60"] });
-    const result = await runDiscovery({ id: "r-2", hosts: ["192.168.1.60"], ports: [502] }, network.tools);
+    const result = await runDiscovery({ id: "r-2", hosts: ["192.168.1.60"], ports: [502] }, network.tools, quick);
     expect(network.connects).toEqual(["192.168.1.60:502"]);
     expect(result.scanned.subnets).toEqual([]);
     expect(result.hosts.map((host) => host.host)).toEqual(["192.168.1.60"]);
@@ -163,21 +259,37 @@ describe("looking at the network", () => {
 
   it("says when an address it was given does not answer, and what to check", async () => {
     const network = pretendNetwork({ open: [] });
-    const result = await runDiscovery({ id: "r-2", hosts: ["192.168.1.60"] }, network.tools);
+    const result = await runDiscovery({ id: "r-2", hosts: ["192.168.1.60"] }, network.tools, quick);
     expect(result.hosts).toEqual([]);
     expect(result.notes).toEqual(["Nothing at 192.168.1.60 accepts a connection on port 502. Check the converter is switched on and on this network."]);
   });
 
   it("refuses an address that is not on a private network, says so, and does not fall back to looking around", async () => {
     const network = pretendNetwork({ open: ["8.8.8.8"] });
-    const result = await runDiscovery({ id: "r-3", hosts: ["8.8.8.8"] }, network.tools);
+    const result = await runDiscovery({ id: "r-3", hosts: ["8.8.8.8"] }, network.tools, quick);
     expect(network.connects).toEqual([]);
     expect(result.notes).toEqual(["8.8.8.8 is not on a private network, so the box did not look there."]);
   });
 
+  it("does not look at itself when asked to, says it is itself, and does not fall back to looking around", async () => {
+    const network = pretendNetwork({ open: ["127.0.0.1"] });
+    const result = await runDiscovery({ id: "r-3b", hosts: ["127.0.0.1", "8.8.8.8"] }, network.tools, quick);
+    expect(network.connects).toEqual([]);
+    expect(result.hosts).toEqual([]);
+    expect(result.notes).toEqual(["8.8.8.8 is not on a private network, so the box did not look there.", "127.0.0.1 is this box itself, so the box did not look there."]);
+  });
+
+  it("looks at this machine only when it is allowed to (a desk, a test, a person at the box)", async () => {
+    const network = pretendNetwork({ open: ["127.0.0.1"], units: { "127.0.0.1": { 1: meter(2000) } } });
+    const result = await runDiscovery({ id: "r-3c", hosts: ["127.0.0.1"], units: [1] }, network.tools, { ...quick, allowLoopback: true });
+    expect(network.connects).toEqual(["127.0.0.1:502"]);
+    expect(result.hosts[0]?.units.map((unit) => unit.unit)).toEqual([1]);
+    expect(result.notes).toEqual([]);
+  });
+
   it("says so when the box is not on a network it may look at", async () => {
     const network = pretendNetwork({ interfaces: [lan("84.22.1.9")] });
-    const result = await runDiscovery({ id: "r-4" }, network.tools);
+    const result = await runDiscovery({ id: "r-4" }, network.tools, quick);
     expect(network.connects).toEqual([]);
     expect(result.notes[0]).toContain("not on a private network that it may look at");
   });
@@ -186,18 +298,68 @@ describe("looking at the network", () => {
     const network = pretendNetwork({ open: ["192.168.1.50"] });
     let calls = 0;
     const tools: DiscoveryTools = { ...network.tools, ask: async () => ((calls += 1) > 3 ? { outcome: "silent", converterGone: true } : { outcome: "silent" }) };
-    const result = await runDiscovery({ id: "r-5" }, tools);
+    const result = await runDiscovery({ id: "r-5" }, tools, quick);
     // The first unit took three questions (nothing there); the fourth question found the converter gone.
     expect(calls).toBe(4);
     expect(result.notes).toEqual(["The converter at 192.168.1.50 stopped answering part way through."]);
   });
 
+  it("does not ask again about a converter that has stopped answering, even for a question that would be asked again", async () => {
+    const network = pretendNetwork({ open: ["192.168.1.50"] });
+    let calls = 0;
+    const tools: DiscoveryTools = {
+      ...network.tools,
+      // The unit answers the first presence question; the converter goes away while the first of the other questions is asked.
+      ask: async () => ((calls += 1) === 1 ? { outcome: "ok", words: [0x4366, 0] } : calls <= 3 ? { outcome: "silent" } : { outcome: "silent", converterGone: true })
+    };
+    await runDiscovery({ id: "r-5b", units: [1] }, tools, quick);
+    // Three presence questions and the first of the rest: that one found the converter gone, and it was not asked twice more as an unanswered question would be.
+    expect(calls).toBe(4);
+  });
+
   it("gives up when its time is used, and says the answer may be incomplete", async () => {
     const network = pretendNetwork({ open: ["192.168.1.50"] });
     const slow: DiscoveryTools = { ...network.tools, ask: async (host, port, unit, read) => (network.tick(30_000), network.tools.ask(host, port, unit, read)) };
-    const result = await runDiscovery({ id: "r-6" }, slow, { budgetMs: 60_000 });
+    const result = await runDiscovery({ id: "r-6" }, slow, { ...quick, budgetMs: 60_000 });
     expect(result.notes).toEqual(["The search was stopped after 60 seconds, so it may be incomplete. Find the equipment again."]);
     expect(result.hosts).toHaveLength(1);
+  });
+
+  it("stops at once when the box is stopping, and does not call that an incomplete search", async () => {
+    const network = pretendNetwork({ open: ["192.168.1.50"], units: { "192.168.1.50": { 1: meter(2000) } } });
+    let stopping = false;
+    const tools: DiscoveryTools = {
+      ...network.tools,
+      ask: async (host, port, unit, read) => {
+        const answer = await network.tools.ask(host, port, unit, read);
+        if (network.asked.length >= 2) stopping = true;
+        return answer;
+      }
+    };
+    const result = await runDiscovery({ id: "r-6b" }, tools, { ...quick, shouldStop: () => stopping });
+    // Two questions were asked and then no more, not the rest of the unit's questions and not the other nine units. What was left is recorded as unanswered
+    // (the box does not hand the platform the half-answer: it throws it away), and a box that is stopping is not an "incomplete search" in the person's words.
+    expect(network.asked).toHaveLength(2);
+    expect(result.hosts[0]?.units[0]?.probes.map((probe) => probe.key)).toEqual(PROBES.map((probe) => probe.key));
+    expect(result.notes).toEqual([]);
+  });
+
+  it("tries no more connections at once than it is meant to, and uses them all on a whole network", async () => {
+    let inFlight = 0;
+    let most = 0;
+    const network = pretendNetwork({ open: [] });
+    const tools: DiscoveryTools = {
+      ...network.tools,
+      connects: async (host, port, timeoutMs) => {
+        inFlight += 1;
+        most = Math.max(most, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight -= 1;
+        return network.tools.connects(host, port, timeoutMs);
+      }
+    };
+    await runDiscovery({ id: "r-6c" }, tools, quick);
+    expect(most).toBe(24);
   });
 
   it("looks at converters one question at a time, and several converters at once", async () => {
@@ -225,8 +387,10 @@ describe("looking at the network", () => {
     expect(most).toBe(3);
   });
 
-  it("never writes: every question is a read of one of the three kinds of register", () => {
+  it("asks only about registers that are read, never ones that are written", () => {
+    // Only the three kinds of read: the box's questions are the same list for every unit, and it has no way to make a write.
     expect(new Set(PROBES.map((probe) => probe.read.registerType))).toEqual(new Set(["input", "holding", "discrete"]));
+    expect(PROBES.every((probe) => probe.read.count >= 1 && probe.read.count <= 8)).toBe(true);
   });
 });
 
@@ -261,7 +425,7 @@ describe("looking at a real converter", () => {
 
   it("finds each piece of the kit by what it answers, and the platform can match them to the devices it plans", async () => {
     const request: DiscoveryRequest = { id: "real-1", hosts: [converter.host], ports: [converter.port], units: [1, 2, 3, 4, 5, 6, 7] };
-    const result = await runDiscovery(request, tools);
+    const result = await runDiscovery(request, tools, onThisMachine);
     expect(validateDiscoveryResult(result)).toEqual([]);
     expect(result.hosts).toHaveLength(1);
     expect(result.hosts[0]?.units.map((unit) => unit.unit)).toEqual([1, 2, 3, 5]);
@@ -291,9 +455,9 @@ describe("looking at a real converter", () => {
     const quiet = realTools(() => Date.now(), { requestTimeoutMs: 150, connectTimeoutMs: 300 });
     converter.setAbsentUnits("silent");
     try {
-      const result = await runDiscovery({ id: "real-2", hosts: [converter.host], ports: [converter.port], units: [1, 9] }, quiet);
+      const result = await runDiscovery({ id: "real-2", hosts: [converter.host], ports: [converter.port], units: [1, 9] }, quiet, onThisMachine);
       expect(result.hosts[0]?.units.map((unit) => unit.unit)).toEqual([1]);
-      // Unit 9 cost two questions that went unanswered, and no more.
+      // Unit 9 cost three questions that went unanswered (the presence ones, each waiting out the short wait), and no more.
       expect(Date.now() - now).toBeLessThan(5_000);
     } finally {
       await quiet.close();
@@ -304,7 +468,7 @@ describe("looking at a real converter", () => {
     const empty = await startFakeModbusServer([]);
     empty.setAbsentUnits("exception");
     try {
-      const result = await runDiscovery({ id: "real-3", hosts: [empty.host], ports: [empty.port], units: [1, 2, 3] }, tools);
+      const result = await runDiscovery({ id: "real-3", hosts: [empty.host], ports: [empty.port], units: [1, 2, 3] }, tools, onThisMachine);
       expect(result.hosts).toEqual([{ host: empty.host, port: empty.port, units: [] }]);
       const { notes } = proposeAssignments(result.hosts, []);
       expect(notes[0]).toContain("but nothing answers behind it");
@@ -313,11 +477,28 @@ describe("looking at a real converter", () => {
     }
   });
 
-  it("only ever read: what it left on the converter is what was there", async () => {
+  it("only ever reads: on the wire, the whole kit is asked with function codes 2, 3 and 4 and no other", async () => {
     const before = converter.requests;
-    await runDiscovery({ id: "real-4", hosts: [converter.host], ports: [converter.port], units: [1, 3] }, tools);
+    await runDiscovery({ id: "real-4", hosts: [converter.host], ports: [converter.port], units: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }, tools, onThisMachine);
     expect(converter.requests).toBeGreaterThan(before);
-    // The registers are as they were, because no question was a write: the fake server answers writes with an exception and keeps nothing.
+    // Read discrete inputs (2), read holding registers (3), read input registers (4): the converter saw nothing that could change a device.
+    expect(converter.functionCodesSeen()).toEqual([2, 3, 4]);
+    // And what is on the equipment is what was there.
     expect(await tools.ask(converter.host, converter.port, 3, { registerType: "holding", address: 0x4000, count: 1 })).toEqual({ outcome: "ok", words: [3] });
+  });
+
+  describe("what the box says of a question a unit answered", () => {
+    it("says a value for a register that is there, and a refusal with its code for one that is not", async () => {
+      expect(await tools.ask(converter.host, converter.port, 1, { registerType: "input", address: 0, count: 2 })).toMatchObject({ outcome: "ok" });
+      // Unit 1 is told to refuse function 2 (a meter has no digital inputs): "illegal function", code 1.
+      expect(await tools.ask(converter.host, converter.port, 1, { registerType: "discrete", address: 0, count: 8 })).toEqual({ outcome: "refused", code: 1 });
+      // A register the unit does not have: "illegal data address", code 2.
+      expect(await tools.ask(converter.host, converter.port, 1, { registerType: "holding", address: 0x4000, count: 1 })).toEqual({ outcome: "refused", code: 2 });
+    });
+
+    it("says nothing was there, not that something refused, when the converter says that no unit answered it", async () => {
+      // Exception 11 ("gateway target failed to respond") is the converter speaking, not the unit: the unit is not there.
+      expect(await tools.ask(converter.host, converter.port, 9, { registerType: "input", address: 0, count: 2 })).toEqual({ outcome: "silent" });
+    });
   });
 });
