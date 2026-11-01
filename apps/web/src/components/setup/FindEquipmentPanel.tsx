@@ -21,18 +21,28 @@ const PROPOSAL_WORDS: Record<DeviceProposal["status"], { status: string; label: 
  * equipment is something Greecon cannot recognise on a network. */
 export function FindEquipmentPanel({ siteId, view, boxOnline, hasDevices }: { siteId: string; view: DiscoveryView; boxOnline: boolean; hasDevices: boolean }) {
   const [host, setHost] = useState("");
-  const [port, setPort] = useState("502");
+  // Left empty, the box uses the usual port (502): a person who has no reason to change it is not asked to.
+  const [port, setPort] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const waiting = view.state === "waiting";
 
-  function find(event?: FormEvent<HTMLFormElement>, at?: { host: string; port: number }) {
+  function find(event?: FormEvent<HTMLFormElement>, at?: { host: string; port: string }) {
     event?.preventDefault();
+    // Pressed again while the box is looking: nothing happens (the buttons stay in place for the keyboard, so they are not disabled).
+    if (isPending || waiting) return;
     setError(null);
     setMessage(null);
+    // The port is a whole number from 1 to 65535, or empty for the usual one. "502 " and "5 0 2" are fixed, not refused; "five" is said.
+    const typed = at?.port.replace(/\s+/g, "") ?? "";
+    const portNumber = typed === "" ? undefined : Number(typed);
+    if (portNumber !== undefined && (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535)) {
+      setError("The port is a whole number from 1 to 65535. It is usually 502, and the field can be left empty.");
+      return;
+    }
     startTransition(async () => {
-      const result = await findEquipmentAction(siteId, at?.host, at?.port);
+      const result = await findEquipmentAction(siteId, at?.host, portNumber);
       if (result.error) setError(result.error);
     });
   }
@@ -50,7 +60,14 @@ export function FindEquipmentPanel({ siteId, view, boxOnline, hasDevices }: { si
   return (
     <div className="setup-find">
       <div className="setup-find__ask">
-        <button type="button" className={view.allSet ? "button-ghost" : "button-primary"} onClick={() => find()} disabled={isPending || waiting || !boxOnline || !hasDevices}>
+        {/* While the box looks, the button says so and does nothing, but it keeps the keyboard focus (a disabled button would drop it to the top of the page). */}
+        <button
+          type="button"
+          className={view.allSet ? "button-ghost" : "button-primary"}
+          onClick={() => find()}
+          aria-disabled={isPending || waiting || undefined}
+          disabled={!boxOnline || !hasDevices}
+        >
           {waiting ? "The box is looking…" : view.state === "done" ? "Look again" : "Find equipment"}
         </button>
         <p className="muted">
@@ -75,8 +92,8 @@ export function FindEquipmentPanel({ siteId, view, boxOnline, hasDevices }: { si
 
       {view.state === "done" || view.proposals.length > 0 ? (
         <div className="setup-find__result">
-          {view.boxes.map((box) => (
-            <p key={box.name} className="muted">
+          {view.boxes.map((box, index) => (
+            <p key={`${index}-${box.name}`} className="muted">
               {box.name} looked at {box.looked}, <Ago iso={box.finishedAtUtc} />.
             </p>
           ))}
@@ -101,7 +118,7 @@ export function FindEquipmentPanel({ siteId, view, boxOnline, hasDevices }: { si
               <button type="button" className="button-primary" onClick={useAddresses} disabled={isPending}>
                 {view.toApply === 1 ? "Use this address" : `Use these ${view.toApply} addresses`}
               </button>{" "}
-              <span className="muted">These were found somewhere other than where they are set now.</span>
+              <span className="muted">These were found somewhere other than where they are set now, or are read as another model than the one planned. Each line above says which.</span>
             </p>
           ) : null}
           {view.allSet ? (
@@ -132,16 +149,16 @@ export function FindEquipmentPanel({ siteId, view, boxOnline, hasDevices }: { si
       ) : null}
 
       <Disclosure summary="I know the converter's address">
-        <form onSubmit={(event) => find(event, { host, port: Number(port) })} className="setup-inline-form" aria-label="Look at one address">
+        <form onSubmit={(event) => find(event, { host, port })} className="setup-inline-form" aria-label="Look at one address">
           <label>
             Converter&apos;s IP address
             <input value={host} onChange={(event) => setHost(event.target.value)} placeholder="192.168.1.50" inputMode="decimal" required />
           </label>
           <label>
-            Port
-            <input value={port} onChange={(event) => setPort(event.target.value)} inputMode="numeric" size={5} />
+            Port (usually 502)
+            <input value={port} onChange={(event) => setPort(event.target.value)} inputMode="numeric" size={5} placeholder="502" />
           </label>
-          <button type="submit" disabled={isPending || waiting || !boxOnline || !hasDevices}>
+          <button type="submit" aria-disabled={isPending || waiting || undefined} disabled={!boxOnline || !hasDevices}>
             Look at this address
           </button>
         </form>

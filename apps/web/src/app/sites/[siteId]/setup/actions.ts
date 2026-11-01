@@ -76,7 +76,7 @@ export async function createDeviceFromProfileAction(siteId: string, input: Known
 /** "Find equipment": the box looks at the site's network, and fills in the addresses of what it finds. Asking changes nothing by itself. */
 export async function findEquipmentAction(siteId: string, host?: string, port?: number): Promise<{ error?: string }> {
   try {
-    await apiMutate(`/sites/${siteId}/discovery`, "POST", { ...(host?.trim() ? { host: host.trim() } : {}), ...(port !== undefined && Number.isFinite(port) ? { port } : {}) });
+    await apiMutate(`/sites/${siteId}/discovery`, "POST", { ...(host?.trim() ? { host: host.trim() } : {}), ...(port !== undefined && Number.isInteger(port) && port >= 1 && port <= 65535 ? { port } : {}) });
     refresh(siteId);
     return {};
   } catch (error) {

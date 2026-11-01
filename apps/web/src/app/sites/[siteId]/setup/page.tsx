@@ -53,7 +53,8 @@ export default async function SetupPage({ params }: { params: Promise<{ siteId: 
   // The box that looks at the network has to be one the platform can hear: online, or late after a restart.
   const boxOnline = detail.gateways.some((gateway) => gateway.contact === "online" || gateway.contact === "late");
   const template = setup.templateKey ? templateByKey(setup.templateKey) : undefined;
-  const next = nextStep(setup.steps);
+  // A commissioned site has nothing to do next: an optional step left open is not a reason to say otherwise.
+  const next = setup.commissioned ? undefined : nextStep(setup.steps);
   // Which steps a site has depends on what it is: a grid meter's direction is checked only where there is one, alert limits only where a
   // reading has some, prices only where there is energy or water to value. A panel is made for the steps the list has, never for one it has
   // not (asking for a step that is not there made the page fail for every farm, water station and blank site).

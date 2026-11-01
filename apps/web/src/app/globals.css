@@ -635,22 +635,41 @@ main {
   display: grid;
   justify-items: center;
   gap: 5px;
-  /* Devices that are not surveyed sit on a grid, the centres of neighbours one column apart being 1 / (columns + 1) of the map apart: a name is never
-     wider than that, so on a phone two long names do not print over each other (the whole name is in the tooltip and on the cards below). */
-  max-width: calc(100% / (var(--site-map-columns, 2) + 1) - 4px);
   transform: translate(-50%, -50%);
 }
 
 .site-map__label {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   border-radius: 4px;
   background: var(--bg-card);
   padding: 1px 6px;
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+/* Devices with no recorded position: a list, not a drawing. Every name is whole at any width, and none can land on another. */
+.site-map-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin: 0;
+  padding: 16px 18px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--pale-green-blue);
+}
+
+.site-map-flow__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.site-map-flow__item .site-map__dot {
+  flex: none;
 }
 
 .site-map__legend {

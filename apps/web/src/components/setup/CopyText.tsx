@@ -25,7 +25,8 @@ export function CopyText({ text, label, name }: { text: string; label: string; n
 
   return (
     <div className="copy-text">
-      <pre ref={ref} className="copy-text__body" aria-label={name}>
+      {/* The message can be longer than the box is wide, so it scrolls, and what scrolls must be reachable with the keyboard. */}
+      <pre ref={ref} className="copy-text__body" role="region" aria-label={name} tabIndex={0}>
         {text}
       </pre>
       <div className="copy-text__actions no-print">
