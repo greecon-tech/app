@@ -261,7 +261,7 @@ public on purpose; do not give it to a customer as their own login.
 ## 12. The rehearsal, then the checklist
 
 Before the first real customer, the project manager does the whole job once on a desk, with a laptop
-standing in for the meters: [02 Project manager manual](02-project-manager-manual.md), "Rehearsal". It takes an
+standing in for the kit: [02 Project manager manual](02-project-manager-manual.md), "Rehearsal". It takes an
 afternoon, and it finds the mistakes in the room instead of at a hotel.
 
 **Go-live checklist.** Tick each one yourself; none needs a technician.

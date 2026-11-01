@@ -66,11 +66,11 @@ function longDate(iso) {
 // Checks of the sources against the platform
 // ---------------------------------------------------------------------------------------------------------------------------
 
-/** The ten titles of the setup list must be exactly the ones the platform shows. */
+/** The twelve titles of the setup list must be exactly the ones the platform shows. */
 function checkStepTitles(steps, notes) {
   const file = join(REPO, "apps", "api", "src", "setup", "setup-checklist.ts");
   if (!existsSync(file)) {
-    notes.warn(`The setup checklist (${relative(REPO, file)}) was not found, so the ten step titles were not checked against the platform`);
+    notes.warn(`The setup checklist (${relative(REPO, file)}) was not found, so the twelve step titles were not checked against the platform`);
     return;
   }
   const source = readText(file);
@@ -79,14 +79,14 @@ function checkStepTitles(steps, notes) {
   const mine = steps.map((step) => step.title);
   const missing = mine.filter((title) => !found.has(title));
   const extra = [...found].filter((title) => !mine.includes(title));
-  if (missing.length > 0 || extra.length > 0 || mine.length !== 10) {
+  if (missing.length > 0 || extra.length > 0 || mine.length !== 12) {
     throw new Error(
       `The setup-list steps in docs/launch/packs/steps.json do not match apps/api/src/setup/setup-checklist.ts.\n` +
         (missing.length ? `  Not in the platform: ${missing.map((title) => `"${title}"`).join(", ")}\n` : "") +
         (extra.length ? `  In the platform but not in steps.json: ${extra.map((title) => `"${title}"`).join(", ")}\n` : "")
     );
   }
-  notes.info(`The ten setup-list step titles match ${relative(REPO, file)} exactly`);
+  notes.info(`The twelve setup-list step titles match ${relative(REPO, file)} exactly`);
 }
 
 /** The templates named in kits.json must exist in the platform. */

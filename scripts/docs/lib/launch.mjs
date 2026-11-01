@@ -93,20 +93,21 @@ const MANUAL_PLACES = {
 
 /** The numbers the manual's own text uses for its sections and steps, said as the book numbers them. */
 const MANUAL_TEXT_REWRITES = [
+  ["section 7 says where.", "section 3.8 says where."],
   ["(section 4 below)", "(section 3.5 below)"],
-  ["see [7.7](#7-the-setup-list-step-by-step)", "see [3.8.7](#7-the-setup-list-step-by-step)"],
+  ["see [7.8](#7-the-setup-list-step-by-step)", "see [3.8.8](#7-the-setup-list-step-by-step)"],
+  ["[7.1](#7-the-setup-list-step-by-step)", "[3.8.1](#7-the-setup-list-step-by-step)"],
   ["[section 13](#13-rehearsal-the-whole-job-on-a-desk)", "[section 3.11](#13-rehearsal-the-whole-job-on-a-desk)"],
   ["Paste the install line from step 4.7.", "Paste the install line from section 3.5, item 7."],
-  ["you enter it in step 7.3.", "you enter it in step 3.8.3."],
   ["[step 5](#5-prepare-the-kit-at-the-office)", "[section 3.6](#5-prepare-the-kit-at-the-office)"],
   ["see [section 12](#12-when-something-is-wrong)", "see [Appendix C](#12-when-something-is-wrong)"],
   ["[section 9](#9-commissioning-checks-by-kind-of-site)", "[section 6.1](#9-commissioning-checks-by-kind-of-site)"],
-  ["four readings (7.4)", "four readings (3.8.4)"],
-  ["Prices (7.1) so that", "Prices (3.8.1) so that"],
-  ["now, while the pump is stopped ([7.9](#7-the-setup-list-step-by-step))", "now, while the pump is stopped ([3.8.9](#7-the-setup-list-step-by-step))"],
-  ["delete the battery and load meter if not fitted (7.4).", "delete the battery and load meter if not fitted (3.8.4)."],
+  ["give the ranges (7.5)", "give the ranges (3.8.5)"],
+  ["Prices (7.2) so that", "Prices (3.8.2) so that"],
+  ["([7.10](#7-the-setup-list-step-by-step))", "([3.8.10](#7-the-setup-list-step-by-step))"],
+  ["load meter if they are not fitted (7.4).", "load meter if they are not fitted (3.8.4)."],
   ["([section 5](#5-prepare-the-kit-at-the-office))", "([section 3.6](#5-prepare-the-kit-at-the-office))"],
-  ["Electrician turns them; repeat 7.8", "Electrician turns them; repeat 3.8.8"],
+  ["Electrician turns them; repeat 7.9", "Electrician turns them; repeat 3.8.9"],
   ["[Rehearsal](#13-rehearsal-the-whole-job-on-a-desk)", "[Rehearsal](#13-rehearsal-the-whole-job-on-a-desk) (section 3.11)"],
   ['[03](03-hardware-and-wiring.md), "Meter settings")', "[03](03-hardware-and-wiring.md), section 4.5)"]
 ];
@@ -131,7 +132,7 @@ function runInsToHeadings(body, notes, file) {
     const after = [aside, rest.replace(/^\.\s*/, "")].filter(Boolean).join(" ").trim();
     return `${heading}\n\n${after}`.trimEnd();
   });
-  if (found !== 10) notes.warn(`${file}: expected the ten steps 7.1 to 7.10 and found ${found}`);
+  if (found !== 12) notes.warn(`${file}: expected the twelve steps 7.1 to 7.12 and found ${found}`);
   return out;
 }
 

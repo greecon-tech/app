@@ -30,14 +30,14 @@ A check that fails is not commissioned. Do not press **{{ui.commission_this_site
 
 | Check that fails | Look at first |
 |----------------|---------------------------------------------|
-| A meter's display and Greecon differ by more than 5 percent | The register and its scale (W against kW: multiply by 0.001); on a meter with 5 A current transformers, the CT ratio set in the meter's menu; a clamp on the wrong phase or cable. Test the register from the box with `greecon-edge modbus-test` against the meter's display |
+| A meter's display and Greecon differ by more than 5 percent | The model fitted against the one on the install card (an SDM630 fitted where an SDM230 was planned is read as an SDM230 and shows one phase's power only); on a meter with 5 A current transformers, the CT ratio set in the meter's menu; a clamp on the wrong phase or cable; the two meters' numbers swapped (the meter at the supply entry must be number 1). Test the register from the box with `greecon-edge modbus-test` against the meter's display |
 | Grid direction: export rises when the load is switched on | The clamps are the wrong way round: the electrician turns them, with the lock-out on, and you repeat the check |
 | Solar reads more than a few watts at night, or nothing at midday | The solar meter's clamps are on the wrong cable; or the inverter is limited to zero export |
-| The tank reading is off by more than 5 percentage points, or above 100 | The reading at the top (range ÷ tank height × 100); the transmitter at the bottom of the tank with its vented cable free; the 4 to 20 mA conversion |
-| Pressure is off by more than 0.2 bar | The conversion's bottom and top; the transmitter's range; check the channel with the loop calibrator |
-| Flow is off by more than 10 percent | The flow meter's range and conversion; its straight run in the pipe |
+| The tank reading is off by more than 5 percentage points, or above 100 | The range and the tank's height as they were given (give the ranges again: a wrong height reads too high or too low); the transmitter at the bottom of the tank with its vented cable free; the transmitter on input 1 |
+| Pressure is off by more than 0.2 bar | The top of the range as it was given; the transmitter on input 2; check the channel with the loop calibrator |
+| Flow is off by more than 10 percent | The top of the range as it was given (in litres a minute); the flow meter on input 3; its straight run in the pipe |
 | The pump shows running when it is stopped (and the no-flow alert opens) | The pump's running contact is inverted: the electrician swaps its normally-open and normally-closed wires, or uses the opposite contact |
-| The reading at 4, 12 and 20 mA is not the bottom, the middle and the top | Re-enter the register's values at 4 and at 20 mA from what you read with the calibrator |
+| The reading at 4, 12 and 20 mA is not the bottom, the middle and the top | Read the module from the box with `greecon-edge modbus-test` (unit 3, input registers 0 to 2; the command is in the hardware reference): 4, 12 and 20 mA must read 4000, 12000 and 20000. If they do, give the range again. If they do not, the loop is wrong (a wire, the 24 V supply, the wrong input): the electrician checks it |
 | A test message did not arrive | The address, the number's country code, spam; look at **{{ui.what_was_sent}}** under **{{ui.who_is_told}}** |
 | After a power cut the box is not back within 3 minutes | The BIOS "power on after power loss" setting; the clock; `greecon-edge status` and `journalctl -u greecon-edge -n 50 --no-pager` |
 | After the internet cut the queue does not empty | `greecon-edge status` and the box's log say what it is waiting for; then the box is offline: see the runbook for an offline box |

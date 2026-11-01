@@ -72,11 +72,12 @@ so a poor connection at one farm cannot fill the inboxes (it stays on **Today** 
 **Check:**
 
 1. **Is the converter powered and on the network?** From the box: `ping 192.168.1.50` (its address on the setup page).
-2. **Does one device fail or all of them?** All: the converter or the cable. One: that device (unit number, power, address).
-3. **From the box:** `greecon-edge modbus-test --host <address> --unit <n> --type input --address 52 --data-type float32`. *Could not read: no answer* means the device or the cable; *has no register at that address* means the register is wrong (the device answers); a value means the path works.
-4. **A meter powered from the grid** goes dark in a power cut: expected, and it returns with the power.
+2. **Has the converter's address changed?** Press **Find equipment**. If the converter answers at a new address, the devices say **Found** there: R17.
+3. **Does one device fail or all of them?** All: the converter or the cable. One: that device (its number, its power, its wires).
+4. **From the box:** `greecon-edge modbus-test --host <address> --unit <n> --type input --address 52 --data-type float32`. *Could not read: no answer* means the device or the cable; *has no register at that address* means the register is wrong (the device answers); a value means the path works.
+5. **A meter powered from the grid** goes dark in a power cut: expected, and it returns with the power.
 
-**Fix:** reseat the converter's power; check **A** and **B** are not swapped; check the unit number on the meter's display; check speed and parity match the converter's. If a device was replaced, **its unit number and settings must be set again.**
+**Fix:** reseat the converter's power; check **A** and **B** are not swapped; check the number on the device's label against the install card; check speed and parity match the converter's. The numbers and speeds are set at the office and are not changed on site. If a device was replaced, the new one is **numbered and set at the office first**, like the one it replaces (a new meter or module is delivered as number 1): fit the spare that was numbered there, then press **Find equipment**.
 
 **Tell the customer:** which device, since when, and whether their alerts for it can be trusted meanwhile (they cannot while it does not answer: the platform shows *Unknown*, never *fine*).
 
@@ -88,8 +89,8 @@ so a poor connection at one farm cannot fill the inboxes (it stays on **Today** 
 |---|---|---|
 | **Zero all the time** | A clamp on the wrong cable, a closed breaker upstream, the wrong register, or the inverter is limited to zero export | `modbus-test` against the meter's display; confirm the clamp is on the right phase |
 | **Constant** | A frozen device, a wrong register kind (input vs holding) | `modbus-test` twice a minute apart |
-| **x1000 too big** | Watts shown as kilowatts | In the register form: multiply by **0.001** |
-| **Tank above 100 percent** | The reading at the top is wrong for the tank's height | Range ÷ height × 100 ([02](02-project-manager-manual.md), 7.4) |
+| **x1000 too big** | Watts shown as kilowatts, on a reading mapped by hand (the Eastron meters already scale it) | In the register form: multiply by **0.001** |
+| **Tank above 100 percent, or a value that "cannot be a tank level"** | The range or the tank's height was given wrongly, a wire has come off (the reading is below zero), or the transmitter is on the wrong input | Give the ranges again ([02](02-project-manager-manual.md), the ranges step) and see R18 |
 | **Import and export swapped** | Clamps the wrong way round | The electrician turns them; repeat the direction check. Greecon notices on its own at night or in cloud (a Check today alert, *The grid meter may be fitted the wrong way round*, after five minutes of energy going out of a plant that nothing is producing for); at midday it cannot tell |
 | **The pump shows running when stopped** | The contact is inverted | Swap the contact's normally-open and normally-closed wires, or use the opposite contact. Until it is right, and if a flow meter is fitted, the platform sees a running pump with no flow and opens the no-flow alert (an Act now) whenever the pump is stopped; when the pump really runs it shows stopped |
 
@@ -260,10 +261,95 @@ Put the file in the company's shared drive (not the laptop), in a folder named `
 
 ## R14. When the founder is not there
 
-- **Two people can sign in as Greecon staff**; the project manager can do R1 to R6 and R10 to R11. **Only the founder can**: change settings in Railway; add or remove team members; delete a customer; restore the database.
+- **Two people can sign in as Greecon staff**; the project manager can do R1 to R6, R10, R11 and R15 to R18. **Only the founder can**: change settings in Railway; add or remove team members; delete a customer; restore the database.
 - **Put in the password manager's emergency access** the person the founder trusts most, and a sealed note: where the password manager is, who owns the Railway and GitHub accounts, who owns the domain.
 - **Add a second person as a collaborator on Railway and as an owner on GitHub** as soon as one is hired. The platform never depends on one person's laptop.
 - **No one edits the database by hand to reset a password.** A customer's locked-out person is reset from **Clients** (R6). If the founder himself is locked out, set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` on the API to his address and a new password: it works only for an account that has **no** password, so first clear his password in Railway's Postgres **Data** tab (`UPDATE users SET password_hash = NULL WHERE lower(email) = 'eridon.manuka@greecon.earth';`), then set the two variables and redeploy, sign in, choose a new password in Settings, and remove the variables. Keep the password manager's emergency access so that this never happens.
+
+## R15. Find equipment cannot find a device
+
+**You see:** on the setup page, in the step **Where each device is on the network**, after **Find equipment**: a device marked **Not found** (*Nothing that looks like an Eastron meter answers at unit 2. Check the address set on it, the speed, and the A and B wires.*), or *No Modbus converter answered on this network*, or *A converter answers at 192.168.1.50, but nothing answers behind it*, or a device marked **Not sure which**.
+
+**Check, in this order:**
+
+1. **Is the box online?** Until it is, the button is grey, or the page says *The box did not pick this up*. Do that first (R1).
+2. **Which sentence is it?**
+   - *No Modbus converter answered on this network.* The converter is off, or not on the same network as the box (a guest network, a second router, a cable in the wrong socket). Look at its power and network lights, and check that the box and the converter are on the same router. At a desk, if the converter is on a different part of the network, or if it uses another port than 502, open **I know the converter's address**, type its address (each part without a leading zero: 192.168.1.50) and, if it is not 502, its port, and press **Look at this address**. The box does not look at itself (127.0.0.1).
+   - *A converter answers ..., but nothing answers behind it.* The network side works and the cable side does not: **A** and **B** swapped (swap the two wires at the converter); the converter not in **Modbus TCP to RTU (gateway)** mode or not at 9600 baud, 8 data bits, no parity, 1 stop bit; devices without power; a cable that is broken or branched.
+   - **Not found** for one device while the others are found: that device's power (a meter powered from the grid is dark in a power cut), the number on its label against the install card, its **A** and **B** wires and the cable to it.
+   - **Not sure which**: Greecon refuses to guess, because a wrong guess could swap the grid meter and the solar meter, and every figure with it. *Something answers at 192.168.1.60, unit 1, but not clearly enough to tell whether it is the three-phase SDM630 planned.* Press **Look again**, then check the speed and the A and B wires. *Units 1, 2 at 192.168.1.50 all answered with exactly the same words*: the converter is not in **Modbus TCP to RTU (gateway)** mode, so check its settings page against its label. Two of one kind at the same number on different converters, or at numbers that are not the kit's: read the label on each device, then use **Enter the address by hand** under each, with the number on its label. Two devices on one converter with the same number answer over each other: one was not numbered at the office, and numbers and speeds are not changed on site, so that part goes back there. Then press **Look again**.
+3. **From the box:** `greecon-edge find` looks at the network as **Find equipment** does and prints what answers. Then read one device, with the unit number of the device you are looking for:
+
+   ```
+   greecon-edge find --host 192.168.1.50 --port 502
+   greecon-edge modbus-test --host 192.168.1.50 --unit 3 --type input --address 0
+   greecon-edge modbus-test --host 192.168.1.50 --unit 5 --type discrete --address 0
+   greecon-edge modbus-test --host 192.168.1.50 --unit 1 --type input --address 52 --data-type float32
+   ```
+
+   The first looks at one address; the others read the 4 to 20 mA module, the pump contact module and a meter. *Could not read: no answer* means the device or the cable; a value means the path works.
+4. **A device the site does not have** is not a fault: press **The site does not have this: remove it** under it. **A real Waveshare module that is found but reads something odd:** its registers have not been tried on real hardware: write down what `find` and `modbus-test` print, and tell Greecon.
+
+**Fix:** what the check found; then **Look again**. The step turns **Done** when every device has the address it was found at.
+
+**Tell the customer:** only if a visit or a part is needed. Greecon only reads, so nothing of theirs is affected.
+
+**Afterwards:** write down what was wrong and what you changed (the commissioning record, or the incident log if the site is live).
+
+## R16. A device was found at another address
+
+**You see:** a device marked **Found**, and a button **Use this address** (or *Use these N addresses*): *Found at 192.168.1.60, unit 1: an Eastron meter, reading 1.80 kW at 231 V.* Nothing changes until you press it. Greecon fills in without you only a device that has no address yet, found at the kit's own number, as the model planned.
+
+**Check, in this order:**
+
+1. **Did the converter move?** Several devices **Found** at one new address, and the old address was the converter's: R17.
+2. **Is the number the kit's?** *It is at unit 6, not 3: if it is this site's, use this address, and the install card gives 3 so that the next site looks like this one.* If it is this site's part, it works as it is: write it down, and do not change it on site. If it could be the customer's own device on the same cable, do not press the button: read its label and ask.
+3. **Is it another model?** *It is a single-phase SDM230, not the three-phase SDM630 planned. If you use this address, Greecon reads it as a single-phase SDM230.* That is right where the supply is single-phase and the install card lists the meter fitted; if a three-phase meter was meant, do not press the button: the electrician changes the meter. The other way round (*It also answers the three-phase meter's total-power register, so it may be a three-phase SDM630*, on a **Found** or a **Set** line) the meter is read as an SDM230 and shows one phase only: check its label and, if it is an SDM630, remove this device and add the three-phase meter from **Add equipment Greecon already knows**.
+4. **Is it something nobody planned?** It is listed under *Also answering, and not part of this site's equipment*: not yours, leave it alone.
+
+**Fix:** if the line makes sense, press **Use this address**: Greecon sets the address (and reads a meter of the other model as that model), the box picks it up within a minute, and the device shows **Set**. The change is written in the audit trail, old and new. If the line does not make sense, do not press it: find out why first (R15).
+
+**Tell the customer:** nothing, unless the cause is on their network (a router that changes the converter's address): ask for a fixed address (R17).
+
+**Afterwards:** a line on the commissioning record: which device, which address, and why.
+
+## R17. The converter's address changed
+
+**You see:** the readings of every device behind one converter stop together (*Last reading N ago. It has stopped arriving*), and each shows **Needs attention**: *no answer from 192.168.1.50:502 (unit 1)*. The box is **Online** and the converter's lights are on. The customer may say that the router was restarted: a router hands out addresses, and it may give the converter a new one.
+
+**Check:** the box is online, the converter is powered, and more than one device behind it fails at the same moment. From the box, `ping 192.168.1.50` (the address on the setup page) gets no answer, while `greecon-edge find` shows a converter at another address.
+
+**Fix:** press **Find equipment**. The box finds the converter at its new address and each device behind it says **Found** there. Press **Use these N addresses**: the devices turn **Set** and the box picks them up within a minute. The readings return; the gap stays a gap, because the box could not read the devices while it did not know where they were. If nothing is found, the converter is off or on another network: R15.
+
+**To stop it happening again:** ask the customer's network administrator for a fixed address for the converter (a "DHCP reservation" on its MAC address in the router): the second message on **The install card** asks for it. Write the address on the converter's label and the handover record.
+
+**Tell the customer:** what you saw and when, that nothing of theirs was affected (Greecon only reads), and the request for a fixed address.
+
+**Afterwards:** a line in the incident log (date, site, minutes without readings).
+
+## R18. A reading is impossible after the ranges were given
+
+**You see:** in the step **Readings arrive and look right**, a transmitter's reading cannot be real: *-31.2 cannot be a tank level (0 to 100). Check the register address, the scale or the sensor.*, or *133 cannot be a tank level (0 to 100)*, and likewise for the line pressure and the flow. Or it is believable, but disagrees with a dipstick or a gauge.
+
+**Check, in this order:**
+
+1. **Below zero: a wire off.** The 4 to 20 mA module is left in its 0 to 20 mA mode on purpose, so that a wire that has come off, or a loop that has lost its 24 V supply, reads **0**: below the 4 mA of an empty tank, and so below zero once the range is applied (about -31 for a 0 to 5 m level transmitter in a tank 4 m tall). Read the module from the box:
+
+   ```
+   greecon-edge modbus-test --host 192.168.1.50 --unit 3 --type input --address 0
+   ```
+
+   Address 0 is input 1, 1 is input 2, 2 is input 3. **0 means no current.** A working transmitter reads at least 4000 (4 mA, counted in microamps). Is it on the input the install card says (level 1, pressure 2, flow 3)? The electrician checks the loop and its 24 V supply, with the lock-out where needed: you do not work on it.
+2. **Far too high or too low: the range or the tank's height was given wrongly.** Read the label again. Too high: the range given is bigger, or the height smaller, than the real one (a tank 4 m tall given as 3 m, with a 0 to 5 m transmitter, reads 133 when it is full). Too low: the other way (a label in bar typed as metres reads about ten times too low: choose bar under **Unit on the label**). Measure the tank inside again, from the bottom, where the transmitter hangs, to the top of the water when it is full. Under **Which register holds which reading** give the ranges again and press **Save the ranges**; the form does not show the level's answer back, so type both numbers. It then says what it set, for example *Set now: 4 mA is 0 % and 20 mA is 125 %.*
+3. **A transmitter shorter than the tank** is refused when you save (*it cannot see the top of the water*): fit one with a longer range.
+4. **A loop calibrator** in place of the transmitter settles it: send 4, 12 and 20 mA, and the module must read 4000, 12000 and 20000. If it does and Greecon is still wrong, it is the range or the height; if it does not, the wiring, the module's input or the loop.
+5. **A transmitter the site does not have** (no flow meter) reads 0 and looks like a wire off: tick **Not fitted at this site** under it.
+
+**Fix:** what the check found. A reading that was wrong stays as it was, with a note: do not edit history.
+
+**Tell the customer** when a number they relied on was wrong, and for how long.
+
+**Afterwards:** write down what was wrong (a wire, a range, a height) and what you changed.
 
 ## Contact sheet (fill in; print; keep in the password manager)
 
