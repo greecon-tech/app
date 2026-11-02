@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds the Greecon guides as printable A4 PDFs into docs/launch/pdf/.
 //
-//   npm run docs:pdf                      all eight PDFs and the README of the folder
+//   npm run docs:pdf                      all ten PDFs and the README of the folder
 //   npm run docs:pdf -- --only 01,04      only those PDFs (the README still lists all of them)
 //   npm run docs:pdf -- --date 2026-11-02 the date on the covers (default: today, UTC; or GUIDES_DATE)
 //   npm run docs:pdf -- --keep-html       keep the HTML each PDF was printed from, and say where

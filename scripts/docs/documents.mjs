@@ -92,6 +92,12 @@ const PARTS = {
     return part({ id: "part-6", label: "Part 6", title: "Commissioning, handover and what to leave", runningHead: "Part 6 · Commissioning and handover" }, { lead, body });
   },
 
+  /** For a project manager who has just joined: what the job is, who does what, and the nine steps of a first farm in order. */
+  startHere: () => part({ id: "start-here", label: "", title: "Start here: your first farm", runningHead: "Start here" }, splitLead(read("start-here.md"))),
+
+  /** What the electrician needs to know before the day, in English and an Albanian draft. The same text is in guide 08 and on its own as guide 09. */
+  electrician: () => part({ id: "electrician-brief", label: "", title: "The electrician's brief: a farm", runningHead: "The electrician's brief" }, splitLead(read("electrician-brief.md"))),
+
   /** The runbooks. `only` limits them to the ones a project manager can do (05, R14 says which). */
   part7: ({ config, ctx, notes }, { only = null } = {}) => {
     const runbooks = loadRunbooks(config, ctx, notes);
@@ -135,7 +141,9 @@ const PDF_NAMES = {
   "04": "04-Site-Pack-H-Hotel-or-Guesthouse.pdf",
   "05": "05-Site-Pack-S-Solar-Plant.pdf",
   "06": "06-Site-Pack-F-Farm-or-Greenhouse.pdf",
-  "07": "07-Site-Pack-W-Water-Tank-and-Pump-Station.pdf"
+  "07": "07-Site-Pack-W-Water-Tank-and-Pump-Station.pdf",
+  "08": "08-First-Farm-Start-Here-Guide.pdf",
+  "09": "09-Electricians-Brief-Farm.pdf"
 };
 
 const BOOK_REFS = {
@@ -200,7 +208,7 @@ export function documents(kits) {
         title: "Complete Deployment Guide",
         subtitle: "Hardware and software setup for every kind of site, from the first call to day 90, in one book.",
         forWho: "The founder, the project manager and the electrician",
-        print: "Keep one copy in the office. For a job, print the pack or guide that fits it (PDFs 01 to 07)",
+        print: "Keep one copy in the office. For a job, print the pack or guide that fits it (PDFs 01 to 09)",
         covers: "Before you begin · platform go-live · the project manager's job · every hardware type · the four site packs · commissioning and handover · runbooks · forms, words, symptoms, shopping lists, contacts"
       },
       parts: [PARTS.part1, PARTS.part2, PARTS.part3, PARTS.part4, PARTS.part5, PARTS.part6, PARTS.part7, PARTS.appendices]
@@ -263,6 +271,46 @@ export function documents(kits) {
     packDoc("04", "H"),
     packDoc("05", "S"),
     packDoc("06", "F"),
-    packDoc("07", "W")
+    packDoc("07", "W"),
+    {
+      id: "08",
+      file: PDF_NAMES["08"],
+      title: "Greecon First Farm: Start Here",
+      runningTitle: "First farm · Start here",
+      kit: "F",
+      tocDepth: 2,
+      refs: elsewhere("pack"),
+      readme: { who: "A project manager who has just joined and has never done this job. The first farm, from the first call to handover", when: "Read once from the start, then keep it with you. The farm pack at the end is for the site in front of you" },
+      cover: {
+        kicker: "Guide 08 · For a new project manager",
+        title: "First Farm: Start Here",
+        subtitle: "Your first farm, step by step, from the first call to the day the owner signs. What Greecon is, who does what, what to tell the electrician, and the complete farm pack with its forms. Nothing is assumed.",
+        forWho: "A project manager who has just joined and has never done this job",
+        print: "Read the first part once. Print the whole PDF for the farm in front of you and tick the boxes as you go",
+        covers: "Start here · the electrician's brief (English and an Albanian draft) · the farm pack: shopping list, survey, drawings, the office, install day, numbers and ranges, the platform's setup list, commissioning, handover",
+        badge: "F"
+      },
+      parts: [PARTS.startHere, PARTS.electrician, PARTS.pack("F")]
+    },
+    {
+      id: "09",
+      file: PDF_NAMES["09"],
+      title: "Greecon Electrician's Brief: Farm",
+      runningTitle: "Electrician's brief · Farm",
+      kit: "F",
+      tocDepth: 2,
+      refs: elsewhere("pack"),
+      readme: { who: "The electrician who fits a farm kit, and the project manager who briefs them", when: "Send it to the electrician with a phone call two or three days before install day" },
+      cover: {
+        kicker: "Guide 09 · For the electrician",
+        title: "Electrician's Brief: Farm",
+        subtitle: "What Greecon is, what is changed in the customer's installation, what is yours to do and what is not, in the order of install day. In English, with an Albanian draft.",
+        forWho: "The electrician who fits a farm kit",
+        print: "Before install day. Keep it with you on the day",
+        covers: "What this is · the whole list of changes · the tasks in order · what you do not do · drawings of the enclosure, a 4 to 20 mA loop and the power · what we need from you in writing · an Albanian draft",
+        badge: "E"
+      },
+      parts: [PARTS.electrician]
+    }
   ];
 }
