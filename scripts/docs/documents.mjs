@@ -9,6 +9,7 @@ import { PACKS, readText } from "./lib/util.mjs";
 import { headingLine } from "./lib/sources.mjs";
 import { expand } from "./lib/macros.mjs";
 import { founderPart, loadManual, loadRunbooks } from "./lib/launch.mjs";
+import { classesTable, glanceCard, kitTable, kitUnused, matrixTable, sheetCode, sitesTable, unitsTable, usedInWords } from "./lib/hardware.mjs";
 
 export const VERSION = "1.0";
 const KITS = ["H", "S", "F", "W"];
@@ -29,6 +30,20 @@ function splitLead(markdown) {
 
 function part(spec, { lead, body }) {
   return { ...spec, cssClass: spec.id, lead, body };
+}
+
+/** The name of a kind of site inside a sentence: "hotel or guesthouse". */
+const siteWords = (kit) => kit.name.charAt(0).toLowerCase() + kit.name.slice(1);
+
+/** Puts generated text where a source marks it. Every marker must be there exactly once: a sheet without its table of sites is not a sheet. */
+function fill(source, file, markers) {
+  let out = source;
+  for (const [marker, make] of Object.entries(markers)) {
+    const times = out.split(marker).length - 1;
+    if (times !== 1) throw new Error(`${file}: expected ${marker} exactly once, found it ${times} times.`);
+    out = out.replace(marker, make);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -98,6 +113,40 @@ const PARTS = {
   /** What the electrician needs to know before the day, in English and an Albanian draft. The same text is in guide 08 and on its own as guide 09. */
   electrician: () => part({ id: "electrician-brief", label: "", title: "The electrician's brief: a farm", runningHead: "The electrician's brief" }, splitLead(read("electrician-brief.md"))),
 
+  /** The opening of the hardware catalogue: how a part qualifies, every part against every kind of site, and what to do before buying. */
+  hardwareIndex: (data) => ({ ctx }) => {
+    const source = fill(read("hardware/_index.md"), "hardware/_index.md", {
+      "@@CLASSES@@": () => classesTable(data),
+      "@@MATRIX@@": () => matrixTable(ctx, data),
+      "@@UNITS@@": () => unitsTable(data)
+    });
+    return part({ id: "hardware-index", label: "", title: "Qualified hardware", runningHead: "Qualified hardware" }, splitLead(source));
+  },
+
+  /** The catalogue read by kind of site: every part of that kit, what it does there, and the sheet of each. */
+  siteList: (letter, data) => ({ ctx }) => {
+    const file = `hardware/_site-${letter.toLowerCase()}.md`;
+    const kit = ctx.kits.kits[letter];
+    const source = fill(read(file), file, {
+      "@@KIT@@": () => kitTable(ctx, data, letter),
+      "@@UNUSED@@": () => kitUnused(ctx, data, letter),
+      "@@UNITS@@": () => unitsTable(data, letter)
+    });
+    return part({ id: `hw-site-${letter.toLowerCase()}`, label: `Kit ${letter}`, title: `Hardware for a ${siteWords(kit)}`, runningHead: `Kit ${letter} · ${kit.running}` }, splitLead(source));
+  },
+
+  /** One hardware sheet. The card at its head and the table of the four kinds of site are made from kits.json and sheets.json. */
+  sheet: (sheet, data) => ({ ctx }) => {
+    const file = `hardware/${sheet.id}.md`;
+    const source = fill(read(file), file, {
+      "@@GLANCE@@": () => glanceCard(ctx, sheet, data),
+      "@@SITES@@": () => sitesTable(ctx, sheet),
+      // a part nobody buys (the customer's own battery) has no buying record: its sheet says what to write down instead
+      ...(sheet.own ? {} : { "@@BUYING@@": () => read("hardware/_buying.md").trim() })
+    });
+    return part({ id: `hw-${sheet.id}`, label: sheetCode(sheet), title: sheet.title, runningHead: `${sheetCode(sheet)} · ${sheet.short}` }, splitLead(source));
+  },
+
   /** The runbooks. `only` limits them to the ones a project manager can do (05, R14 says which). */
   part7: ({ config, ctx, notes }, { only = null } = {}) => {
     const runbooks = loadRunbooks(config, ctx, notes);
@@ -143,7 +192,8 @@ const PDF_NAMES = {
   "06": "06-Site-Pack-F-Farm-or-Greenhouse.pdf",
   "07": "07-Site-Pack-W-Water-Tank-and-Pump-Station.pdf",
   "08": "08-First-Farm-Start-Here-Guide.pdf",
-  "09": "09-Electricians-Brief-Farm.pdf"
+  "09": "09-Electricians-Brief-Farm.pdf",
+  "10": "10-Qualified-Hardware-Catalogue.pdf"
 };
 
 const BOOK_REFS = {
@@ -154,6 +204,7 @@ const BOOK_REFS = {
   appendices: { text: "the Appendices", href: "#appendices" },
   packs: { text: "Part 5", href: "#part-5" },
   sales: { text: "the Sales kit (document 04, not part of these guides)" },
+  catalogue: { text: "the Qualified Hardware Catalogue (PDF 10)" },
   book: { text: "this book" }
 };
 
@@ -165,11 +216,77 @@ const elsewhere = (self) => ({
   appendices: self === "manual" ? { text: "the Appendices", href: "#appendices" } : { text: "the Appendices of the Complete Deployment Guide (PDF 00)" },
   packs: { text: "PDFs 04 to 07" },
   sales: { text: "the Sales kit (document 04, not part of these guides)" },
+  catalogue: { text: "the Qualified Hardware Catalogue (PDF 10)" },
   book: { text: "the Complete Deployment Guide (PDF 00)" }
 });
 
+/** What a hardware sheet can say about the other documents: it is printed alone, so everything else is another file. */
+const SHEET_REFS = {
+  ...elsewhere("sheet"),
+  runbooks: { text: "the runbooks (Project Manager Field Manual, PDF 02)" },
+  catalogue: { text: "the Qualified Hardware Catalogue (PDF 10)" }
+};
+
 /** @returns the documents, each with its cover words, its references and the parts it is made of. */
-export function documents(kits) {
+export function documents(kits, hardware) {
+  const sheetDoc = (sheet) => {
+    const code = sheetCode(sheet);
+    const kind = hardware.classes[sheet.class];
+    return {
+      id: code.toLowerCase(),
+      group: "hardware",
+      file: `hardware/${sheet.file}`,
+      title: `Greecon Hardware Sheet ${code}: ${sheet.title}`,
+      runningTitle: `Hardware sheet ${code}`,
+      runningRight: sheet.short,
+      toc: false,
+      tocDepth: 2,
+      refs: SHEET_REFS,
+      readme: { who: sheet.forWho, when: `${kind.label}. ${usedInWords(kits, sheet)}` },
+      cover: {
+        kicker: `Hardware sheet ${code} · ${kind.label}`,
+        title: sheet.title,
+        subtitle: sheet.subtitle,
+        rows: [
+          ["Qualifies", `${kind.label}. ${sheet.qualifies}`],
+          ["Used in", `${usedInWords(kits, sheet)} (H hotel or guesthouse, S solar plant, F farm or greenhouse, W water tank and pump station)`],
+          ["For", sheet.forWho],
+          ["Covers", "How it qualifies · what it does at each kind of site · settings · fitting · in the platform · the acceptance test · what goes wrong · what is not yet proven · the buying record"]
+        ],
+        badge: code.slice(2)
+      },
+      parts: [PARTS.sheet(sheet, hardware)]
+    };
+  };
+  const siteDoc = (letter) => {
+    const kit = kits.kits[letter];
+    const kind = hardware.kinds[letter];
+    return {
+      id: `site-${letter.toLowerCase()}`,
+      group: "hardware",
+      file: `hardware/${kind.file}`,
+      title: `Greecon Hardware for a ${kit.name}`,
+      runningTitle: `Hardware list, kit ${letter}`,
+      runningRight: kit.running,
+      toc: false,
+      tocDepth: 2,
+      refs: SHEET_REFS,
+      readme: { who: `The project manager who plans and buys the kit for a ${siteWords(kit)}`, when: `Before the survey, and again when the kit is ordered. Kit ${letter}` },
+      cover: {
+        kicker: `Hardware list · Kit ${letter}`,
+        title: `Hardware for a ${siteWords(kit)}`,
+        subtitle: kind.subtitle,
+        rows: [
+          ["Kind of site", `${kit.name}: ${kit.short.charAt(0).toLowerCase() + kit.short.slice(1)}`],
+          ["For", "The project manager who plans and buys the kit, and the founder who approves the purchase"],
+          ["Goes with", `The hardware sheets HW01 to HW${String(hardware.sheets.length).padStart(2, "0")}, one for each part, and the site pack for this kind of site (PDF ${kit.pdf.slice(0, 2)})`],
+          ["Covers", "What is measured and where · every part of the kit, with its sheet · the parts this kind of site does not use · the numbers on the data cable · what the survey decides"]
+        ],
+        badge: letter
+      },
+      parts: [PARTS.siteList(letter, hardware)]
+    };
+  };
   const packDoc = (n, letter) => {
     const kit = kits.kits[letter];
     return {
@@ -311,6 +428,26 @@ export function documents(kits) {
         badge: "E"
       },
       parts: [PARTS.electrician]
-    }
+    },
+    {
+      id: "10",
+      file: PDF_NAMES["10"],
+      title: "Greecon Qualified Hardware Catalogue",
+      runningTitle: "Qualified Hardware Catalogue",
+      tocDepth: 1,
+      refs: { ...SHEET_REFS, catalogue: { text: "this catalogue" } },
+      readme: { who: "The founder and the project manager who buy hardware; the electrician who fits it", when: "Once, to keep in the office with the quotes. For one part, print its sheet (the hardware folder)" },
+      cover: {
+        kicker: "Guide 10 · Every part that qualifies",
+        title: "Qualified Hardware Catalogue",
+        subtitle: "Every part that qualifies for a Greecon kit, one sheet each: how it qualifies, what it does at each of the four kinds of site, its settings, how it is fitted and by whom, how to accept it, and what goes wrong.",
+        forWho: "The founder and the project manager who buy hardware, and the electrician who fits it",
+        print: "Once, to keep in the office with the quotes. Each sheet is also a PDF of its own (HW01 to HW17), and so is the list for each kind of site",
+        covers: `How a part qualifies · every part against every kind of site · the kit of each kind of site, part by part · ${hardware.sheets.length} hardware sheets, each with its acceptance test and buying record`
+      },
+      parts: [PARTS.hardwareIndex(hardware), ...KITS.map((letter) => PARTS.siteList(letter, hardware)), ...hardware.sheets.map((sheet) => PARTS.sheet(sheet, hardware))]
+    },
+    ...hardware.sheets.map(sheetDoc),
+    ...KITS.map(siteDoc)
   ];
 }

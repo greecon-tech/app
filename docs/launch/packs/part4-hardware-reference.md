@@ -4,6 +4,8 @@ This part describes every kind of hardware in a Greecon kit: what it is, what it
 **Where this part is silent, the maker's manual decides.** The drawings show how the parts connect, not terminal numbers: terminal numbers differ between makes and versions. Every drawing says so. Part numbers named here are examples of a kind of part; the specification is what matters. Prices are planning estimates from public shop prices seen in October 2026, not quotes: replace them with real quotes in the first week and keep the quotes in the shared drive.
 :::
 
+**Each part also has a sheet of its own,** in {{ref:catalogue}} and as a PDF by itself (HW01 to HW17): how it qualifies, what it does at each of the four kinds of site, its acceptance test and a buying record.
+
 ## [4.1]{.num} Rules of thumb
 
 The aim is the cheapest way to run many sites for many years: the same few parts everywhere, prepared at the office, installed in an afternoon, and replaceable by anyone because nothing about a box is special. The parts that talk to the platform are **approved models**: the two Eastron meters (SDM630 and SDM230) and the two Waveshare modules (Modbus RTU Analog Input 8CH and Modbus RTU IO 8CH). Greecon knows their registers, their serial settings and the way to recognise them on a network, so nobody on site reads a datasheet or types a register. The rest of a kit (the box, the converter, the supply, the transmitters, the enclosure) is bought by specification and not by brand. Greecon speaks two standard languages, Modbus over the network and a wire signal of 4 to 20 mA read through a Modbus module, so a part that is not an approved model can be swapped when a maker stops selling it.

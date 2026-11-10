@@ -139,11 +139,14 @@ ${mark}
 }
 
 export function coverHtml(doc) {
-  const rows = [
-    ["For", doc.cover.forWho],
-    ["Print", doc.cover.print],
-    ["Covers", doc.cover.covers]
-  ]
+  // a hardware sheet says on its cover how the part qualifies and where it is used; every other document says who it is for
+  const rows = (
+    doc.cover.rows ?? [
+      ["For", doc.cover.forWho],
+      ["Print", doc.cover.print],
+      ["Covers", doc.cover.covers]
+    ]
+  )
     .filter(([, value]) => value)
     .map(([term, value]) => `<dt>${escapeHtml(term)}</dt><dd>${escapeHtml(value)}</dd>`)
     .join("");
@@ -213,7 +216,9 @@ export function pageCss(doc, parts) {
     "@page cover { margin: 0; @top-left { content: none; border: 0; } @top-center { content: none; border: 0; } @top-right { content: none; border: 0; } @bottom-left { content: none; border: 0; } @bottom-center { content: none; border: 0; } @bottom-right { content: none; border: 0; } }",
     `@page toc { @top-right { content: "Contents"; } }`
   ];
-  // a document of one part has nothing to add to the title at the top left; a book names the part it is in at the top right
+  // a document of one part has nothing to add to the title at the top left, unless it says what to put at the top right (a hardware
+  // sheet puts the part's name there); a book names the part it is in at the top right
+  if (parts.length === 1 && doc.runningRight) css.push(`@page { @top-right { content: ${cssString(doc.runningRight)}; } }`, "@page cover { @top-right { content: none; } }");
   if (parts.length > 1) {
     for (const part of parts) {
       css.push(`@page ${part.cssClass} { @top-right { content: ${cssString(part.runningHead)}; } }`);

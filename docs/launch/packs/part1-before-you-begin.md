@@ -59,7 +59,7 @@ Tick these before the first customer is surveyed. Nothing here needs a technicia
 
 ## [1.6]{.num} How to read this book
 
-**The set.** The same text is printed in ten PDFs, so that each reader prints only what they need. A part has the same number and the same words in every PDF it appears in.
+**The set.** The same text is printed in eleven PDFs and a folder of hardware sheets, so that each reader prints only what they need. A part has the same number and the same words in every PDF it appears in.
 
 | PDF | For | Print |
 |------------------------|---------------|-------------------|
@@ -70,6 +70,7 @@ Tick these before the first customer is surveyed. Nothing here needs a technicia
 | 04 to 07 Site packs H, S, F and W (Part 5) | The project manager and the electrician at that kind of site | The whole pack, for each site |
 | 08 First Farm: Start Here | A project manager who has just joined: what the job is, who does what, the nine steps of a first farm, the electrician's brief and the farm pack | Once, for the first farm |
 | 09 Electrician's Brief: Farm | The electrician who fits a farm kit | Send it two or three days before install day |
+| 10 Qualified Hardware Catalogue, and the folder `hardware/`: a sheet for each part (HW01 to HW17) and a list for each kind of site | Whoever buys, sets or fits a part | The catalogue once; a sheet when its part is bought or fitted |
 
 **Marks.** A box to tick is a real square, to be ticked in pen. Shaded boxes: **Do** (do this), **Check** (check this), **Stop** (stop, and call the electrician where it says so), **Tip** and **Say** (words for the customer). Every drawing is labelled with its kit (Figure H-2 is the wiring of kit H) and shows how the parts connect, not terminal numbers: follow the maker's manual for terminal numbers.
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Builds the Greecon guides as printable A4 PDFs into docs/launch/pdf/.
 //
-//   npm run docs:pdf                      all ten PDFs and the README of the folder
+//   npm run docs:pdf                      every PDF (the guides 00 to 10 and the hardware sheets) and the README of the folder
 //   npm run docs:pdf -- --only 01,04      only those PDFs (the README still lists all of them)
+//   npm run docs:pdf -- --only hardware   the hardware sheets and the list for each kind of site (or one: --only hw05, --only site-f)
 //   npm run docs:pdf -- --date 2026-11-02 the date on the covers (default: today, UTC; or GUIDES_DATE)
 //   npm run docs:pdf -- --keep-html       keep the HTML each PDF was printed from, and say where
 //   npm run docs:pdf -- --verbose         print every note, not only the warnings
@@ -16,7 +17,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { DOCS_SCRIPTS, PACKS, PDF_DIR, REPO, Notes, escapeHtml, readJson, readText } from "./lib/util.mjs";
@@ -25,6 +26,7 @@ import { collectHeadings, coverHtml, documentHtml, pageCss, partHtml, renderMark
 import { prepareFonts } from "./lib/fonts.mjs";
 import { destinationPages, fixDates, launchBrowser, pageCount, pageTexts, printToPdf } from "./lib/pdf.mjs";
 import { buildDiagrams } from "./diagrams.mjs";
+import { checkSheets, loadSheets } from "./lib/hardware.mjs";
 import { VERSION, documents } from "./documents.mjs";
 
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -239,9 +241,12 @@ async function buildDocument(spec, shared) {
   const pdfPath = join(work, `${spec.id}.pdf`);
   const partsHtml = bodyHtml.split(/(?=<section class="part )/).filter((chunk) => chunk.trim().startsWith("<section"));
 
+  // a hardware sheet is a few pages: it has no contents page, so there are no page numbers to find and one printing is enough
+  const withContents = doc.toc !== false;
+  if (!withContents) entries.length = 0;
   let pages = new Map();
   for (let pass = 1; pass <= 3; pass += 1) {
-    writeFileSync(htmlPath, documentHtml({ doc, fontsCss, baseCss, furnitureCss, cover, toc: tocHtml(entries, pages, { note: tocNote }), parts: partsHtml }));
+    writeFileSync(htmlPath, documentHtml({ doc, fontsCss, baseCss, furnitureCss, cover, toc: withContents ? tocHtml(entries, pages, { note: tocNote }) : "", parts: partsHtml }));
     await printToPdf(browser, htmlPath, pdfPath);
     const dests = destinationPages(pdfPath);
     const found = new Map(entries.map((entry) => [entry.id, dests.get(entry.id) ?? ""]));
@@ -264,8 +269,8 @@ async function buildDocument(spec, shared) {
   if (lost.length > 0) notes.warn(`${label}: no page number found for ${lost.length} entries in the contents: ${lost.slice(0, 5).map((entry) => `"${entry.title}"`).join(", ")}${lost.length > 5 ? ", ..." : ""}`);
 
   fixDates(pdfPath, date);
-  mkdirSync(out, { recursive: true });
   const target = join(out, spec.file);
+  mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, readFileSync(pdfPath));
   const count = pageCount(target);
   const size = statSync(target).size;
@@ -293,23 +298,33 @@ function pdfDate(path) {
 }
 
 function writeReadme(specs, out, date) {
-  const rows = specs.map((spec) => {
+  const row = (spec) => {
     const path = join(out, spec.file);
     const built = existsSync(path);
     const pages = built ? pageCount(path) : "";
     const when = built ? pdfDate(path) : "not built";
-    return `| [${spec.file}](${spec.file}) | ${spec.readme.who} | ${spec.readme.when} | ${pages} | ${when} |`;
-  });
+    return `| [${spec.file.split("/").pop()}](${spec.file}) | ${spec.readme.who} | ${spec.readme.when} | ${pages} | ${when} |`;
+  };
+  const guides = specs.filter((spec) => spec.group !== "hardware");
+  const sheets = specs.filter((spec) => spec.group === "hardware");
   const text = [
     "# Greecon printable guides",
     "",
-    "A4, portrait, one file for each kind of reader. Every PDF has a cover, contents with page numbers and links, bookmarks, and page numbers in the footer. They are made from the launch documents and from the site packs in `docs/launch/packs/`; do not edit the PDFs, change the sources and rebuild.",
+    "A4, portrait, one file for each kind of reader. Every guide has a cover, contents with page numbers and links, bookmarks, and page numbers in the footer. They are made from the launch documents and from the site packs in `docs/launch/packs/`; do not edit the PDFs, change the sources and rebuild.",
     "",
     "| File | Who it is for | When to print it | Pages | Built |",
     "|---|---|---|---|---|",
-    ...rows,
+    ...guides.map(row),
     "",
-    "**Rebuild:** `npm run docs:pdf` (or `npm run docs:pdf -- --only 01,04` for some of them). It needs pandoc, Chromium through Playwright and poppler, all on the build machine, and no network. Screen names are typed once, in `scripts/docs/ui-labels.json`; the setup-list step titles are checked against `apps/api/src/setup/setup-checklist.ts` at every build. The date on the covers is the build date (`GUIDES_DATE=2026-11-02 npm run docs:pdf` fixes it); the same sources and the same date give byte-identical files.",
+    "## Hardware sheets",
+    "",
+    "One sheet for each part that qualifies for a Greecon kit, in the folder `hardware/`: how the part qualifies, what it does at each of the four kinds of site (H hotel or guesthouse, S solar plant, F farm or greenhouse, W water tank and pump station), its settings, how it is fitted and by whom, the acceptance test, what goes wrong, what is not yet proven and a buying record. After the sheets come four lists, one for each kind of site: every part of that kit, what it does there, and its sheet. The sheets and the lists, with an index of every part against every kind of site, are bound together as `10-Qualified-Hardware-Catalogue.pdf`. They are made from `docs/launch/packs/hardware/` and from the kit lists in `docs/launch/packs/kits.json`; the build stops if a sheet and the platform's code disagree about a number on the cable or a register.",
+    "",
+    "| Sheet or list | Who it is for | How it qualifies and where it is used, or when to print it | Pages | Built |",
+    "|---|---|---|---|---|",
+    ...sheets.map(row),
+    "",
+    "**Rebuild:** `npm run docs:pdf` (or `npm run docs:pdf -- --only 01,04` for some of them, `--only hardware` for the sheets and the lists, `--only hw05` for one sheet, `--only site-f` for one list). It needs pandoc, Chromium through Playwright and poppler, all on the build machine, and no network. Screen names are typed once, in `scripts/docs/ui-labels.json`; the setup-list step titles are checked against `apps/api/src/setup/setup-checklist.ts` at every build. The date on the covers is the build date (`GUIDES_DATE=2026-11-02 npm run docs:pdf` fixes it); the same sources and the same date give byte-identical files.",
     "",
     "**Fonts and size.** The body is set in Bitstream Charter and the headings and tables in Inter, both from the build machine. Charter is installed only as Type 1, so the build converts it in memory (`scripts/docs/lib/type1-to-otf.mjs`); both fonts are given TrueType outlines (`scripts/docs/lib/otf-to-ttf.mjs`) so that Chromium embeds them as real fonts, which keeps the complete guide under 4 MB. Nothing is downloaded and no converted font is kept. A PDF that would still be over 4 MB with its accessibility tags is printed without them (the complete guide is the one that is).",
     ""
@@ -337,11 +352,15 @@ async function main() {
   checkTemplates(kits, notes);
   checkLabels(ui.labels, notes);
 
-  const specs = documents(kits);
-  const chosen = args.only ? specs.filter((spec) => args.only.includes(spec.id)) : specs;
+  const hardware = loadSheets();
+  checkSheets(hardware, kits, notes);
+
+  const specs = documents(kits, hardware);
+  // --only takes the number of a PDF ("04", "hw05") or the name of a group of them ("hardware")
+  const chosen = args.only ? specs.filter((spec) => args.only.includes(spec.id) || (spec.group && args.only.includes(spec.group))) : specs;
   if (args.only) {
-    const unknown = args.only.filter((id) => !specs.some((spec) => spec.id === id));
-    if (unknown.length > 0) throw new Error(`There is no PDF numbered ${unknown.join(", ")}. The numbers are ${specs.map((spec) => spec.id).join(", ")}.`);
+    const unknown = args.only.filter((id) => !specs.some((spec) => spec.id === id || spec.group === id));
+    if (unknown.length > 0) throw new Error(`There is no PDF numbered ${unknown.join(", ")}. The numbers are ${specs.map((spec) => spec.id).join(", ")}; "hardware" is every hardware sheet.`);
   }
 
   const fonts = prepareFonts();

@@ -377,3 +377,25 @@ p:has(+ table), p:has(+ .steps), p:has(+ .form), p:has(+ .tests), p:has(+ .stepc
 
 /* a lead-in and the drawing it introduces stay together */
 p:has(+ figure) { break-after: avoid; }
+
+/* ------------------------------------------------------------------ hardware sheets */
+
+/* whether a kit has the part: filled, outlined or dashed, so that it still reads in black and white */
+.use { display: inline-block; font: 700 6.2pt/1 var(--sans); letter-spacing: 0.07em; text-transform: uppercase; padding: 1.1mm 1.6mm; border-radius: 1.1mm; white-space: nowrap; }
+.use.yes { background: var(--forest); color: #fff; border: 0.8pt solid var(--forest); }
+.use.opt { background: #fff; color: var(--forest); border: 0.8pt solid var(--forest); }
+.use.no { background: #fff; color: var(--faint); border: 0.8pt dashed #9a9488; }
+.sites table { break-inside: avoid; }
+.sites table td:nth-child(2), .sites table td:nth-child(3) { white-space: nowrap; }
+.sites .kitbadge { margin-right: 1.4mm; }
+/* every part against every kind of site */
+.matrix table { font-size: 8pt; }
+.matrix table th:nth-child(n+4):nth-child(-n+7), .matrix table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
+.matrix table td:first-child { white-space: nowrap; font-weight: 700; }
+
+/* The list of hardware for one kind of site: the sheet, the part and how it qualifies, whether the kit has it, how many, and what it does there. */
+.kitlist table { font-size: 9.2pt; }
+.kitlist td:nth-child(1), .kitlist th:nth-child(1) { white-space: nowrap; }
+.numbers td:first-child, .numbers th:first-child { white-space: nowrap; }
+.matrix table td:nth-child(n+4):nth-child(-n+7) { padding-left: 1mm; padding-right: 1mm; }
+.how { display: block; margin-top: 1.5pt; font-size: 8.2pt; font-weight: 400; color: var(--muted, #5b665f); }

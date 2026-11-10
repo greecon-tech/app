@@ -1,0 +1,465 @@
+{
+  "about": "The hardware sheets: one for each part that qualifies for a Greecon kit. Each entry says what prose must not be trusted with: which part of kits.json the sheet is about ('part'; a part that no kit list buys says its own words under 'own'), how the part qualifies ('class'), the number it has on the data cable ('units', checked against KIT_UNITS in packages/shared/src/device-profiles.ts), what it does at each of the four kinds of site ('sites': whether a kit has the part, and how many, is taken from kits.json, never typed here), and the facts of the platform's own code that the sheet repeats ('facts': the build stops when the file no longer contains the text, so that a sheet cannot go on saying what the platform has stopped doing). The words of each sheet are in the Markdown file of the same id beside this file. 'kinds' is the list of hardware for each of the four kinds of site (its words are in _site-<letter>.md; 'units' is what that kit has on the data cable), and 'onTheCable' gives the words for every number in KIT_UNITS: the build stops if the platform has a number the catalogue has no words for. Built by scripts/docs (npm run docs:pdf -- --only hardware).",
+  "classes": {
+    "approved": {
+      "label": "Approved model",
+      "short": "Approved model",
+      "means": "A named make and model. Greecon knows its registers, its serial settings and how to recognise it on a network. The model named is the model bought: a look-alike is not the same part.",
+      "platform": "The box finds it when a person presses Find equipment, and its readings are mapped already. Nobody types an address or a register."
+    },
+    "spec": {
+      "label": "Qualified by specification",
+      "short": "By specification",
+      "means": "Any make that meets every line of the specification on its sheet. The specification is what matters, not the brand, so the part can be changed when a maker stops selling it.",
+      "platform": "The platform never talks to it by name. A transmitter is read through the 4 to 20 mA module and is asked for one thing, the range on its label. The others carry power, data or shelter."
+    },
+    "table": {
+      "label": "Qualified by its register table",
+      "short": "By register table",
+      "means": "A Modbus device that is not an approved model. It qualifies only if its maker publishes its register table. Without the table it cannot be mapped honestly, so it is not bought, or not read.",
+      "platform": "The box cannot recognise it on a network. Its address is entered by hand, and each reading is mapped by hand from the maker's table."
+    }
+  },
+  "kinds": {
+    "H": {
+      "file": "Site-H-Hotel-or-Guesthouse-Hardware.pdf",
+      "subtitle": "Every part of the kit for a hotel or a guesthouse with a water tank, solar on the roof and a grid connection: what each part does there, how many, how it qualifies, and which sheet to open.",
+      "units": ["grid", "solar", "waterModule", "pumpContact"]
+    },
+    "S": {
+      "file": "Site-S-Solar-Plant-Hardware.pdf",
+      "subtitle": "Every part of the kit for a solar plant with a grid connection, with or without a battery: what each part does there, how many, how it qualifies, and which sheet to open.",
+      "units": ["grid", "solar", "load"]
+    },
+    "F": {
+      "file": "Site-F-Farm-or-Greenhouse-Hardware.pdf",
+      "subtitle": "Every part of the kit for a farm or a greenhouse with irrigation: what each part does there, how many, how it qualifies, and which sheet to open.",
+      "units": ["waterModule", "pumpContact", "soil", "weather"]
+    },
+    "W": {
+      "file": "Site-W-Water-Tank-and-Pump-Station-Hardware.pdf",
+      "subtitle": "Every part of the kit for a water tank and pump station: what each part does there, how many, how it qualifies, and which sheet to open.",
+      "units": ["waterModule", "load", "pumpContact"]
+    }
+  },
+  "onTheCable": {
+    "grid": { "name": "Grid meter", "what": "Eastron SDM630, where the supply enters. An Eastron SDM230 on a single-phase supply", "sheets": ["meter3", "sdm230"] },
+    "solar": { "name": "Solar meter", "what": "Eastron SDM630, on the inverter's output. An Eastron SDM230 on a single-phase plant", "sheets": ["meter3", "sdm230"] },
+    "waterModule": { "name": "4 to 20 mA module", "what": "Waveshare Modbus RTU Analog Input 8CH. The platform calls it the Water I/O module", "sheets": ["analog"] },
+    "load": { "name": "Load meter, or pump meter", "what": "Eastron SDM630 on the site's own consumption, or Eastron SDM230 on a single-phase pump", "sheets": ["meter3", "sdm230"] },
+    "pumpContact": { "name": "Pump contact module", "what": "Waveshare Modbus RTU IO 8CH", "sheets": ["pumpin"] },
+    "soil": { "name": "Soil probe", "what": "Any probe that qualifies by its register table. A second probe takes the next free number, 8", "sheets": ["soil"] },
+    "weather": { "name": "Weather sensor", "what": "Any temperature and humidity sensor that qualifies by its register table", "sheets": ["climate"] }
+  },
+  "sheets": [
+    {
+      "n": 1,
+      "id": "box",
+      "part": "box",
+      "file": "HW01-Box.pdf",
+      "title": "The box",
+      "short": "Box",
+      "class": "spec",
+      "qualifies": "Any small computer that meets the specification on this sheet. What it must do well is come back by itself after a power cut.",
+      "fittedBy": "The project manager: prepared and tested at the office, plugged in on site.",
+      "subtitle": "The small computer at the site. It reads every device, sends the readings to Greecon, and keeps them while the internet is down.",
+      "forWho": "The project manager who buys, prepares and fits the box, and the founder who approves the purchase",
+      "sites": {
+        "H": "In the plant room. It reads the grid meter, the solar meter, the water module and the pump contact module: four devices, seven readings.",
+        "S": "Near the main board or the inverter. It reads the grid meter and the solar meter and, where they are fitted, the load meter and the battery.",
+        "F": "In the pump house. It reads the soil probes, the weather sensor, the water module and, if there is a pump to watch, the pump contact module. A 4G router is the likelier way to the internet.",
+        "W": "In the pump house or the plant room. It reads the water module, the pump contact module and, if one is fitted, the pump meter."
+      },
+      "facts": [
+        { "file": "packages/shared/src/setup.ts", "has": "HEARTBEAT_INTERVAL_SECONDS = 30", "says": "the box reports every 30 seconds" },
+        { "file": "apps/edge-agent/src/runtime.ts", "has": "defaultPollIntervalMs ?? 10_000", "says": "the box reads its devices every ten seconds unless the platform says otherwise" },
+        { "file": "apps/edge-agent/src/runtime.ts", "has": "bufferMaxMessages ?? 60_000", "says": "the box keeps about three days of readings for a site of up to about thirteen devices" },
+        { "file": "apps/api/src/setup/enrolment-code.ts", "has": "ENROLMENT_VALID_FOR_MS = 7 * 24 * 3_600_000", "says": "an install code is good for seven days" }
+      ]
+    },
+    {
+      "n": 2,
+      "id": "converter",
+      "part": "converter",
+      "file": "HW02-Converter-RS485-to-Ethernet.pdf",
+      "title": "The converter (RS-485 to Ethernet)",
+      "short": "Converter",
+      "class": "spec",
+      "qualifies": "Any RS-485 to Ethernet converter that has a Modbus TCP to RTU gateway mode and takes the kit's serial settings and port 502.",
+      "fittedBy": "The project manager: set at the office, mounted and connected on site.",
+      "subtitle": "The small unit that puts the equipment's data cable on the network, so that the box can reach every meter and module on it.",
+      "forWho": "The project manager who buys, sets and fits the converter",
+      "sites": {
+        "H": "In the enclosure. Behind it, on one cable: the grid meter (number 1), the solar meter (2), the water module (3) and the pump contact module (5).",
+        "S": "In the enclosure. Behind it: the grid meter (1), the solar meter (2) and, if fitted, the load meter (4). A battery that speaks Modbus on its own network address does not need the converter; one on RS-485 joins the cable with a number of its own.",
+        "F": "In the enclosure in the pump house. Behind it: the water module (3), the pump contact module (5) if there is a pump to watch, the soil probe (6; a second probe takes 8) and the weather sensor (7).",
+        "W": "In the enclosure. Behind it: the water module (3), the pump contact module (5) and, if fitted, the pump meter (4)."
+      },
+      "facts": [
+        { "file": "packages/shared/src/install-card.ts", "has": "KIT_SERIAL: SerialSettings = { baud: 9600, dataBits: 8, parity: \"none\", stopBits: 1 }", "says": "everything on the data cable, and the converter, is set to 9600 baud, 8 data bits, no parity, 1 stop bit" },
+        { "file": "packages/shared/src/discovery.ts", "has": "DEFAULT_DISCOVERY_PORTS = [502]", "says": "the box looks for a converter on port 502" },
+        { "file": "packages/shared/src/discovery.ts", "has": "DEFAULT_DISCOVERY_UNITS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]", "says": "the box asks unit numbers 1 to 10 behind a converter" }
+      ]
+    },
+    {
+      "n": 3,
+      "id": "cable",
+      "part": "cable",
+      "file": "HW03-Data-Cable-and-Labels.pdf",
+      "title": "The data cable and labels",
+      "short": "Data cable and labels",
+      "class": "spec",
+      "qualifies": "Shielded twisted pair for the RS-485 line, ordinary network patch cords, ferrules and labels. How it is run matters more than what is bought.",
+      "fittedBy": "The project manager runs and labels it. The electrician connects its ends at any device that sits inside a distribution board.",
+      "subtitle": "The two-wire cable every meter, module and sensor shares, and the labels that let the next person understand the kit.",
+      "forWho": "The project manager who runs the cable, and the electrician who connects it inside a board",
+      "sites": {
+        "H": "One run from the converter through the grid meter and the solar meter (in the board, where the electrician connects it) and the water module to the pump contact module.",
+        "S": "One run from the converter through the grid meter, the solar meter and, if fitted, the load meter. Every end at a meter is the electrician's.",
+        "F": "The longest run of the four: from the converter in the pump house through the soil probe and the weather sensor in the field and the water module to the pump contact module. Plan it under 100 metres.",
+        "W": "A short run inside the pump house: from the converter through the pump meter (if fitted) and the water module to the pump contact module."
+      }
+    },
+    {
+      "n": 4,
+      "id": "cell",
+      "part": "cell",
+      "file": "HW04-Cellular-Router.pdf",
+      "title": "The cellular router",
+      "short": "Cellular router",
+      "class": "spec",
+      "qualifies": "Any 4G router for a DIN rail that takes a data SIM and has a network socket each for the box and the converter (or a small switch behind it).",
+      "fittedBy": "The project manager.",
+      "subtitle": "The site's way to the internet where there is no cable the box may use: a 4G router with a data SIM.",
+      "forWho": "The project manager who decides at the survey whether the site needs one",
+      "sites": {
+        "H": "Only where the building has no internet the box may use. Most hotels have a router: then the box and the converter plug into that.",
+        "S": "Only without usable internet. The hardware guide's own list for this kit does not show one; the network rules are the same as for every kit.",
+        "F": "The likelier case: a field or a pump house seldom has a cable to the internet. The box and the converter plug into the router's sockets.",
+        "W": "Only without usable internet: a pump station that stands away from the buildings."
+      }
+    },
+    {
+      "n": 5,
+      "id": "meter3",
+      "part": "meter3",
+      "file": "HW05-Eastron-SDM630-Three-Phase-Meter.pdf",
+      "title": "Three-phase meter: Eastron SDM630",
+      "short": "Eastron SDM630 three-phase meter",
+      "class": "approved",
+      "qualifies": "The Eastron SDM630 with Modbus. Greecon reads it by its own register table and recognises it on the network, so another three-phase meter does not take its place.",
+      "units": { "grid": 1, "solar": 2, "load": 4 },
+      "unitWords": "1 as the grid meter, 2 as the solar meter, 4 as the load meter. Set on its own display, at the office.",
+      "fittedBy": "The electrician, inside the distribution board, under the customer's lock-out. The project manager sets its number at the office and runs the data cable to the board.",
+      "subtitle": "The meter at the grid connection, on the solar output and, where wanted, on the site's own consumption.",
+      "forWho": "The project manager who buys and numbers the meter, and the electrician who fits it",
+      "sites": {
+        "H": "Two. The grid meter (number 1), where the supply enters, gives Grid import and Grid export. The solar meter (number 2), on the inverter's AC output, gives Solar production.",
+        "S": "Two, as at a hotel: the grid meter (1) and the solar meter (2). A third (number 4) on the feed to the loads if the owner wants the site's own consumption measured and not worked out.",
+        "F": "A farm kit has no energy meter. One can be added to any site from Add equipment Greecon already knows, and then this sheet applies.",
+        "W": "The kit measures the pump's electricity with the single-phase SDM230 (sheet HW06). A three-phase pump needs this meter in its place: remove the template's pump meter and add Eastron SDM630 on the site's own consumption (number 4) from Add equipment Greecon already knows."
+      },
+      "facts": [
+        { "file": "packages/shared/src/device-profiles.ts", "has": "powerAddress: 52", "says": "the SDM630's total active power is read at input register 52" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "dataType: \"float32\",\n  wordOrder: \"big\",\n  scale: 0.001", "says": "a meter's power is a 32-bit float, high half first, in watts, shown in kW" },
+        { "file": "packages/shared/src/discovery.ts", "has": "MAINS_VOLTS = { min: 80, max: 480 }", "says": "a meter is recognised by a first-phase voltage between 80 and 480 V" },
+        { "file": "packages/shared/src/site-templates.ts", "has": "profile: \"eastron-sdm630-grid\"", "says": "the hotel and solar templates plan an SDM630 at the grid connection" }
+      ]
+    },
+    {
+      "n": 6,
+      "id": "sdm230",
+      "part": "sdm230",
+      "file": "HW06-Eastron-SDM230-Single-Phase-Meter.pdf",
+      "title": "Single-phase meter: Eastron SDM230",
+      "short": "Eastron SDM230 single-phase meter",
+      "class": "approved",
+      "qualifies": "The Eastron SDM230 with Modbus. Greecon reads it by its own register table, which is not the SDM630's.",
+      "units": { "load": 4 },
+      "unitWords": "4 as the pump meter. Set on its own display, at the office, with its speed (9600).",
+      "fittedBy": "The electrician, on the pump's feed, under the customer's lock-out. The project manager sets its number and its speed at the office.",
+      "subtitle": "The meter for one pump or a small single-phase load, and for a site whose whole supply is single-phase.",
+      "forWho": "The project manager who buys and sets the meter, and the electrician who fits it",
+      "sites": {
+        "H": "Not in the standard kit, which is three-phase. On a single-phase supply it takes the SDM630's place at the grid connection (number 1) and on the inverter's output (number 2). Find equipment says which model it found.",
+        "S": "As at a hotel: only on a single-phase plant, in the SDM630's place, with the same numbers (grid 1, solar 2, load 4).",
+        "F": "A farm kit has no energy meter.",
+        "W": "On the pump's own feed, as the pump meter (number 4). It gives Energy consumption: the pump's electricity. For a single-phase pump; a three-phase pump takes the SDM630 (sheet HW05)."
+      },
+      "facts": [
+        { "file": "packages/shared/src/device-profiles.ts", "has": "powerAddress: 12", "says": "the SDM230's total active power is read at input register 12" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "delivered: { baud: 2400, dataBits: 8, parity: \"none\", stopBits: 1 }", "says": "an SDM230 can be delivered at 2400 baud" },
+        { "file": "packages/shared/src/site-templates.ts", "has": "profile: \"eastron-sdm230-load\"", "says": "the water station template plans an SDM230 as the pump meter" }
+      ]
+    },
+    {
+      "n": 7,
+      "id": "battery",
+      "own": {
+        "item": "Battery system",
+        "does": "Reports the battery's charge (percent) and its power (kW, positive while charging), from the battery maker's own Modbus registers. It is the customer's own equipment: Greecon buys nothing for it.",
+        "spec": "Whatever battery the customer has, provided its maker publishes its Modbus register table. It speaks Modbus on the site's network, at an address of its own, or on its own RS-485 port",
+        "estimate": "Nothing to buy: it is the customer's own",
+        "kits": { "S": { "qty": "0 or 1", "optional": true } }
+      },
+      "file": "HW07-Battery-System.pdf",
+      "title": "The battery (the customer's own)",
+      "short": "Battery system",
+      "class": "table",
+      "qualifies": "Only if the battery's maker publishes its Modbus register table. Greecon never guesses a register.",
+      "unitWords": "Its own, entered by hand (for example 8), if it joins the data cable. None if it is on the network at an address of its own.",
+      "fittedBy": "Nobody: it is already there. The project manager enters its address and maps its two readings.",
+      "subtitle": "A battery at a solar plant is the customer's own equipment. Greecon can read its charge and its power if the maker says where they are.",
+      "forWho": "The project manager at a solar plant that has a battery",
+      "sites": {
+        "H": "The hotel template has no battery.",
+        "S": "The template's Battery system (optional). Two readings are mapped by hand: Battery charge and Battery power. If the plant has no battery, remove the device.",
+        "F": "None.",
+        "W": "None."
+      },
+      "facts": [
+        { "file": "packages/shared/src/site-templates.ts", "has": "{ canonicalName: \"energy.battery.power.kw\", label: \"Battery power\", unit: \"kW\" }", "says": "the solar template has a battery with a power reading in kW" },
+        { "file": "packages/shared/src/index.ts", "has": "appliesTo: [\"energy.battery.soc.percent\"],\n    min: 0,\n    max: 100,\n    fallback: 25", "says": "a battery's standard low limit is 25 percent" }
+      ]
+    },
+    {
+      "n": 8,
+      "id": "analog",
+      "part": "analog",
+      "file": "HW08-Waveshare-Analog-Input-8CH-4-20mA-Module.pdf",
+      "title": "4 to 20 mA module: Waveshare Analog Input 8CH",
+      "short": "Waveshare 4 to 20 mA module",
+      "class": "approved",
+      "qualifies": "The Waveshare Modbus RTU Analog Input 8CH, in the version that reads current. The version that reads voltage is a different part.",
+      "units": { "waterModule": 3 },
+      "unitWords": "3. Set with the maker's setting tool, at the office (it is delivered as 1).",
+      "fittedBy": "The project manager mounts it in the enclosure and joins it to the data cable. The electrician wires the 4 to 20 mA loops into its inputs.",
+      "subtitle": "The module that reads the level, pressure and flow transmitters and puts their signals on the data cable. The platform calls it the Water I/O module.",
+      "forWho": "The project manager who buys and numbers the module, and the electrician who wires the loops into it",
+      "sites": {
+        "H": "One. Input 1 takes the tank's level transmitter, input 2 the pipe's pressure transmitter, input 3 the flow meter if there is one. It gives Tank level, Line pressure and Pump flow.",
+        "S": "A solar plant has no water side.",
+        "F": "One, for the tank and the pipe behind the irrigation. The flow meter (input 3) only if there is a pump to watch.",
+        "W": "One, the centre of the kit: level on input 1, pressure on input 2, the flow meter on input 3 if it is fitted."
+      },
+      "facts": [
+        { "file": "packages/shared/src/device-profiles.ts", "has": "key: \"waveshare-ai8-water\"", "says": "the platform has a profile for the Waveshare analog input module" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "FOUR_MA_RAW = 4000", "says": "4 mA is read from the module as 4000" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "TWENTY_MA_RAW = 20000", "says": "20 mA is read from the module as 20000" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "address: range.channel - 1", "says": "input 1 of the module is register 0, input 2 register 1 and input 3 register 2" },
+        { "file": "packages/shared/src/discovery.ts", "has": "{ registerType: \"holding\", address: 0x4000, count: 1 }", "says": "a Waveshare module is recognised by the register that holds its own number" }
+      ]
+    },
+    {
+      "n": 9,
+      "id": "pumpin",
+      "part": "pumpin",
+      "file": "HW09-Waveshare-IO-8CH-Pump-Contact-Module.pdf",
+      "title": "Pump contact module: Waveshare IO 8CH",
+      "short": "Waveshare pump contact module",
+      "class": "approved",
+      "qualifies": "The Waveshare Modbus RTU IO 8CH. Only its digital inputs are used: its relay outputs are never connected.",
+      "units": { "pumpContact": 5 },
+      "unitWords": "5. Set with the maker's setting tool, at the office (it is delivered as 1).",
+      "fittedBy": "The project manager mounts it and joins it to the data cable. The electrician wires the pump starter's spare contact to its input 1.",
+      "subtitle": "The module that reads whether the pump is running, from a spare contact of its starter. It only reports: it never switches anything.",
+      "forWho": "The project manager who buys and numbers the module, and the electrician who wires the starter's contact to it",
+      "sites": {
+        "H": "One: it reads a spare running contact of the water pump's starter and gives Pump running. Leave it out if the starter has no spare contact, and say so at handover.",
+        "S": "A solar plant has no pump to watch.",
+        "F": "Only if there is a pump to watch and its starter has a spare running contact.",
+        "W": "One, for the station's pump. Leave it out if the starter has no spare running contact."
+      },
+      "facts": [
+        { "file": "packages/shared/src/device-profiles.ts", "has": "key: \"waveshare-io8-pump\"", "says": "the platform has a profile for the Waveshare digital input module" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "source: { kind: \"modbus\", registerType: \"discrete\", address: 0, dataType: \"uint16\" }", "says": "Pump running is the module's first digital input" }
+      ]
+    },
+    {
+      "n": 10,
+      "id": "level",
+      "part": "level",
+      "file": "HW10-Level-Transmitter.pdf",
+      "title": "Level transmitter",
+      "short": "Level transmitter",
+      "class": "spec",
+      "qualifies": "Any submersible 4 to 20 mA level transmitter whose range reaches the top of the tank and whose wetted parts suit the water it hangs in.",
+      "rows": [["Wired to", "Input 1 of the 4 to 20 mA module (sheet HW08), in a loop with the 24 V supply."]],
+      "fittedBy": "The electrician or the customer's plumber fits it and the electrician wires its loop. Nobody from Greecon enters a tank.",
+      "subtitle": "The sensor that says how full the tank is. It hangs at the bottom of the tank and sends a 4 to 20 mA signal.",
+      "forWho": "The project manager who chooses its range at the survey, and the electrician or plumber who fits it",
+      "sites": {
+        "H": "One, at the bottom of the hotel's water tank. Only a transmitter with wetted parts approved for drinking water goes into a drinking-water tank. It gives Tank level.",
+        "S": "A solar plant has no water side.",
+        "F": "One, in the irrigation tank or reservoir. It gives Tank level, with the standard low-level alerts.",
+        "W": "One, in the station's tank. If the tank holds drinking water, the drinking-water rule applies."
+      },
+      "facts": [
+        { "file": "packages/shared/src/index.ts", "has": "appliesTo: [\"water.tank.level.percent\"],\n    min: 0,\n    max: 100,\n    fallback: 15", "says": "a tank is critical below 15 percent unless the site sets its own limit" },
+        { "file": "packages/shared/src/index.ts", "has": "appliesTo: [\"water.tank.level.percent\"],\n    min: 0,\n    max: 100,\n    fallback: 35", "says": "a tank is low below 35 percent unless the site sets its own limit" },
+        { "file": "packages/shared/src/edge.ts", "has": "const LEVEL_SLACK = 5;", "says": "a tank level may read 5 points under 0 or over 100 before it is called impossible" },
+        { "file": "packages/shared/src/typed-number.ts", "has": "METRES_OF_WATER_PER_BAR = 10.197", "says": "one bar holds up 10.197 m of water" },
+        { "file": "packages/shared/src/device-profiles.ts", "has": "it cannot see the top of the water. Fit a transmitter with a longer range.", "says": "a transmitter shorter than the tank is refused" }
+      ]
+    },
+    {
+      "n": 11,
+      "id": "pressure",
+      "part": "pressure",
+      "file": "HW11-Pressure-Transmitter.pdf",
+      "title": "Pressure transmitter",
+      "short": "Pressure transmitter",
+      "class": "spec",
+      "qualifies": "Any 4 to 20 mA pressure transmitter with stainless wetted parts and a range that suits the pipe.",
+      "rows": [["Wired to", "Input 2 of the 4 to 20 mA module (sheet HW08), in a loop with the 24 V supply."]],
+      "fittedBy": "A plumber makes the wet connection, through an isolating valve. The electrician wires its loop.",
+      "subtitle": "The sensor that says what the pressure in the pipe is. It sits on the pipe behind an isolating valve and sends a 4 to 20 mA signal.",
+      "forWho": "The project manager who chooses its range at the survey, the plumber who fits it and the electrician who wires it",
+      "sites": {
+        "H": "One, on the pipe the pump feeds. It gives Line pressure.",
+        "S": "A solar plant has no water side.",
+        "F": "One, on the irrigation line.",
+        "W": "One, on the pipe the pump feeds. The pipe's pressure range, asked at the survey, decides the transmitter's range."
+      },
+      "facts": [{ "file": "packages/shared/src/edge.ts", "has": "\"water.pressure.bar\": { min: -1, max: 40, what: \"a line pressure in bar\" }", "says": "a line pressure outside -1 to 40 bar is called impossible" }]
+    },
+    {
+      "n": 12,
+      "id": "flow",
+      "part": "flow",
+      "file": "HW12-Flow-Meter.pdf",
+      "title": "Flow meter",
+      "short": "Flow meter",
+      "class": "spec",
+      "qualifies": "Any flow meter for the pipe and the fluid that has a 4 to 20 mA output.",
+      "rows": [["Wired to", "Input 3 of the 4 to 20 mA module (sheet HW08). Its manual says whether its output powers the loop itself or needs the 24 V supply."]],
+      "fittedBy": "A plumber fits it in the pipe, with the straight run its manual asks for. The electrician wires its signal.",
+      "subtitle": "The meter that says how much water is moving. With the pump's running contact it lets Greecon say that the pump is running but no water is flowing.",
+      "forWho": "The project manager who decides at the survey whether the site gets one, the plumber who fits it and the electrician who wires it",
+      "sites": {
+        "H": "With the pump contact module it makes the no-flow alert possible: the pump is running but no water is flowing.",
+        "S": "A solar plant has no water side.",
+        "F": "Only if there is a pump to watch.",
+        "W": "The part behind a pump station's most useful alert: pump running, no flow. Without it the handover says that the alert cannot be raised."
+      },
+      "facts": [
+        { "file": "packages/shared/src/index.ts", "has": "appliesTo: [\"water.flow.lpm\"],\n    min: 0,\n    max: 100000,\n    fallback: 0.2", "says": "the standard no-flow limit is 0.2 litres a minute" },
+        { "file": "packages/shared/src/index.ts", "has": "flow at or below this for 30 seconds means no water is moving", "says": "the no-flow alert opens after 30 seconds" },
+        { "file": "packages/gaia-core/src/alerts.ts", "has": "\"water.pump.dry_run_risk\": 30", "says": "the no-flow condition must hold for 30 seconds" },
+        { "file": "packages/shared/src/edge.ts", "has": "\"water.flow.lpm\": { min: 0, max: 100000, what: \"a flow in litres a minute\" }", "says": "a flow below zero or above 100,000 litres a minute is called impossible" }
+      ]
+    },
+    {
+      "n": 13,
+      "id": "soil",
+      "part": "soil",
+      "file": "HW13-Soil-Moisture-Probe.pdf",
+      "title": "Soil moisture probe",
+      "short": "Soil moisture probe",
+      "class": "table",
+      "qualifies": "A soil probe that speaks Modbus RTU on RS-485, whose maker publishes its register table, and whose number and speed can be set.",
+      "units": { "soil": 6 },
+      "unitWords": "6 (a second probe takes the next free number, 8). Set the maker's way, at the office, before the probe is buried.",
+      "fittedBy": "The project manager, with the grower, who says where and how deep.",
+      "subtitle": "The probe in the soil of each irrigation zone. No model is approved yet, so its address and its register are entered by hand.",
+      "forWho": "The project manager at a farm or a greenhouse",
+      "sites": {
+        "H": "None.",
+        "S": "None.",
+        "F": "One for each irrigation zone, at the depth and in the place agreed with the grower. It gives Soil moisture. Greecon gives no irrigation advice until the grower's own Start irrigating below value is entered.",
+        "W": "None."
+      },
+      "facts": [
+        { "file": "packages/shared/src/site-templates.ts", "has": "defaultUnitId: KIT_UNITS.soil", "says": "the farm template gives the soil probe the kit's number for it" },
+        { "file": "packages/shared/src/index.ts", "has": "key: \"irrigate_below\",\n    label: \"Start irrigating below\"", "says": "the irrigation limit is called Start irrigating below" },
+        { "file": "packages/shared/src/edge.ts", "has": "\"agri.soil.moisture.percent\": { min: 0, max: 100, what: \"soil moisture\" }", "says": "a soil moisture outside 0 to 100 is called impossible" }
+      ]
+    },
+    {
+      "n": 14,
+      "id": "climate",
+      "part": "climate",
+      "file": "HW14-Temperature-and-Humidity-Sensor.pdf",
+      "title": "Temperature and humidity sensor",
+      "short": "Temperature and humidity sensor",
+      "class": "table",
+      "qualifies": "An air temperature and humidity sensor that speaks Modbus RTU on RS-485, whose maker publishes its register table, and whose number and speed can be set.",
+      "units": { "weather": 7 },
+      "unitWords": "7. Set the maker's way, at the office, before the sensor is mounted.",
+      "fittedBy": "The project manager.",
+      "subtitle": "The sensor that reads the air at the field. The platform calls it the Weather sensor; its frost alert uses the grower's own number.",
+      "forWho": "The project manager at a farm or a greenhouse",
+      "sites": {
+        "H": "None.",
+        "S": "None.",
+        "F": "One, at the field or in the greenhouse. It gives Air temperature and Humidity. The frost alert says nothing until the grower's own Frost alert at or below value is entered.",
+        "W": "None."
+      },
+      "facts": [
+        { "file": "packages/shared/src/site-templates.ts", "has": "defaultUnitId: KIT_UNITS.weather", "says": "the farm template gives the weather sensor the kit's number for it" },
+        { "file": "packages/shared/src/index.ts", "has": "key: \"frost_below\",\n    label: \"Frost alert at or below\"", "says": "the frost limit is called Frost alert at or below" },
+        { "file": "packages/shared/src/edge.ts", "has": "\"agri.air.temperature.c\": { min: -40, max: 70, what: \"an air temperature in degrees Celsius\" }", "says": "an air temperature outside -40 to 70 degrees is called impossible" },
+        { "file": "packages/gaia-core/src/alerts.ts", "has": "\"agri.frost_risk\": 120", "says": "the frost alert opens after two minutes at or below the limit" },
+        { "file": "packages/shared/src/index.ts", "has": "appliesTo: [\"agri.air.temperature.c\"],\n    min: -30,\n    max: 15,", "says": "the frost limit can be set between -30 and 15 degrees" },
+        { "file": "packages/gaia-core/src/alerts.ts", "has": "title: \"Frost: the air at the field has fallen to the frost limit\"", "says": "the frost alert is titled Frost: the air at the field has fallen to the frost limit" }
+      ]
+    },
+    {
+      "n": 15,
+      "id": "psu",
+      "part": "psu",
+      "file": "HW15-24V-Power-Supply.pdf",
+      "title": "24 V power supply",
+      "short": "24 V power supply",
+      "class": "spec",
+      "qualifies": "Any 24 V DC supply for a DIN rail, of 30 to 60 W.",
+      "fittedBy": "The electrician connects its mains side. The project manager connects the 24 V side to the converter and the modules.",
+      "subtitle": "The one clean place the modules, the transmitters' loops and the converter take their power from.",
+      "forWho": "The project manager who buys it, and the electrician who connects its mains side",
+      "sites": {
+        "H": "One, in the enclosure. It feeds the two modules, the transmitters' loops and the converter, and the box if the box takes 9 to 36 V.",
+        "S": "One. With no module and no loop, it feeds the converter, and the box if the box takes 9 to 36 V.",
+        "F": "One, as at a hotel: the modules, the loops and the converter.",
+        "W": "One, as at a hotel: the modules, the loops and the converter."
+      }
+    },
+    {
+      "n": 16,
+      "id": "ups",
+      "part": "ups",
+      "file": "HW16-UPS.pdf",
+      "title": "UPS",
+      "short": "UPS",
+      "class": "spec",
+      "qualifies": "A 12 V DC UPS for the box and the converter, or a 600 VA line-interactive UPS.",
+      "fittedBy": "The project manager places it. The electrician connects anything that is wired to the mains.",
+      "subtitle": "What keeps the box and the converter running through a short power cut, long enough to say that the grid is down.",
+      "forWho": "The project manager who buys it and decides, at a farm, whether the site gets one",
+      "sites": {
+        "H": "One. It keeps the box and the converter running through a short power cut. A 600 VA UPS keeps the 24 V supply up too, so the tank and the pressure are still read.",
+        "S": "One. It keeps the box and the converter running. The meters are powered from what they measure: in a grid cut they go dark, and the box says that they do not answer.",
+        "F": "Not in the standard list for this kit. Decide at the survey whether this site gets one, and write the decision down.",
+        "W": "One. A 600 VA UPS is the better choice here: it keeps the 24 V supply up too, so the tank and the pressure are still read while the power is down."
+      }
+    },
+    {
+      "n": 17,
+      "id": "enclosure",
+      "part": "enclosure",
+      "file": "HW17-Enclosure-and-Fittings.pdf",
+      "title": "Enclosure and fittings",
+      "short": "Enclosure and fittings",
+      "class": "spec",
+      "qualifies": "Any enclosure of IP54 (IP65 outdoors) with a DIN rail, terminals, fuses or small breakers and glands, large enough for the kit.",
+      "fittedBy": "The project manager mounts it and the low-voltage parts in it. The electrician connects the mains side.",
+      "subtitle": "The one box on the wall that holds the converter, the modules, the supply, the fuses and the terminals, with everything labelled.",
+      "forWho": "The project manager who buys and mounts it, and the electrician who connects its mains side",
+      "sites": {
+        "H": "One: the fuses and the 24 V supply on the mains side; the converter, the 4 to 20 mA module and the pump contact module on the low-voltage side; the terminal blocks and, if there is room, the box.",
+        "S": "One, the smallest: the fuses and the supply, the converter, the terminal blocks and, if there is room, the box. The meters are in the distribution board, not here.",
+        "F": "One, in the pump house: as at a hotel, with the 4G router on the rail. The probes and the weather sensor are in the field, on the data cable.",
+        "W": "One: as at a hotel. The optional pump meter sits in the board that feeds the pump, not in this enclosure."
+      }
+    }
+  ]
+}

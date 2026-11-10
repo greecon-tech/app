@@ -47,6 +47,7 @@ export class Context {
     this.notes = notes;
     this.htmlBlocks = [];
     this.usedDiagrams = new Set();
+    this.figureTimes = new Map();
     this.usedLabels = new Set();
     this.includeTrail = [];
   }
@@ -72,9 +73,12 @@ function figure(ctx, id) {
   const diagram = ctx.diagrams[id];
   if (!diagram) throw new Error(`There is no diagram called "${id}".`);
   ctx.usedDiagrams.add(id);
+  // the catalogue of hardware sheets prints the same drawing on more than one sheet: the second and later copies get an id of their own
+  const times = (ctx.figureTimes.get(id) ?? 0) + 1;
+  ctx.figureTimes.set(id, times);
   const tall = diagram.height > 520 ? " tall" : "";
   return ctx.holdHtml(
-    `<figure class="diagram${tall}" id="fig-${id}"><div class="svgbox">${diagram.svg}</div><figcaption><b>Figure ${escapeHtml(diagram.label)}.</b> ${escapeHtml(diagram.caption)}</figcaption></figure>`
+    `<figure class="diagram${tall}" id="fig-${id}${times > 1 ? `-${times}` : ""}"><div class="svgbox">${diagram.svg}</div><figcaption><b>Figure ${escapeHtml(diagram.label)}.</b> ${escapeHtml(diagram.caption)}</figcaption></figure>`
   );
 }
 
